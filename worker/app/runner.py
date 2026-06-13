@@ -129,6 +129,7 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
 
         for page in discovered_pages:
             requested_url = page.requested_url
+            related_raw_page_id: uuid.UUID | None = None
             try:
                 fetched = adapter.fetch(page)
                 raw_page = await _persist_raw_page_and_event(
@@ -139,10 +140,11 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
                     page=page,
                     fetched=fetched,
                 )
+                related_raw_page_id = raw_page.id
                 fetched_count += 1
 
                 request = ExtractionAgentRequest(
-                    raw_page_id=raw_page.id,
+                    raw_page_id=related_raw_page_id,
                     source_site_id=source_site_id,
                     crawl_run_id=run_id,
                     requested_url=fetched.requested_url,
@@ -161,9 +163,9 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
                     session,
                     agent_role="extraction",
                     caller="ingestion_worker",
-                    status="succeeded",
+                    status=_agent_call_status(response),
                     related_crawl_run_id=run_id,
-                    related_raw_page_id=raw_page.id,
+                    related_raw_page_id=related_raw_page_id,
                     request_schema_version=request.response_schema_version,
                     response_schema_version="extraction.v1",
                     input_summary_json={
@@ -206,7 +208,11 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
                 failed_pages += 1
                 await session.rollback()
                 await _record_page_failure_event(
-                    session=session, run_id=run_id, requested_url=requested_url, exc=exc
+                    session=session,
+                    run_id=run_id,
+                    requested_url=requested_url,
+                    related_raw_page_id=related_raw_page_id,
+                    exc=exc,
                 )
                 reloaded_source_site = await session.get(SourceSite, source_site_id)
                 if reloaded_source_site is None:
@@ -324,6 +330,14 @@ def _call_extraction_agent(request: ExtractionAgentRequest) -> tuple[ExtractionA
     return response, latency_ms
 
 
+def _agent_call_status(response: ExtractionAgentResponse) -> Literal["success", "fallback_used"]:
+    if response.trace_summary_json.get("fallback") is True:
+        return "fallback_used"
+    if any("fallback" in warning.lower() for warning in response.warnings):
+        return "fallback_used"
+    return "success"
+
+
 async def _record_extraction_called_event(
     *,
     session: AsyncSession,
@@ -350,17 +364,29 @@ async def _record_extraction_called_event(
 
 
 async def _record_page_failure_event(
-    *, session: AsyncSession, run_id: uuid.UUID, requested_url: str, exc: Exception
+    *,
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    requested_url: str,
+    related_raw_page_id: uuid.UUID | None,
+    exc: Exception,
 ) -> None:
+    error_message = str(exc)
+    if related_raw_page_id is not None:
+        raw_page = await session.get(RawPage, related_raw_page_id)
+        if raw_page is not None:
+            raw_page.parse_status = "failed"
+            raw_page.parse_error = error_message
+
     session.add(
         CrawlRunEvent(
             crawl_run_id=run_id,
             stage="worker",
             level="error",
             event_type="page_failed",
-            message=str(exc),
+            message=error_message,
             related_url=requested_url,
-            related_raw_page_id=None,
+            related_raw_page_id=related_raw_page_id,
             related_content_item_id=None,
             counters_json={"error_count_increment": 1},
             agent_trace_json={},

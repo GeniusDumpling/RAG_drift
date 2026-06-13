@@ -1,7 +1,14 @@
 .PHONY: install infra-up infra-down migrate test lint api worker-once frontend seed smoke
 
+PY := .venv/bin/python
+PYTEST := .venv/bin/pytest
+ALEMBIC := .venv/bin/alembic
+UVICORN := .venv/bin/uvicorn
+RUFF := .venv/bin/ruff
+MYPY := .venv/bin/mypy
+
 install:
-	@if [ ! -x .venv/bin/python ] || ! .venv/bin/python -m pip --version >/dev/null 2>&1; then \
+	@if [ ! -x $(PY) ] || ! $(PY) -m pip --version >/dev/null 2>&1; then \
 		rm -rf .venv; \
 		python3 -m venv .venv || { \
 			rm -rf .venv; \
@@ -11,8 +18,8 @@ install:
 			}; \
 		}; \
 	fi
-	.venv/bin/python -m pip install --upgrade pip
-	.venv/bin/python -m pip install -e ".[dev]"
+	$(PY) -m pip install --upgrade pip
+	$(PY) -m pip install -e ".[dev]"
 
 infra-up:
 	docker compose up -d postgres qdrant
@@ -21,26 +28,26 @@ infra-down:
 	docker compose down
 
 migrate:
-	alembic upgrade head
+	$(ALEMBIC) upgrade head
 
 test:
-	pytest -q
+	$(PYTEST) -q
 
 lint:
-	ruff check backend worker scripts
-	mypy backend worker
+	$(RUFF) check backend worker scripts
+	$(MYPY) backend worker
 
 api:
-	uvicorn app.main:app --app-dir backend --reload --host $${API_HOST:-0.0.0.0} --port $${API_PORT:-8000}
+	$(UVICORN) app.main:app --app-dir backend --reload --host $${API_HOST:-0.0.0.0} --port $${API_PORT:-8000}
 
 worker-once:
-	python3 scripts/run_worker_once.py
+	$(PY) scripts/run_worker_once.py
 
 frontend:
 	cd frontend && npm run dev -- --host 0.0.0.0
 
 seed:
-	python3 scripts/seed_demo.py
+	$(PY) scripts/seed_demo.py
 
 smoke:
 	bash scripts/smoke_demo.sh

@@ -1,7 +1,7 @@
 # mypy: ignore-errors
 """initial intelligence rag schema
 
-Revision ID: 0001_initial_intelligence_rag_schema
+Revision ID: 0001_intel_rag_schema
 Revises:
 Create Date: 2026-06-14 00:00:00.000000
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0001_initial_intelligence_rag_schema"
+revision: str = "0001_intel_rag_schema"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -154,6 +154,30 @@ def upgrade() -> None:
             ["source_site_id"],
             ["source_sites.id"],
             name=op.f("fk_crawl_runs_source_site_id_source_sites"),
+        ),
+        sa.CheckConstraint(
+            "discovered_count >= 0", name=op.f("ck_crawl_runs_discovered_count_non_negative")
+        ),
+        sa.CheckConstraint(
+            "fetched_count >= 0", name=op.f("ck_crawl_runs_fetched_count_non_negative")
+        ),
+        sa.CheckConstraint(
+            "parsed_count >= 0", name=op.f("ck_crawl_runs_parsed_count_non_negative")
+        ),
+        sa.CheckConstraint(
+            "extracted_count >= 0", name=op.f("ck_crawl_runs_extracted_count_non_negative")
+        ),
+        sa.CheckConstraint(
+            "deduped_count >= 0", name=op.f("ck_crawl_runs_deduped_count_non_negative")
+        ),
+        sa.CheckConstraint(
+            "chunked_count >= 0", name=op.f("ck_crawl_runs_chunked_count_non_negative")
+        ),
+        sa.CheckConstraint(
+            "embedded_count >= 0", name=op.f("ck_crawl_runs_embedded_count_non_negative")
+        ),
+        sa.CheckConstraint(
+            "error_count >= 0", name=op.f("ck_crawl_runs_error_count_non_negative")
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_crawl_runs")),
     )
@@ -403,6 +427,13 @@ def upgrade() -> None:
             name=op.f("fk_content_chunks_content_item_id_content_items"),
             ondelete="CASCADE",
         ),
+        sa.CheckConstraint(
+            "chunk_index >= 0", name=op.f("ck_content_chunks_chunk_index_non_negative")
+        ),
+        sa.CheckConstraint(
+            "token_count IS NULL OR token_count >= 0",
+            name=op.f("ck_content_chunks_token_count_non_negative"),
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_content_chunks")),
         sa.UniqueConstraint(
             "content_item_id",
@@ -480,6 +511,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.CheckConstraint("top_k > 0", name=op.f("ck_search_queries_top_k_positive")),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_search_queries")),
     )
     op.create_index(
@@ -573,6 +605,10 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.CheckConstraint(
+            "confidence IS NULL OR confidence >= 0 AND confidence <= 1",
+            name=op.f("ck_content_entity_mentions_confidence_unit_interval"),
+        ),
         sa.ForeignKeyConstraint(
             ["content_chunk_id"],
             ["content_chunks.id"],
@@ -652,6 +688,10 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.CheckConstraint(
+            "latency_ms IS NULL OR latency_ms >= 0",
+            name=op.f("ck_agent_calls_latency_ms_non_negative"),
+        ),
         sa.ForeignKeyConstraint(
             ["related_content_item_id"],
             ["content_items.id"],

@@ -2,7 +2,18 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, func, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -62,6 +73,14 @@ class CrawlJob(Base, UuidPrimaryKeyMixin, TimestampMixin):
 class CrawlRun(Base, UuidPrimaryKeyMixin):
     __tablename__ = "crawl_runs"
     __table_args__ = (
+        CheckConstraint("discovered_count >= 0", name="discovered_count_non_negative"),
+        CheckConstraint("fetched_count >= 0", name="fetched_count_non_negative"),
+        CheckConstraint("parsed_count >= 0", name="parsed_count_non_negative"),
+        CheckConstraint("extracted_count >= 0", name="extracted_count_non_negative"),
+        CheckConstraint("deduped_count >= 0", name="deduped_count_non_negative"),
+        CheckConstraint("chunked_count >= 0", name="chunked_count_non_negative"),
+        CheckConstraint("embedded_count >= 0", name="embedded_count_non_negative"),
+        CheckConstraint("error_count >= 0", name="error_count_non_negative"),
         Index("ix_crawl_runs_source_site_id", "source_site_id"),
         Index("ix_crawl_runs_crawl_job_id", "crawl_job_id"),
         Index("ix_crawl_runs_status", "status"),

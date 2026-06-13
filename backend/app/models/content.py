@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -128,7 +129,13 @@ class ContentItem(Base, UuidPrimaryKeyMixin, TimestampMixin):
 
 class ContentChunk(Base, UuidPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "content_chunks"
-    __table_args__ = (UniqueConstraint("content_item_id", "chunk_index"),)
+    __table_args__ = (
+        CheckConstraint("chunk_index >= 0", name="chunk_index_non_negative"),
+        CheckConstraint(
+            "token_count IS NULL OR token_count >= 0", name="token_count_non_negative"
+        ),
+        UniqueConstraint("content_item_id", "chunk_index"),
+    )
 
     content_item_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("content_items.id", ondelete="CASCADE"), nullable=False

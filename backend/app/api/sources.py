@@ -186,6 +186,9 @@ async def list_run_events(
     offset: OffsetQuery = 0,
 ) -> Page[CrawlRunEventRead]:
     repo = SourcesRepository(session)
+    if await repo.get_run(run_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+
     items, total = await repo.list_run_events(run_id=run_id, limit=limit, offset=offset)
     return Page[CrawlRunEventRead](
         items=[CrawlRunEventRead.model_validate(item) for item in items],

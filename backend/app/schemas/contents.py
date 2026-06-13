@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.sources import CrawlRunRead, SourceSiteRead
 
@@ -77,7 +77,7 @@ class ContentTestIngestCreate(BaseModel):
     crawl_run_id: uuid.UUID
     requested_url: str
     final_url: str | None = None
-    raw_html: str | None = None
+    raw_html: str = Field(min_length=1)
     raw_text: str | None = None
     item_type: str
     title: str | None = None
@@ -85,6 +85,13 @@ class ContentTestIngestCreate(BaseModel):
     summary_text: str | None = None
     tags: list[str] = Field(default_factory=list)
     extraction_confidence: float | None = Field(default=1.0, ge=0, le=1)
+
+    @field_validator("raw_html")
+    @classmethod
+    def raw_html_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("raw_html must not be empty")
+        return value
 
 
 class ContentTestIngestResult(BaseModel):

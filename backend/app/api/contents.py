@@ -2,6 +2,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_session
@@ -102,21 +103,27 @@ async def test_ingest_content(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
 
     repo = ContentsRepository(session)
-    created = await repo.create_raw_page_and_item_for_test_ingest(
-        source_site_id=payload.source_site_id,
-        crawl_run_id=payload.crawl_run_id,
-        requested_url=payload.requested_url,
-        final_url=payload.final_url,
-        raw_html=payload.raw_html,
-        raw_text=payload.raw_text,
-        item_type=payload.item_type,
-        title=payload.title,
-        cleaned_text=payload.cleaned_text,
-        summary_text=payload.summary_text,
-        tags=payload.tags,
-        extraction_confidence=payload.extraction_confidence,
-    )
-    await session.commit()
+    try:
+        created = await repo.create_raw_page_and_item_for_test_ingest(
+            source_site_id=payload.source_site_id,
+            crawl_run_id=payload.crawl_run_id,
+            requested_url=payload.requested_url,
+            final_url=payload.final_url,
+            raw_html=payload.raw_html,
+            raw_text=payload.raw_text,
+            item_type=payload.item_type,
+            title=payload.title,
+            cleaned_text=payload.cleaned_text,
+            summary_text=payload.summary_text,
+            tags=payload.tags,
+            extraction_confidence=payload.extraction_confidence,
+        )
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Duplicate content item"
+        ) from exc
 
     return ContentTestIngestResult(
         raw_page_id=created.raw_page.id,

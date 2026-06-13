@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Any
 
@@ -25,10 +26,14 @@ class AgentClient:
                 return self._fake_extract_page(request)
             if self.provider == "fake-failing":
                 raise RuntimeError("fake provider configured to fail")
-            return self._fallback_extraction_response(request, provider="unsupported")
+            return self._fallback_extraction_response(request, status="unsupported_provider")
         except Exception as exc:
             logger.warning("Agent extraction failed; using fallback response", exc_info=exc)
-            return self._fallback_extraction_response(request, error_message=str(exc))
+            return self._fallback_extraction_response(
+                request,
+                error_message=str(exc),
+                status=self._fallback_status_for_error(),
+            )
 
     def optimize_query(
         self, raw_query: str, filters: dict[str, Any], mode: str
@@ -38,10 +43,14 @@ class AgentClient:
                 return self._fake_optimize_query(raw_query=raw_query, filters=filters, mode=mode)
             if self.provider == "fake-failing":
                 raise RuntimeError("fake provider configured to fail")
-            return self._fallback_query_response(raw_query, provider="unsupported")
+            return self._fallback_query_response(raw_query, status="unsupported_provider")
         except Exception as exc:
             logger.warning("Agent query optimization failed; using fallback response", exc_info=exc)
-            return self._fallback_query_response(raw_query, error_message=str(exc))
+            return self._fallback_query_response(
+                raw_query,
+                error_message=str(exc),
+                status=self._fallback_status_for_error(),
+            )
 
     def _fake_extract_page(self, request: ExtractionAgentRequest) -> ExtractionAgentResponse:
         raw_body = self._raw_body_from_request(request)
@@ -96,8 +105,8 @@ class AgentClient:
         self,
         request: ExtractionAgentRequest,
         *,
-        provider: str | None = None,
         error_message: str | None = None,
+        status: str,
     ) -> ExtractionAgentResponse:
         raw_body = self._raw_body_from_request(request)
         body_text = raw_body if raw_body.strip() else _FALLBACK_EMPTY_BODY_TEXT
@@ -107,9 +116,11 @@ class AgentClient:
             warnings.append("agent_fallback_empty_body")
             metadata_json["empty_body"] = True
 
-        trace_summary_json: dict[str, Any] = {"fallback": True}
-        if provider is not None:
-            trace_summary_json["provider"] = provider
+        trace_summary_json: dict[str, Any] = {
+            "provider": self.provider,
+            "fallback": True,
+            "status": status,
+        }
         if error_message is not None:
             trace_summary_json["error"] = error_message
 
@@ -139,12 +150,14 @@ class AgentClient:
         self,
         raw_query: str,
         *,
-        provider: str | None = None,
         error_message: str | None = None,
+        status: str,
     ) -> QueryOptimizationResponse:
-        trace_summary_json: dict[str, Any] = {"fallback": True}
-        if provider is not None:
-            trace_summary_json["provider"] = provider
+        trace_summary_json: dict[str, Any] = {
+            "provider": self.provider,
+            "fallback": True,
+            "status": status,
+        }
         if error_message is not None:
             trace_summary_json["error"] = error_message
 
@@ -161,6 +174,16 @@ class AgentClient:
             trace_summary_json=trace_summary_json,
         )
 
+    def _fallback_status_for_error(self) -> str:
+        if self.provider == "fake-failing":
+            return "fake_failure"
+        return "provider_error"
+
     @staticmethod
     def _raw_body_from_request(request: ExtractionAgentRequest) -> str:
-        return (request.raw_markdown or request.raw_html or "")[:8000]
+        for source in (request.raw_markdown, request.raw_html):
+            if source is not None and source.strip():
+                return source[:8000]
+        if request.raw_json is not None:
+            return json.dumps(request.raw_json, sort_keys=True, separators=(",", ":"))[:8000]
+        return ""

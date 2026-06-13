@@ -70,6 +70,10 @@ class SearchQuery(Base, UuidPrimaryKeyMixin):
     __tablename__ = "search_queries"
     __table_args__ = (
         CheckConstraint("top_k > 0", name="top_k_positive"),
+        CheckConstraint(
+            "result_count IS NULL OR result_count >= 0",
+            name="result_count_non_negative",
+        ),
         Index("ix_search_queries_created_at", "created_at"),
     )
 
@@ -99,6 +103,7 @@ class SearchQuery(Base, UuidPrimaryKeyMixin):
     result_summary_json: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
     )
+    result_count: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, server_default=func.now(), nullable=False
     )

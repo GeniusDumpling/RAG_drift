@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import app.models  # noqa: F401
 from app.db.base import Base, utcnow
-from sqlalchemy import CheckConstraint, Index, UniqueConstraint
+from sqlalchemy import CheckConstraint, Float, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 
 APPLICATION_TABLES = {
@@ -114,6 +114,28 @@ def test_important_postgresql_types_are_used() -> None:
     assert isinstance(content_items.c.search_tsv.type, TSVECTOR)
 
 
+def test_task3_extraction_and_result_metadata_columns_exist() -> None:
+    raw_pages = Base.metadata.tables["raw_pages"]
+    content_items = Base.metadata.tables["content_items"]
+    search_queries = Base.metadata.tables["search_queries"]
+
+    for column_name in ["extraction_method", "extraction_confidence"]:
+        assert column_name in raw_pages.c
+        assert raw_pages.c[column_name].nullable is True
+    assert isinstance(raw_pages.c.extraction_method.type, String)
+    assert isinstance(raw_pages.c.extraction_confidence.type, Float)
+
+    for column_name in ["structured_by", "extraction_confidence"]:
+        assert column_name in content_items.c
+        assert content_items.c[column_name].nullable is True
+    assert isinstance(content_items.c.structured_by.type, String)
+    assert isinstance(content_items.c.extraction_confidence.type, Float)
+
+    assert "result_count" in search_queries.c
+    assert search_queries.c.result_count.nullable is True
+    assert isinstance(search_queries.c.result_count.type, Integer)
+
+
 def test_critical_nullability_and_defaults_are_declared() -> None:
     crawl_runs = Base.metadata.tables["crawl_runs"]
     crawl_run_events = Base.metadata.tables["crawl_run_events"]
@@ -167,7 +189,16 @@ def test_stable_numeric_check_constraints_are_declared() -> None:
         "chunk_index >= 0",
         "token_count IS NULL OR token_count >= 0",
     } <= _check_constraint_sql("content_chunks")
-    assert {"top_k > 0"} <= _check_constraint_sql("search_queries")
+    assert {
+        "top_k > 0",
+        "result_count IS NULL OR result_count >= 0",
+    } <= _check_constraint_sql("search_queries")
+    assert {
+        "extraction_confidence IS NULL OR extraction_confidence >= 0 AND extraction_confidence <= 1"
+    } <= _check_constraint_sql("raw_pages")
+    assert {
+        "extraction_confidence IS NULL OR extraction_confidence >= 0 AND extraction_confidence <= 1"
+    } <= _check_constraint_sql("content_items")
     assert {"confidence IS NULL OR confidence >= 0 AND confidence <= 1"} <= _check_constraint_sql(
         "content_entity_mentions"
     )

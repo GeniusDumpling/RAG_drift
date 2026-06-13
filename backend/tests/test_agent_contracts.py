@@ -1,3 +1,4 @@
+import json
 import uuid
 
 import pytest
@@ -59,7 +60,10 @@ def test_query_optimization_response_keeps_structured_fields() -> None:
 
 
 def _extraction_request(
-    *, raw_html: str | None, raw_markdown: str | None
+    *,
+    raw_html: str | None,
+    raw_markdown: str | None,
+    raw_json: dict[str, object] | None = None,
 ) -> ExtractionAgentRequest:
     return ExtractionAgentRequest(
         raw_page_id=uuid.uuid4(),
@@ -72,7 +76,7 @@ def _extraction_request(
         content_type="text/html",
         raw_html=raw_html,
         raw_markdown=raw_markdown,
-        raw_json=None,
+        raw_json=raw_json,
         context_json={"source": "test"},
     )
 
@@ -85,6 +89,20 @@ def test_agent_client_query_fallback_uses_raw_query_on_failure() -> None:
     assert result.optimized_query_text == "telemetry"
     assert result.keyword_terms == ["telemetry"]
     assert result.trace_summary_json["fallback"] is True
+    assert result.trace_summary_json["provider"] == "fake-failing"
+    assert result.trace_summary_json["status"] == "fake_failure"
+    assert "fake provider configured to fail" in result.trace_summary_json["error"]
+
+
+def test_agent_client_query_fallback_trace_preserves_unsupported_provider() -> None:
+    client = AgentClient(provider="unsupported-provider", timeout_seconds=1)
+
+    result = client.optimize_query(raw_query="telemetry", filters={}, mode="search")
+
+    assert result.optimized_query_text == "telemetry"
+    assert result.trace_summary_json["fallback"] is True
+    assert result.trace_summary_json["provider"] == "unsupported-provider"
+    assert result.trace_summary_json["status"] == "unsupported_provider"
 
 
 @pytest.mark.parametrize("provider", ["fake-failing", "unsupported-provider"])
@@ -115,9 +133,39 @@ def test_agent_client_fake_extract_page_returns_structured_response_from_raw_bod
     assert result.trace_summary_json == {"provider": "fake", "fallback": False}
 
 
-@pytest.mark.parametrize("provider", ["fake-failing", "unsupported-provider"])
+def test_agent_client_fake_extract_page_skips_blank_markdown_for_html_body() -> None:
+    client = AgentClient(provider="fake", timeout_seconds=1)
+    request = _extraction_request(
+        raw_html="<html><body>Useful HTML body</body></html>",
+        raw_markdown="   ",
+    )
+
+    result = client.extract_page(request)
+
+    assert result.items[0].body_text == "<html><body>Useful HTML body</body></html>"
+    assert result.items[0].summary_text == "<html><body>Useful HTML body</body></html>"
+    assert result.warnings == []
+
+
+def test_agent_client_fake_extract_page_uses_deterministic_json_body_when_no_text_sources() -> None:
+    client = AgentClient(provider="fake", timeout_seconds=1)
+    raw_json = {"zeta": 3, "alpha": [2, 1], "nested": {"b": 2, "a": 1}}
+    request = _extraction_request(raw_html=None, raw_markdown=None, raw_json=raw_json)
+
+    result = client.extract_page(request)
+
+    assert result.items[0].body_text == json.dumps(
+        raw_json, sort_keys=True, separators=(",", ":")
+    )
+    assert result.warnings == []
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected_status"),
+    [("fake-failing", "fake_failure"), ("unsupported-provider", "unsupported_provider")],
+)
 def test_agent_client_extract_page_fallback_returns_non_empty_body_without_raw_body(
-    provider: str,
+    provider: str, expected_status: str
 ) -> None:
     client = AgentClient(provider=provider, timeout_seconds=1)
     request = _extraction_request(raw_html=None, raw_markdown=None)
@@ -127,6 +175,8 @@ def test_agent_client_extract_page_fallback_returns_non_empty_body_without_raw_b
     assert result.items[0].body_text.strip()
     assert "agent_fallback_empty_body" in result.warnings
     assert result.trace_summary_json["fallback"] is True
+    assert result.trace_summary_json["provider"] == provider
+    assert result.trace_summary_json["status"] == expected_status
 
 
 async def test_create_agent_call_persists_refreshes_summaries_and_schema_versions(

@@ -94,7 +94,7 @@ class SearchQuery(Base, UuidPrimaryKeyMixin):
     keyword_terms_json: Mapped[list[str]] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
     )
-    entity_hints_json: Mapped[list[dict[str, Any]]] = mapped_column(
+    entity_hints_json: Mapped[list[str]] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
     )
     time_hints_json: Mapped[dict[str, Any]] = mapped_column(

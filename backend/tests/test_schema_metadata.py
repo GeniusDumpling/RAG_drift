@@ -2,10 +2,12 @@ from collections.abc import Iterable
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from types import ModuleType
-from typing import Any, cast
+from typing import Any, cast, get_args
 
 import app.models  # noqa: F401
+from app.agents.contracts import QueryOptimizationResponse
 from app.db.base import Base, utcnow
+from app.models.search import SearchQuery
 from sqlalchemy import CheckConstraint, Float, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 
@@ -112,6 +114,14 @@ def test_important_postgresql_types_are_used() -> None:
     assert isinstance(content_items.c.metadata_json.type, JSONB)
     assert isinstance(search_queries.c.filter_json.type, JSONB)
     assert isinstance(content_items.c.search_tsv.type, TSVECTOR)
+
+
+def test_search_query_entity_hints_annotation_matches_query_contract() -> None:
+    entity_hints_annotation = SearchQuery.__annotations__["entity_hints_json"]
+
+    assert get_args(entity_hints_annotation)[0] == QueryOptimizationResponse.model_fields[
+        "entity_hints"
+    ].annotation
 
 
 def test_task3_extraction_and_result_metadata_columns_exist() -> None:

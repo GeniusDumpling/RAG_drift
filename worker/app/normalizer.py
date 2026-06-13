@@ -37,39 +37,44 @@ async def normalize_extraction_response(
     for index, item in enumerate(response.items):
         cleaned = clean_text(item.body_text)
         content_hash = stable_hash(cleaned)
-        content_item = ContentItem(
-            source_site_id=source_site.id,
-            raw_page_id=raw_page.id,
-            crawl_run_id=raw_page.crawl_run_id,
-            author_id=author_ids[index],
-            parent_item_id=None,
-            thread_root_id=None,
-            item_type=item.item_type,
-            title=item.title,
-            canonical_url=canonical_url,
-            source_url=raw_page.requested_url,
-            published_at=item.published_at,
-            language=source_site.default_language,
-            raw_text=item.body_text,
-            cleaned_text=cleaned,
-            summary_text=item.summary_text,
-            structured_by=structured_by,
-            extraction_confidence=response.extraction_confidence,
-            tags=item.tags,
-            metadata_json={
-                **item.metadata_json,
-                "external_item_id": item.external_item_id,
-                "parent_ref": item.parent_ref,
-                "thread_root_ref": item.thread_root_ref,
-                "page_kind": response.page_kind,
-                "warnings": response.warnings,
-            },
-            content_hash=content_hash,
-            dedup_key=stable_hash(f"{source_site.id}:{canonical_url}:{content_hash}"),
-            search_tsv=None,
+        dedup_key = stable_hash(f"{source_site.id}:{canonical_url}:{content_hash}")
+        content_item = await session.scalar(
+            select(ContentItem).where(ContentItem.dedup_key == dedup_key)
         )
-        session.add(content_item)
-        await session.flush()
+        if content_item is None:
+            content_item = ContentItem(
+                source_site_id=source_site.id,
+                raw_page_id=raw_page.id,
+                crawl_run_id=raw_page.crawl_run_id,
+                author_id=author_ids[index],
+                parent_item_id=None,
+                thread_root_id=None,
+                item_type=item.item_type,
+                title=item.title,
+                canonical_url=canonical_url,
+                source_url=raw_page.requested_url,
+                published_at=item.published_at,
+                language=source_site.default_language,
+                raw_text=item.body_text,
+                cleaned_text=cleaned,
+                summary_text=item.summary_text,
+                structured_by=structured_by,
+                extraction_confidence=response.extraction_confidence,
+                tags=item.tags,
+                metadata_json={
+                    **item.metadata_json,
+                    "external_item_id": item.external_item_id,
+                    "parent_ref": item.parent_ref,
+                    "thread_root_ref": item.thread_root_ref,
+                    "page_kind": response.page_kind,
+                    "warnings": response.warnings,
+                },
+                content_hash=content_hash,
+                dedup_key=dedup_key,
+                search_tsv=None,
+            )
+            session.add(content_item)
+            await session.flush()
 
         inserted_items.append(content_item)
         for ref in _reference_keys(index=index, item=item):

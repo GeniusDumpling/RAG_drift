@@ -86,7 +86,7 @@ class ContentsRepository:
             extraction_confidence=extraction_confidence,
             parse_status="parsed",
             parse_error=None,
-            content_hash=body_hash,
+            body_hash=body_hash,
         )
         self.session.add(raw_page)
         await self.session.flush()

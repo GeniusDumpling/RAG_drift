@@ -219,7 +219,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("parse_error", sa.Text(), nullable=True),
-        sa.Column("content_hash", sa.String(length=128), nullable=True),
+        sa.Column("body_hash", sa.String(length=128), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -251,9 +251,7 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_raw_pages_crawl_run_id"), "raw_pages", ["crawl_run_id"], unique=False
     )
-    op.create_index(
-        op.f("ix_raw_pages_content_hash"), "raw_pages", ["content_hash"], unique=False
-    )
+    op.create_index(op.f("ix_raw_pages_body_hash"), "raw_pages", ["body_hash"], unique=False)
     op.create_table(
         "authors",
         sa.Column("source_site_id", postgresql.UUID(as_uuid=True), nullable=True),

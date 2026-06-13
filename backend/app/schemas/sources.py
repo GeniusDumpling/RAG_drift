@@ -1,10 +1,46 @@
 import uuid
 from datetime import datetime
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Self, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 T = TypeVar("T")
+
+
+SOURCE_SITE_UPDATE_NON_NULLABLE_FIELDS = frozenset(
+    {
+        "name",
+        "site_type",
+        "base_url",
+        "allowed_domains",
+        "fetch_mode",
+        "active",
+        "config_json",
+    }
+)
+CRAWL_JOB_UPDATE_NON_NULLABLE_FIELDS = frozenset(
+    {
+        "source_site_id",
+        "name",
+        "trigger_mode",
+        "seed_config_json",
+        "parser_profile",
+        "max_pages",
+        "enabled",
+        "agent_policy_json",
+    }
+)
+
+
+def _reject_explicit_nulls(model: BaseModel, non_nullable_fields: frozenset[str]) -> None:
+    null_fields = sorted(
+        field
+        for field in non_nullable_fields
+        if field in model.model_fields_set and getattr(model, field) is None
+    )
+    if null_fields:
+        fields = ", ".join(null_fields)
+        raise ValueError(f"Field(s) cannot be null: {fields}")
 
 
 class Page(BaseModel, Generic[T]):
@@ -34,6 +70,11 @@ class SourceSiteUpdate(BaseModel):
     default_language: str | None = None
     active: bool | None = None
     config_json: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def reject_explicit_null_for_non_nullable_fields(self) -> Self:
+        _reject_explicit_nulls(self, SOURCE_SITE_UPDATE_NON_NULLABLE_FIELDS)
+        return self
 
 
 class SourceSiteRead(BaseModel):
@@ -74,6 +115,11 @@ class CrawlJobUpdate(BaseModel):
     max_pages: int | None = Field(default=None, gt=0)
     enabled: bool | None = None
     agent_policy_json: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def reject_explicit_null_for_non_nullable_fields(self) -> Self:
+        _reject_explicit_nulls(self, CRAWL_JOB_UPDATE_NON_NULLABLE_FIELDS)
+        return self
 
 
 class CrawlJobRead(BaseModel):

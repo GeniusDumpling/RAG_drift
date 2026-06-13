@@ -160,6 +160,45 @@ def test_task4_control_api_endpoint_contract() -> None:
     assert event["related_url"] == seed_url
 
 
+def test_task4_patch_rejects_explicit_null_for_non_nullable_update_fields() -> None:
+    client = TestClient(app)
+
+    source = _create_source(client, name="Null rejection source")
+    source_id = str(source["id"])
+
+    source_response = client.patch(f"/sources/{source_id}", json={"name": None})
+    assert source_response.status_code == 422
+
+    job = _create_job(client, source_id, name="Null rejection job")
+    job_id = str(job["id"])
+
+    job_response = client.patch(f"/jobs/{job_id}", json={"name": None})
+    assert job_response.status_code == 422
+
+
+def test_task4_patch_allows_explicit_null_for_nullable_update_fields() -> None:
+    client = TestClient(app)
+
+    source = _create_source(client, name="Nullable source")
+    source_id = str(source["id"])
+
+    source_response = client.patch(f"/sources/{source_id}", json={"default_language": None})
+    assert source_response.status_code == 200
+    assert _json_object(source_response)["default_language"] is None
+
+    scheduled_job_payload = _job_payload(source_id, name="Nullable scheduled job")
+    scheduled_job_payload["cron_expr"] = "0 * * * *"
+    create_job_response = client.post("/jobs", json=scheduled_job_payload)
+    assert create_job_response.status_code == 201
+    job = _json_object(create_job_response)
+    job_id = str(job["id"])
+    assert job["cron_expr"] == "0 * * * *"
+
+    job_response = client.patch(f"/jobs/{job_id}", json={"cron_expr": None})
+    assert job_response.status_code == 200
+    assert _json_object(job_response)["cron_expr"] is None
+
+
 def test_task4_control_api_missing_resources_return_404() -> None:
     client = TestClient(app)
 

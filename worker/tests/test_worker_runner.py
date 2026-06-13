@@ -4,14 +4,19 @@ import sys
 from pathlib import Path
 from typing import cast
 
+import app.db.session as db_session_module
 import pytest
 from app.agents.contracts import ExtractionAgentRequest, ExtractionAgentResponse, ExtractionItem
+from app.db.base import utcnow
 from app.main import app
+from app.models.content import ContentItem, RawPage
+from app.models.control import CrawlJob, CrawlRun, SourceSite
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, select, text
 
 import worker.app.runner as runner_module
 from worker.app.adapters import OfficialSiteAdapter
+from worker.app.normalizer import normalize_extraction_response
 from worker.app.runner import run_once
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -278,7 +283,11 @@ def test_replaying_same_deterministic_page_reuses_existing_content_item() -> Non
     first_detail = client.get(f"/runs/{first_run['id']}").json()
     second_detail = client.get(f"/runs/{second_run['id']}").json()
     assert first_detail["status"] == "success"
+    assert first_detail["extracted_count"] == 1
+    assert first_detail["deduped_count"] == 0
     assert second_detail["status"] == "success"
+    assert second_detail["extracted_count"] == 0
+    assert second_detail["deduped_count"] >= 1
 
     content_items = _fetch_db_rows(
         "select id, dedup_key from content_items order by created_at asc",
@@ -295,6 +304,136 @@ def test_replaying_same_deterministic_page_reuses_existing_content_item() -> Non
         {},
     )
     assert [raw_page["parse_status"] for raw_page in raw_pages] == ["parsed", "parsed"]
+
+
+async def test_normalizer_distinguishes_same_body_items_by_type_and_external_id() -> None:
+    async with db_session_module.AsyncSessionLocal() as session:
+        source_site = SourceSite(
+            name="Normalizer Source",
+            site_type="forum",
+            base_url="https://example.com",
+            allowed_domains=["example.com"],
+            fetch_mode="manual",
+            default_language="en",
+            active=True,
+            config_json={},
+        )
+        session.add(source_site)
+        await session.flush()
+
+        crawl_job = CrawlJob(
+            source_site_id=source_site.id,
+            name="Normalizer job",
+            trigger_mode="manual",
+            cron_expr=None,
+            seed_config_json={"urls": ["https://example.com/thread"]},
+            parser_profile="forum_thread",
+            max_pages=1,
+            enabled=True,
+            agent_policy_json={},
+        )
+        session.add(crawl_job)
+        await session.flush()
+
+        crawl_run = CrawlRun(
+            source_site_id=source_site.id,
+            crawl_job_id=crawl_job.id,
+            trigger_type="manual",
+            seed_url="https://example.com/thread",
+            status="running",
+            config_snapshot_json={},
+        )
+        session.add(crawl_run)
+        await session.flush()
+
+        raw_page = RawPage(
+            source_site_id=source_site.id,
+            crawl_run_id=crawl_run.id,
+            requested_url="https://example.com/thread",
+            final_url="https://example.com/thread",
+            http_status=200,
+            content_type="text/html",
+            response_headers_json={},
+            raw_html="<html></html>",
+            raw_text="same body",
+            raw_json={},
+            fetched_at=utcnow(),
+            fetch_error=None,
+            parser_profile="forum_thread",
+            extraction_method=None,
+            extraction_confidence=None,
+            parse_status="pending",
+            parse_error=None,
+            body_hash="body-hash",
+        )
+        session.add(raw_page)
+        await session.flush()
+
+        response = ExtractionAgentResponse(
+            page_kind="forum_thread",
+            items=[
+                ExtractionItem(
+                    item_type="article",
+                    external_item_id="item-1",
+                    title="Shared body article",
+                    author=None,
+                    published_at=None,
+                    body_text="same body",
+                    summary_text=None,
+                    tags=[],
+                    parent_ref=None,
+                    thread_root_ref=None,
+                    metadata_json={},
+                ),
+                ExtractionItem(
+                    item_type="comment",
+                    external_item_id="item-2",
+                    title=None,
+                    author=None,
+                    published_at=None,
+                    body_text="same body",
+                    summary_text=None,
+                    tags=[],
+                    parent_ref=None,
+                    thread_root_ref=None,
+                    metadata_json={},
+                ),
+                ExtractionItem(
+                    item_type="comment",
+                    external_item_id="item-3",
+                    title=None,
+                    author=None,
+                    published_at=None,
+                    body_text="same body",
+                    summary_text=None,
+                    tags=[],
+                    parent_ref=None,
+                    thread_root_ref=None,
+                    metadata_json={},
+                ),
+            ],
+            extraction_confidence=0.8,
+            warnings=[],
+            trace_summary_json={"provider": "test"},
+        )
+
+        normalization = await normalize_extraction_response(
+            session,
+            source_site=source_site,
+            raw_page=raw_page,
+            response=response,
+        )
+        content_items = (
+            await session.scalars(select(ContentItem).order_by(ContentItem.created_at.asc()))
+        ).all()
+
+    assert len(content_items) == 3
+    assert len({item.id for item in content_items}) == 3
+    assert len({item.dedup_key for item in content_items}) == 3
+    assert set(normalization.content_item_ids) == {item.id for item in content_items}
+    assert set(normalization.created_item_ids) == {item.id for item in content_items}
+    assert normalization.reused_item_ids == []
+    assert normalization.deduped_count == 0
 
 
 def test_page_level_failure_for_all_pages_marks_run_failed(

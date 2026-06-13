@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -23,6 +24,12 @@ from app.db.base import Base, TimestampMixin, UuidPrimaryKeyMixin, utcnow
 class RawPage(Base, UuidPrimaryKeyMixin):
     __tablename__ = "raw_pages"
     __table_args__ = (
+        CheckConstraint(
+            "extraction_confidence IS NULL OR "
+            "extraction_confidence >= 0 AND "
+            "extraction_confidence <= 1",
+            name="extraction_confidence_unit_interval",
+        ),
         Index("ix_raw_pages_source_site_id", "source_site_id"),
         Index("ix_raw_pages_crawl_run_id", "crawl_run_id"),
         Index("ix_raw_pages_content_hash", "content_hash"),
@@ -49,6 +56,8 @@ class RawPage(Base, UuidPrimaryKeyMixin):
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     fetch_error: Mapped[str | None] = mapped_column(Text)
     parser_profile: Mapped[str | None] = mapped_column(String(80))
+    extraction_method: Mapped[str | None] = mapped_column(String(80))
+    extraction_confidence: Mapped[float | None] = mapped_column(Float)
     parse_status: Mapped[str] = mapped_column(
         String(40), default="pending", server_default=text("'pending'"), nullable=False
     )
@@ -78,6 +87,12 @@ class Author(Base, UuidPrimaryKeyMixin, TimestampMixin):
 class ContentItem(Base, UuidPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "content_items"
     __table_args__ = (
+        CheckConstraint(
+            "extraction_confidence IS NULL OR "
+            "extraction_confidence >= 0 AND "
+            "extraction_confidence <= 1",
+            name="extraction_confidence_unit_interval",
+        ),
         UniqueConstraint("dedup_key"),
         Index("ix_content_items_source_site_id", "source_site_id"),
         Index("ix_content_items_raw_page_id", "raw_page_id"),
@@ -116,6 +131,8 @@ class ContentItem(Base, UuidPrimaryKeyMixin, TimestampMixin):
     raw_text: Mapped[str | None] = mapped_column(Text)
     cleaned_text: Mapped[str] = mapped_column(Text, nullable=False)
     summary_text: Mapped[str | None] = mapped_column(Text)
+    structured_by: Mapped[str | None] = mapped_column(String(80))
+    extraction_confidence: Mapped[float | None] = mapped_column(Float)
     tags: Mapped[list[str]] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
     )

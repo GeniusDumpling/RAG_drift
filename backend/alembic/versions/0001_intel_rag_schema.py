@@ -210,6 +210,8 @@ def upgrade() -> None:
         sa.Column("fetched_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("fetch_error", sa.Text(), nullable=True),
         sa.Column("parser_profile", sa.String(length=80), nullable=True),
+        sa.Column("extraction_method", sa.String(length=80), nullable=True),
+        sa.Column("extraction_confidence", sa.Float(), nullable=True),
         sa.Column(
             "parse_status",
             sa.String(length=40),
@@ -234,6 +236,12 @@ def upgrade() -> None:
             ["source_site_id"],
             ["source_sites.id"],
             name=op.f("fk_raw_pages_source_site_id_source_sites"),
+        ),
+        sa.CheckConstraint(
+            "extraction_confidence IS NULL OR "
+            "extraction_confidence >= 0 AND "
+            "extraction_confidence <= 1",
+            name=op.f("ck_raw_pages_extraction_confidence_unit_interval"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_raw_pages")),
     )
@@ -294,6 +302,8 @@ def upgrade() -> None:
         sa.Column("raw_text", sa.Text(), nullable=True),
         sa.Column("cleaned_text", sa.Text(), nullable=False),
         sa.Column("summary_text", sa.Text(), nullable=True),
+        sa.Column("structured_by", sa.String(length=80), nullable=True),
+        sa.Column("extraction_confidence", sa.Float(), nullable=True),
         sa.Column("tags", postgresql.JSONB(), server_default=_JSONB_ARRAY_DEFAULT, nullable=False),
         sa.Column(
             "metadata_json",
@@ -344,6 +354,12 @@ def upgrade() -> None:
             ["thread_root_id"],
             ["content_items.id"],
             name=op.f("fk_content_items_thread_root_id_content_items"),
+        ),
+        sa.CheckConstraint(
+            "extraction_confidence IS NULL OR "
+            "extraction_confidence >= 0 AND "
+            "extraction_confidence <= 1",
+            name=op.f("ck_content_items_extraction_confidence_unit_interval"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_content_items")),
         sa.UniqueConstraint("dedup_key", name=op.f("uq_content_items_dedup_key")),
@@ -504,6 +520,7 @@ def upgrade() -> None:
             server_default=_JSONB_OBJECT_DEFAULT,
             nullable=False,
         ),
+        sa.Column("result_count", sa.Integer(), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -512,6 +529,10 @@ def upgrade() -> None:
         ),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.CheckConstraint("top_k > 0", name=op.f("ck_search_queries_top_k_positive")),
+        sa.CheckConstraint(
+            "result_count IS NULL OR result_count >= 0",
+            name=op.f("ck_search_queries_result_count_non_negative"),
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_search_queries")),
     )
     op.create_index(

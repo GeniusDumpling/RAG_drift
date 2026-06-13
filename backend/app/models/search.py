@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -34,6 +35,10 @@ class Entity(Base, UuidPrimaryKeyMixin, TimestampMixin):
 class ContentEntityMention(Base, UuidPrimaryKeyMixin):
     __tablename__ = "content_entity_mentions"
     __table_args__ = (
+        CheckConstraint(
+            "confidence IS NULL OR confidence >= 0 AND confidence <= 1",
+            name="confidence_unit_interval",
+        ),
         Index("ix_content_entity_mentions_content_item_id", "content_item_id"),
         Index("ix_content_entity_mentions_entity_id", "entity_id"),
         Index("ix_content_entity_mentions_content_chunk_id", "content_chunk_id"),
@@ -63,7 +68,10 @@ class ContentEntityMention(Base, UuidPrimaryKeyMixin):
 
 class SearchQuery(Base, UuidPrimaryKeyMixin):
     __tablename__ = "search_queries"
-    __table_args__ = (Index("ix_search_queries_created_at", "created_at"),)
+    __table_args__ = (
+        CheckConstraint("top_k > 0", name="top_k_positive"),
+        Index("ix_search_queries_created_at", "created_at"),
+    )
 
     raw_query: Mapped[str] = mapped_column(Text, nullable=False)
     filter_json: Mapped[dict[str, Any]] = mapped_column(
@@ -99,6 +107,7 @@ class SearchQuery(Base, UuidPrimaryKeyMixin):
 class AgentCall(Base, UuidPrimaryKeyMixin):
     __tablename__ = "agent_calls"
     __table_args__ = (
+        CheckConstraint("latency_ms IS NULL OR latency_ms >= 0", name="latency_ms_non_negative"),
         Index("ix_agent_calls_related_crawl_run_id", "related_crawl_run_id"),
         Index("ix_agent_calls_related_raw_page_id", "related_raw_page_id"),
         Index("ix_agent_calls_related_content_item_id", "related_content_item_id"),

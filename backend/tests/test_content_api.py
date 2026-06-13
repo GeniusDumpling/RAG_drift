@@ -1,3 +1,5 @@
+import hashlib
+
 from app.main import app
 from fastapi.testclient import TestClient
 
@@ -35,6 +37,8 @@ def test_content_list_and_detail_hydrate_source_raw_run_and_chunks() -> None:
         f"/jobs/{job['id']}/trigger", json={"seed_url": "https://forum.example.com/t/1"}
     ).json()
 
+    raw_html = "<html><h1>Thread title</h1><p>Body text about telemetry.</p></html>"
+    expected_body_hash = hashlib.sha256(raw_html.encode("utf-8")).hexdigest()
     ingest_response = client.post(
         "/contents/test-ingest",
         json={
@@ -42,7 +46,7 @@ def test_content_list_and_detail_hydrate_source_raw_run_and_chunks() -> None:
             "crawl_run_id": run["id"],
             "requested_url": "https://forum.example.com/t/1",
             "final_url": "https://forum.example.com/t/1",
-            "raw_html": "<html><h1>Thread title</h1><p>Body text about telemetry.</p></html>",
+            "raw_html": raw_html,
             "item_type": "thread",
             "title": "Thread title",
             "cleaned_text": "Body text about telemetry.",
@@ -61,5 +65,7 @@ def test_content_list_and_detail_hydrate_source_raw_run_and_chunks() -> None:
     assert detail_response.status_code == 200
     detail = detail_response.json()
     assert detail["raw_page"]["requested_url"] == "https://forum.example.com/t/1"
+    assert detail["raw_page"]["body_hash"] == expected_body_hash
+    assert "content_hash" not in detail["raw_page"]
     assert detail["source"]["name"] == "Forum Demo"
     assert detail["chunks"] != []

@@ -32,7 +32,7 @@ class RawPage(Base, UuidPrimaryKeyMixin):
         ),
         Index("ix_raw_pages_source_site_id", "source_site_id"),
         Index("ix_raw_pages_crawl_run_id", "crawl_run_id"),
-        Index("ix_raw_pages_content_hash", "content_hash"),
+        Index("ix_raw_pages_body_hash", "body_hash"),
     )
 
     source_site_id: Mapped[uuid.UUID] = mapped_column(
@@ -62,7 +62,7 @@ class RawPage(Base, UuidPrimaryKeyMixin):
         String(40), default="pending", server_default=text("'pending'"), nullable=False
     )
     parse_error: Mapped[str | None] = mapped_column(Text)
-    content_hash: Mapped[str | None] = mapped_column(String(128))
+    body_hash: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, server_default=func.now(), nullable=False
     )

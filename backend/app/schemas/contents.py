@@ -42,7 +42,7 @@ class RawPageRead(BaseModel):
     extraction_confidence: float | None
     parse_status: str
     parse_error: str | None
-    content_hash: str | None
+    body_hash: str | None
     created_at: datetime
 
 

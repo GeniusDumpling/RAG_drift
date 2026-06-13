@@ -136,6 +136,17 @@ def test_task3_extraction_and_result_metadata_columns_exist() -> None:
     assert isinstance(search_queries.c.result_count.type, Integer)
 
 
+def test_raw_pages_use_body_hash_for_raw_body_digest() -> None:
+    raw_pages = Base.metadata.tables["raw_pages"]
+
+    assert "body_hash" in raw_pages.c
+    assert "content_hash" not in raw_pages.c
+    assert raw_pages.c.body_hash.nullable is True
+    assert isinstance(raw_pages.c.body_hash.type, String)
+    assert _indexes_for_columns("raw_pages", ["body_hash"])
+    assert not _indexes_for_columns("raw_pages", ["content_hash"])
+
+
 def test_critical_nullability_and_defaults_are_declared() -> None:
     crawl_runs = Base.metadata.tables["crawl_runs"]
     crawl_run_events = Base.metadata.tables["crawl_run_events"]

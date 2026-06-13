@@ -96,6 +96,7 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
                 fetched_count=0,
                 parsed_count=0,
                 extracted_count=0,
+                deduped_count=0,
                 error_count=1,
             )
 
@@ -118,12 +119,14 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
                 fetched_count=0,
                 parsed_count=0,
                 extracted_count=0,
+                deduped_count=0,
                 error_count=1,
             )
 
         discovered_count = len(discovered_pages)
         fetched_count = 0
         extracted_count = 0
+        deduped_count = 0
         successful_pages = 0
         failed_pages = 0
 
@@ -191,7 +194,7 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
                     response=response,
                 )
 
-                inserted_item_ids = await normalize_extraction_response(
+                normalization_result = await normalize_extraction_response(
                     session,
                     source_site=source_site,
                     raw_page=raw_page,
@@ -202,7 +205,8 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
                 raw_page.extraction_confidence = response.extraction_confidence
                 await session.commit()
 
-                extracted_count += len(inserted_item_ids)
+                extracted_count += len(normalization_result.created_item_ids)
+                deduped_count += normalization_result.deduped_count
                 successful_pages += 1
             except Exception as exc:
                 failed_pages += 1
@@ -225,6 +229,7 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
                         fetched_count=fetched_count,
                         parsed_count=successful_pages,
                         extracted_count=extracted_count,
+                        deduped_count=deduped_count,
                         error_count=failed_pages + 1,
                     )
                 source_site = reloaded_source_site
@@ -251,6 +256,7 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
         run.fetched_count = fetched_count
         run.parsed_count = successful_pages
         run.extracted_count = extracted_count
+        run.deduped_count = deduped_count
         run.error_count = failed_pages
         run.error_message = error_message
         crawl_job_for_update = await session.get(CrawlJob, crawl_job_id)
@@ -405,6 +411,7 @@ async def _mark_run_failed(
     fetched_count: int,
     parsed_count: int,
     extracted_count: int,
+    deduped_count: int,
     error_count: int,
 ) -> Literal["failed"]:
     run = await session.get(CrawlRun, run_id)
@@ -416,6 +423,7 @@ async def _mark_run_failed(
     run.fetched_count = fetched_count
     run.parsed_count = parsed_count
     run.extracted_count = extracted_count
+    run.deduped_count = deduped_count
     run.error_count = error_count
     run.error_message = error_message
     _add_run_failed_event(

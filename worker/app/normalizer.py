@@ -1,5 +1,6 @@
 import hashlib
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from app.agents.contracts import ExtractionAgentResponse, ExtractionItem
@@ -17,6 +18,14 @@ def clean_text(text: str) -> str:
     return " ".join(text.split())
 
 
+@dataclass(frozen=True)
+class NormalizationResult:
+    content_item_ids: list[uuid.UUID]
+    created_item_ids: list[uuid.UUID]
+    reused_item_ids: list[uuid.UUID]
+    deduped_count: int
+
+
 async def normalize_extraction_response(
     session: AsyncSession,
     *,
@@ -24,20 +33,30 @@ async def normalize_extraction_response(
     raw_page: RawPage,
     response: ExtractionAgentResponse,
     structured_by: str = "extraction_agent",
-) -> list[uuid.UUID]:
+) -> NormalizationResult:
     author_ids = [
         await _upsert_author(session, source_site_id=source_site.id, author_json=item.author)
         for item in response.items
     ]
 
     inserted_items: list[ContentItem] = []
+    created_item_ids: list[uuid.UUID] = []
+    reused_item_ids: list[uuid.UUID] = []
     item_by_ref: dict[str, ContentItem] = {}
     canonical_url = raw_page.final_url or raw_page.requested_url
 
     for index, item in enumerate(response.items):
         cleaned = clean_text(item.body_text)
         content_hash = stable_hash(cleaned)
-        dedup_key = stable_hash(f"{source_site.id}:{canonical_url}:{content_hash}")
+        item_discriminator = _stable_item_discriminator(
+            index=index,
+            item=item,
+            raw_page_id=raw_page.id,
+        )
+        dedup_key = stable_hash(
+            f"{source_site.id}:{canonical_url}:{item.item_type}:"
+            f"{item_discriminator}:{content_hash}"
+        )
         content_item = await session.scalar(
             select(ContentItem).where(ContentItem.dedup_key == dedup_key)
         )
@@ -75,6 +94,9 @@ async def normalize_extraction_response(
             )
             session.add(content_item)
             await session.flush()
+            created_item_ids.append(content_item.id)
+        else:
+            reused_item_ids.append(content_item.id)
 
         inserted_items.append(content_item)
         for ref in _reference_keys(index=index, item=item):
@@ -102,7 +124,12 @@ async def normalize_extraction_response(
                     content_item.parent_item_id = first_thread.id
 
     await session.flush()
-    return [item.id for item in inserted_items]
+    return NormalizationResult(
+        content_item_ids=[item.id for item in inserted_items],
+        created_item_ids=created_item_ids,
+        reused_item_ids=reused_item_ids,
+        deduped_count=len(reused_item_ids),
+    )
 
 
 async def _upsert_author(
@@ -156,6 +183,20 @@ async def _upsert_author(
 
     await session.flush()
     return existing_author.id
+
+
+def _stable_item_discriminator(
+    *, index: int, item: ExtractionItem, raw_page_id: uuid.UUID
+) -> str:
+    external_item_id = _string_or_none(item.external_item_id)
+    if external_item_id is not None and external_item_id != str(raw_page_id):
+        return f"external:{external_item_id}"
+
+    metadata_ref = item.metadata_json.get("ref")
+    if isinstance(metadata_ref, str) and metadata_ref.strip():
+        return f"ref:{metadata_ref.strip()}"
+
+    return f"index:{index}"
 
 
 def _reference_keys(*, index: int, item: ExtractionItem) -> set[str]:

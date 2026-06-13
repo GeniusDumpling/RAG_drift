@@ -18,21 +18,46 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+_TIMESTAMP_DEFAULT = sa.text("now()")
+_JSONB_OBJECT_DEFAULT = sa.text("'{}'::jsonb")
+_JSONB_ARRAY_DEFAULT = sa.text("'[]'::jsonb")
+
+
 def upgrade() -> None:
     op.create_table(
         "source_sites",
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("site_type", sa.String(length=40), nullable=False),
         sa.Column("base_url", sa.Text(), nullable=False),
-        sa.Column("allowed_domains", postgresql.JSONB(), nullable=False),
+        sa.Column(
+            "allowed_domains",
+            postgresql.JSONB(),
+            server_default=_JSONB_ARRAY_DEFAULT,
+            nullable=False,
+        ),
         sa.Column("fetch_mode", sa.String(length=40), nullable=False),
         sa.Column("default_language", sa.String(length=16), nullable=True),
-        sa.Column("active", sa.Boolean(), nullable=False),
-        sa.Column("config_json", postgresql.JSONB(), nullable=False),
+        sa.Column("active", sa.Boolean(), server_default=sa.text("true"), nullable=False),
+        sa.Column(
+            "config_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_source_sites")),
     )
     op.create_table(
         "crawl_jobs",
@@ -40,45 +65,105 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("trigger_mode", sa.String(length=40), nullable=False),
         sa.Column("cron_expr", sa.String(length=120), nullable=True),
-        sa.Column("seed_config_json", postgresql.JSONB(), nullable=False),
+        sa.Column(
+            "seed_config_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
         sa.Column("parser_profile", sa.String(length=80), nullable=False),
-        sa.Column("max_pages", sa.Integer(), nullable=False),
-        sa.Column("enabled", sa.Boolean(), nullable=False),
-        sa.Column("agent_policy_json", postgresql.JSONB(), nullable=False),
+        sa.Column("max_pages", sa.Integer(), server_default=sa.text("20"), nullable=False),
+        sa.Column("enabled", sa.Boolean(), server_default=sa.text("true"), nullable=False),
+        sa.Column(
+            "agent_policy_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
         sa.Column("last_run_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("next_run_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["source_site_id"], ["source_sites.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_site_id"],
+            ["source_sites.id"],
+            name=op.f("fk_crawl_jobs_source_site_id_source_sites"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_crawl_jobs")),
+    )
+    op.create_index(
+        op.f("ix_crawl_jobs_source_site_id"), "crawl_jobs", ["source_site_id"], unique=False
     )
     op.create_table(
         "crawl_runs",
         sa.Column("source_site_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("crawl_job_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("trigger_type", sa.String(length=40), nullable=False),
-        sa.Column("execution_mode", sa.String(length=40), nullable=False),
+        sa.Column(
+            "execution_mode",
+            sa.String(length=40),
+            server_default=sa.text("'agent_assisted'"),
+            nullable=False,
+        ),
         sa.Column("seed_url", sa.Text(), nullable=True),
-        sa.Column("status", sa.String(length=40), nullable=False),
+        sa.Column(
+            "status", sa.String(length=40), server_default=sa.text("'queued'"), nullable=False
+        ),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("discovered_count", sa.Integer(), nullable=False),
-        sa.Column("fetched_count", sa.Integer(), nullable=False),
-        sa.Column("parsed_count", sa.Integer(), nullable=False),
-        sa.Column("extracted_count", sa.Integer(), nullable=False),
-        sa.Column("deduped_count", sa.Integer(), nullable=False),
-        sa.Column("chunked_count", sa.Integer(), nullable=False),
-        sa.Column("embedded_count", sa.Integer(), nullable=False),
-        sa.Column("error_count", sa.Integer(), nullable=False),
-        sa.Column("config_snapshot_json", postgresql.JSONB(), nullable=False),
+        sa.Column("discovered_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("fetched_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("parsed_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("extracted_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("deduped_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("chunked_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("embedded_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("error_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column(
+            "config_snapshot_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
         sa.Column("error_message", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.ForeignKeyConstraint(["crawl_job_id"], ["crawl_jobs.id"]),
-        sa.ForeignKeyConstraint(["source_site_id"], ["source_sites.id"]),
-        sa.PrimaryKeyConstraint("id"),
+        sa.ForeignKeyConstraint(
+            ["crawl_job_id"],
+            ["crawl_jobs.id"],
+            name=op.f("fk_crawl_runs_crawl_job_id_crawl_jobs"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_site_id"],
+            ["source_sites.id"],
+            name=op.f("fk_crawl_runs_source_site_id_source_sites"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_crawl_runs")),
     )
+    op.create_index(
+        op.f("ix_crawl_runs_source_site_id"), "crawl_runs", ["source_site_id"], unique=False
+    )
+    op.create_index(
+        op.f("ix_crawl_runs_crawl_job_id"), "crawl_runs", ["crawl_job_id"], unique=False
+    )
+    op.create_index(op.f("ix_crawl_runs_status"), "crawl_runs", ["status"], unique=False)
     op.create_table(
         "raw_pages",
         sa.Column("source_site_id", postgresql.UUID(as_uuid=True), nullable=False),
@@ -87,21 +172,55 @@ def upgrade() -> None:
         sa.Column("final_url", sa.Text(), nullable=True),
         sa.Column("http_status", sa.Integer(), nullable=True),
         sa.Column("content_type", sa.String(length=255), nullable=True),
-        sa.Column("response_headers_json", postgresql.JSONB(), nullable=False),
+        sa.Column(
+            "response_headers_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
         sa.Column("raw_html", sa.Text(), nullable=True),
         sa.Column("raw_text", sa.Text(), nullable=True),
-        sa.Column("raw_json", postgresql.JSONB(), nullable=False),
+        sa.Column(
+            "raw_json", postgresql.JSONB(), server_default=_JSONB_OBJECT_DEFAULT, nullable=False
+        ),
         sa.Column("fetched_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("fetch_error", sa.Text(), nullable=True),
         sa.Column("parser_profile", sa.String(length=80), nullable=True),
-        sa.Column("parse_status", sa.String(length=40), nullable=False),
+        sa.Column(
+            "parse_status",
+            sa.String(length=40),
+            server_default=sa.text("'pending'"),
+            nullable=False,
+        ),
         sa.Column("parse_error", sa.Text(), nullable=True),
         sa.Column("content_hash", sa.String(length=128), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.ForeignKeyConstraint(["crawl_run_id"], ["crawl_runs.id"]),
-        sa.ForeignKeyConstraint(["source_site_id"], ["source_sites.id"]),
-        sa.PrimaryKeyConstraint("id"),
+        sa.ForeignKeyConstraint(
+            ["crawl_run_id"],
+            ["crawl_runs.id"],
+            name=op.f("fk_raw_pages_crawl_run_id_crawl_runs"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_site_id"],
+            ["source_sites.id"],
+            name=op.f("fk_raw_pages_source_site_id_source_sites"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_raw_pages")),
+    )
+    op.create_index(
+        op.f("ix_raw_pages_source_site_id"), "raw_pages", ["source_site_id"], unique=False
+    )
+    op.create_index(
+        op.f("ix_raw_pages_crawl_run_id"), "raw_pages", ["crawl_run_id"], unique=False
+    )
+    op.create_index(
+        op.f("ix_raw_pages_content_hash"), "raw_pages", ["content_hash"], unique=False
     )
     op.create_table(
         "authors",
@@ -110,13 +229,30 @@ def upgrade() -> None:
         sa.Column("handle", sa.String(length=255), nullable=True),
         sa.Column("profile_url", sa.Text(), nullable=True),
         sa.Column("external_author_id", sa.String(length=255), nullable=True),
-        sa.Column("raw_json", postgresql.JSONB(), nullable=False),
+        sa.Column(
+            "raw_json", postgresql.JSONB(), server_default=_JSONB_OBJECT_DEFAULT, nullable=False
+        ),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["source_site_id"], ["source_sites.id"]),
-        sa.PrimaryKeyConstraint("id"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_site_id"],
+            ["source_sites.id"],
+            name=op.f("fk_authors_source_site_id_source_sites"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_authors")),
     )
+    op.create_index(op.f("ix_authors_source_site_id"), "authors", ["source_site_id"], unique=False)
     op.create_table(
         "content_items",
         sa.Column("source_site_id", postgresql.UUID(as_uuid=True), nullable=False),
@@ -134,21 +270,96 @@ def upgrade() -> None:
         sa.Column("raw_text", sa.Text(), nullable=True),
         sa.Column("cleaned_text", sa.Text(), nullable=False),
         sa.Column("summary_text", sa.Text(), nullable=True),
-        sa.Column("tags", postgresql.JSONB(), nullable=False),
-        sa.Column("metadata_json", postgresql.JSONB(), nullable=False),
+        sa.Column("tags", postgresql.JSONB(), server_default=_JSONB_ARRAY_DEFAULT, nullable=False),
+        sa.Column(
+            "metadata_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
         sa.Column("content_hash", sa.String(length=128), nullable=False),
         sa.Column("dedup_key", sa.String(length=512), nullable=False),
         sa.Column("search_tsv", postgresql.TSVECTOR(), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["author_id"], ["authors.id"]),
-        sa.ForeignKeyConstraint(["crawl_run_id"], ["crawl_runs.id"]),
-        sa.ForeignKeyConstraint(["parent_item_id"], ["content_items.id"]),
-        sa.ForeignKeyConstraint(["raw_page_id"], ["raw_pages.id"]),
-        sa.ForeignKeyConstraint(["source_site_id"], ["source_sites.id"]),
-        sa.ForeignKeyConstraint(["thread_root_id"], ["content_items.id"]),
-        sa.PrimaryKeyConstraint("id"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["author_id"], ["authors.id"], name=op.f("fk_content_items_author_id_authors")
+        ),
+        sa.ForeignKeyConstraint(
+            ["crawl_run_id"],
+            ["crawl_runs.id"],
+            name=op.f("fk_content_items_crawl_run_id_crawl_runs"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["parent_item_id"],
+            ["content_items.id"],
+            name=op.f("fk_content_items_parent_item_id_content_items"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["raw_page_id"],
+            ["raw_pages.id"],
+            name=op.f("fk_content_items_raw_page_id_raw_pages"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_site_id"],
+            ["source_sites.id"],
+            name=op.f("fk_content_items_source_site_id_source_sites"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["thread_root_id"],
+            ["content_items.id"],
+            name=op.f("fk_content_items_thread_root_id_content_items"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_content_items")),
+        sa.UniqueConstraint("dedup_key", name=op.f("uq_content_items_dedup_key")),
+    )
+    op.create_index(
+        op.f("ix_content_items_source_site_id"),
+        "content_items",
+        ["source_site_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_content_items_raw_page_id"), "content_items", ["raw_page_id"], unique=False
+    )
+    op.create_index(
+        op.f("ix_content_items_crawl_run_id"), "content_items", ["crawl_run_id"], unique=False
+    )
+    op.create_index(
+        op.f("ix_content_items_author_id"), "content_items", ["author_id"], unique=False
+    )
+    op.create_index(
+        op.f("ix_content_items_parent_item_id"),
+        "content_items",
+        ["parent_item_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_content_items_thread_root_id"),
+        "content_items",
+        ["thread_root_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_content_items_item_type"), "content_items", ["item_type"], unique=False
+    )
+    op.create_index(
+        "ix_content_items_search_tsv_gin",
+        "content_items",
+        ["search_tsv"],
+        unique=False,
+        postgresql_using="gin",
     )
     op.create_table(
         "content_chunks",
@@ -159,44 +370,120 @@ def upgrade() -> None:
         sa.Column("display_text", sa.Text(), nullable=False),
         sa.Column("embed_text", sa.Text(), nullable=False),
         sa.Column("token_count", sa.Integer(), nullable=True),
-        sa.Column("chunk_metadata_json", postgresql.JSONB(), nullable=False),
+        sa.Column(
+            "chunk_metadata_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
         sa.Column("qdrant_point_id", sa.String(length=255), nullable=True),
-        sa.Column("embed_status", sa.String(length=40), nullable=False),
+        sa.Column(
+            "embed_status",
+            sa.String(length=40),
+            server_default=sa.text("'pending'"),
+            nullable=False,
+        ),
         sa.Column("embed_error", sa.Text(), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["content_item_id"], ["content_items.id"], ondelete="CASCADE"
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
         ),
-        sa.PrimaryKeyConstraint("id"),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["content_item_id"],
+            ["content_items.id"],
+            name=op.f("fk_content_chunks_content_item_id_content_items"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_content_chunks")),
+        sa.UniqueConstraint(
+            "content_item_id",
+            "chunk_index",
+            name=op.f("uq_content_chunks_content_item_id_chunk_index"),
+        ),
     )
     op.create_table(
         "entities",
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("entity_type", sa.String(length=80), nullable=False),
         sa.Column("canonical_name", sa.String(length=255), nullable=True),
-        sa.Column("metadata_json", postgresql.JSONB(), nullable=False),
+        sa.Column(
+            "metadata_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_entities")),
     )
     op.create_table(
         "search_queries",
         sa.Column("raw_query", sa.Text(), nullable=False),
-        sa.Column("filter_json", postgresql.JSONB(), nullable=False),
-        sa.Column("mode", sa.String(length=40), nullable=False),
-        sa.Column("top_k", sa.Integer(), nullable=False),
-        sa.Column("used_agent", sa.Boolean(), nullable=False),
+        sa.Column(
+            "filter_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
+        sa.Column("mode", sa.String(length=40), server_default=sa.text("'hybrid'"), nullable=False),
+        sa.Column("top_k", sa.Integer(), server_default=sa.text("10"), nullable=False),
+        sa.Column("used_agent", sa.Boolean(), server_default=sa.text("false"), nullable=False),
         sa.Column("optimized_query", sa.Text(), nullable=True),
-        sa.Column("keyword_terms_json", postgresql.JSONB(), nullable=False),
-        sa.Column("entity_hints_json", postgresql.JSONB(), nullable=False),
-        sa.Column("time_hints_json", postgresql.JSONB(), nullable=False),
-        sa.Column("result_summary_json", postgresql.JSONB(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "keyword_terms_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_ARRAY_DEFAULT,
+            nullable=False,
+        ),
+        sa.Column(
+            "entity_hints_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_ARRAY_DEFAULT,
+            nullable=False,
+        ),
+        sa.Column(
+            "time_hints_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
+        sa.Column(
+            "result_summary_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_search_queries")),
+    )
+    op.create_index(
+        op.f("ix_search_queries_created_at"), "search_queries", ["created_at"], unique=False
     )
     op.create_table(
         "crawl_run_events",
@@ -208,14 +495,60 @@ def upgrade() -> None:
         sa.Column("related_url", sa.Text(), nullable=True),
         sa.Column("related_raw_page_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("related_content_item_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("counters_json", postgresql.JSONB(), nullable=False),
-        sa.Column("agent_trace_json", postgresql.JSONB(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "counters_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
+        sa.Column(
+            "agent_trace_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.ForeignKeyConstraint(["crawl_run_id"], ["crawl_runs.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["related_content_item_id"], ["content_items.id"]),
-        sa.ForeignKeyConstraint(["related_raw_page_id"], ["raw_pages.id"]),
-        sa.PrimaryKeyConstraint("id"),
+        sa.ForeignKeyConstraint(
+            ["crawl_run_id"],
+            ["crawl_runs.id"],
+            name=op.f("fk_crawl_run_events_crawl_run_id_crawl_runs"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["related_content_item_id"],
+            ["content_items.id"],
+            name=op.f("fk_crawl_run_events_related_content_item_id_content_items"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["related_raw_page_id"],
+            ["raw_pages.id"],
+            name=op.f("fk_crawl_run_events_related_raw_page_id_raw_pages"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_crawl_run_events")),
+    )
+    op.create_index(
+        op.f("ix_crawl_run_events_crawl_run_id"),
+        "crawl_run_events",
+        ["crawl_run_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_crawl_run_events_related_raw_page_id"),
+        "crawl_run_events",
+        ["related_raw_page_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_crawl_run_events_related_content_item_id"),
+        "crawl_run_events",
+        ["related_content_item_id"],
+        unique=False,
     )
     op.create_table(
         "content_entity_mentions",
@@ -227,17 +560,56 @@ def upgrade() -> None:
         sa.Column("end_char", sa.Integer(), nullable=True),
         sa.Column("confidence", sa.Float(), nullable=True),
         sa.Column("extraction_method", sa.String(length=80), nullable=True),
-        sa.Column("metadata_json", postgresql.JSONB(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "metadata_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.ForeignKeyConstraint(
-            ["content_chunk_id"], ["content_chunks.id"], ondelete="SET NULL"
+            ["content_chunk_id"],
+            ["content_chunks.id"],
+            name=op.f("fk_content_entity_mentions_content_chunk_id_content_chunks"),
+            ondelete="SET NULL",
         ),
         sa.ForeignKeyConstraint(
-            ["content_item_id"], ["content_items.id"], ondelete="CASCADE"
+            ["content_item_id"],
+            ["content_items.id"],
+            name=op.f("fk_content_entity_mentions_content_item_id_content_items"),
+            ondelete="CASCADE",
         ),
-        sa.ForeignKeyConstraint(["entity_id"], ["entities.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
+        sa.ForeignKeyConstraint(
+            ["entity_id"],
+            ["entities.id"],
+            name=op.f("fk_content_entity_mentions_entity_id_entities"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_content_entity_mentions")),
+    )
+    op.create_index(
+        op.f("ix_content_entity_mentions_content_item_id"),
+        "content_entity_mentions",
+        ["content_item_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_content_entity_mentions_entity_id"),
+        "content_entity_mentions",
+        ["entity_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_content_entity_mentions_content_chunk_id"),
+        "content_entity_mentions",
+        ["content_chunk_id"],
+        unique=False,
     )
     op.create_table(
         "agent_calls",
@@ -249,24 +621,84 @@ def upgrade() -> None:
         sa.Column("related_search_query_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("request_schema_version", sa.String(length=40), nullable=False),
         sa.Column("response_schema_version", sa.String(length=40), nullable=False),
-        sa.Column("status", sa.String(length=40), nullable=False),
-        sa.Column("input_summary_json", postgresql.JSONB(), nullable=False),
-        sa.Column("output_summary_json", postgresql.JSONB(), nullable=False),
+        sa.Column(
+            "status", sa.String(length=40), server_default=sa.text("'pending'"), nullable=False
+        ),
+        sa.Column(
+            "input_summary_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
+        sa.Column(
+            "output_summary_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
         sa.Column("model_provider", sa.String(length=80), nullable=True),
         sa.Column("model_name", sa.String(length=120), nullable=True),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("latency_ms", sa.Integer(), nullable=True),
         sa.Column("error_message", sa.Text(), nullable=True),
-        sa.Column("trace_json", postgresql.JSONB(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "trace_json", postgresql.JSONB(), server_default=_JSONB_OBJECT_DEFAULT, nullable=False
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=_TIMESTAMP_DEFAULT,
+            nullable=False,
+        ),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.ForeignKeyConstraint(["related_content_item_id"], ["content_items.id"]),
-        sa.ForeignKeyConstraint(["related_crawl_run_id"], ["crawl_runs.id"]),
-        sa.ForeignKeyConstraint(["related_raw_page_id"], ["raw_pages.id"]),
-        sa.ForeignKeyConstraint(["related_search_query_id"], ["search_queries.id"]),
-        sa.PrimaryKeyConstraint("id"),
+        sa.ForeignKeyConstraint(
+            ["related_content_item_id"],
+            ["content_items.id"],
+            name=op.f("fk_agent_calls_related_content_item_id_content_items"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["related_crawl_run_id"],
+            ["crawl_runs.id"],
+            name=op.f("fk_agent_calls_related_crawl_run_id_crawl_runs"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["related_raw_page_id"],
+            ["raw_pages.id"],
+            name=op.f("fk_agent_calls_related_raw_page_id_raw_pages"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["related_search_query_id"],
+            ["search_queries.id"],
+            name=op.f("fk_agent_calls_related_search_query_id_search_queries"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_agent_calls")),
     )
+    op.create_index(
+        op.f("ix_agent_calls_related_crawl_run_id"),
+        "agent_calls",
+        ["related_crawl_run_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_agent_calls_related_raw_page_id"),
+        "agent_calls",
+        ["related_raw_page_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_agent_calls_related_content_item_id"),
+        "agent_calls",
+        ["related_content_item_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_agent_calls_related_search_query_id"),
+        "agent_calls",
+        ["related_search_query_id"],
+        unique=False,
+    )
+    op.create_index(op.f("ix_agent_calls_status"), "agent_calls", ["status"], unique=False)
 
 
 def downgrade() -> None:

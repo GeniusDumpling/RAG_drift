@@ -80,32 +80,43 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
         if run is None:
             return "failed"
 
-        source_site = await session.get(SourceSite, run.source_site_id)
-        crawl_job = await session.get(CrawlJob, run.crawl_job_id)
+        source_site_id = run.source_site_id
+        crawl_job_id = run.crawl_job_id
+        run_seed_url = run.seed_url
+
+        source_site = await session.get(SourceSite, source_site_id)
+        crawl_job = await session.get(CrawlJob, crawl_job_id)
         if source_site is None or crawl_job is None:
             return await _mark_run_failed(
                 session,
-                run,
+                run_id=run_id,
+                seed_url=run_seed_url,
                 error_message="Crawl run references a missing source site or crawl job.",
                 discovered_count=0,
                 fetched_count=0,
+                parsed_count=0,
                 extracted_count=0,
                 error_count=1,
             )
 
+        parser_profile = crawl_job.parser_profile
+        seed_config_json = dict(crawl_job.seed_config_json)
+        max_pages = crawl_job.max_pages
+        source_site_type = source_site.site_type
+
         try:
-            adapter = get_adapter(crawl_job.parser_profile)
-            discovered_pages = adapter.discover(
-                crawl_job.seed_config_json, run.seed_url, crawl_job.max_pages
-            )
+            adapter = get_adapter(parser_profile)
+            discovered_pages = adapter.discover(seed_config_json, run_seed_url, max_pages)
         except Exception as exc:
             await session.rollback()
             return await _mark_run_failed(
                 session,
-                run,
+                run_id=run_id,
+                seed_url=run_seed_url,
                 error_message=str(exc),
                 discovered_count=0,
                 fetched_count=0,
+                parsed_count=0,
                 extracted_count=0,
                 error_count=1,
             )
@@ -117,13 +128,14 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
         failed_pages = 0
 
         for page in discovered_pages:
+            requested_url = page.requested_url
             try:
                 fetched = adapter.fetch(page)
                 raw_page = await _persist_raw_page_and_event(
                     session=session,
-                    source_site=source_site,
-                    crawl_run=run,
-                    crawl_job=crawl_job,
+                    source_site_id=source_site_id,
+                    crawl_run_id=run_id,
+                    parser_profile=parser_profile,
                     page=page,
                     fetched=fetched,
                 )
@@ -131,12 +143,12 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
 
                 request = ExtractionAgentRequest(
                     raw_page_id=raw_page.id,
-                    source_site_id=source_site.id,
-                    crawl_run_id=run.id,
+                    source_site_id=source_site_id,
+                    crawl_run_id=run_id,
                     requested_url=fetched.requested_url,
                     final_url=fetched.final_url,
-                    site_type=source_site.site_type,
-                    parser_profile=crawl_job.parser_profile,
+                    site_type=source_site_type,
+                    parser_profile=parser_profile,
                     content_type=fetched.content_type,
                     raw_html=fetched.raw_html,
                     raw_markdown=fetched.raw_markdown,
@@ -150,7 +162,7 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
                     agent_role="extraction",
                     caller="ingestion_worker",
                     status="succeeded",
-                    related_crawl_run_id=run.id,
+                    related_crawl_run_id=run_id,
                     related_raw_page_id=raw_page.id,
                     request_schema_version=request.response_schema_version,
                     response_schema_version="extraction.v1",
@@ -171,7 +183,7 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
                 )
                 await _record_extraction_called_event(
                     session=session,
-                    run=run,
+                    run_id=run_id,
                     raw_page=raw_page,
                     requested_url=fetched.requested_url,
                     response=response,
@@ -194,8 +206,23 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
                 failed_pages += 1
                 await session.rollback()
                 await _record_page_failure_event(
-                    session=session, run_id=run.id, requested_url=page.requested_url, exc=exc
+                    session=session, run_id=run_id, requested_url=requested_url, exc=exc
                 )
+                reloaded_source_site = await session.get(SourceSite, source_site_id)
+                if reloaded_source_site is None:
+                    return await _mark_run_failed(
+                        session,
+                        run_id=run_id,
+                        seed_url=run_seed_url,
+                        error_message="Crawl run source site disappeared during worker processing.",
+                        discovered_count=discovered_count,
+                        fetched_count=fetched_count,
+                        parsed_count=successful_pages,
+                        extracted_count=extracted_count,
+                        error_count=failed_pages + 1,
+                    )
+                source_site = reloaded_source_site
+                source_site_type = source_site.site_type
 
         if successful_pages == len(discovered_pages) and discovered_pages:
             final_status: RunOutcome = "success"
@@ -220,7 +247,17 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
         run.extracted_count = extracted_count
         run.error_count = failed_pages
         run.error_message = error_message
-        crawl_job.last_run_at = run.finished_at
+        crawl_job_for_update = await session.get(CrawlJob, crawl_job_id)
+        if crawl_job_for_update is not None:
+            crawl_job_for_update.last_run_at = run.finished_at
+        if final_status == "failed":
+            _add_run_failed_event(
+                session,
+                run_id=run_id,
+                seed_url=run_seed_url,
+                error_message=error_message or "Run failed.",
+                error_count=failed_pages,
+            )
         await session.commit()
         return final_status
 
@@ -228,15 +265,15 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
 async def _persist_raw_page_and_event(
     *,
     session: AsyncSession,
-    source_site: SourceSite,
-    crawl_run: CrawlRun,
-    crawl_job: CrawlJob,
+    source_site_id: uuid.UUID,
+    crawl_run_id: uuid.UUID,
+    parser_profile: str,
     page: DiscoveredPage,
     fetched: FetchedPage,
 ) -> RawPage:
     raw_page = RawPage(
-        source_site_id=source_site.id,
-        crawl_run_id=crawl_run.id,
+        source_site_id=source_site_id,
+        crawl_run_id=crawl_run_id,
         requested_url=fetched.requested_url,
         final_url=fetched.final_url,
         http_status=fetched.http_status,
@@ -247,7 +284,7 @@ async def _persist_raw_page_and_event(
         raw_json=fetched.raw_json or {},
         fetched_at=utcnow(),
         fetch_error=None,
-        parser_profile=crawl_job.parser_profile,
+        parser_profile=parser_profile,
         extraction_method=None,
         extraction_confidence=None,
         parse_status="pending",
@@ -259,7 +296,7 @@ async def _persist_raw_page_and_event(
 
     session.add(
         CrawlRunEvent(
-            crawl_run_id=crawl_run.id,
+            crawl_run_id=crawl_run_id,
             stage="fetch",
             level="info",
             event_type="raw_page_persisted",
@@ -290,14 +327,14 @@ def _call_extraction_agent(request: ExtractionAgentRequest) -> tuple[ExtractionA
 async def _record_extraction_called_event(
     *,
     session: AsyncSession,
-    run: CrawlRun,
+    run_id: uuid.UUID,
     raw_page: RawPage,
     requested_url: str,
     response: ExtractionAgentResponse,
 ) -> None:
     session.add(
         CrawlRunEvent(
-            crawl_run_id=run.id,
+            crawl_run_id=run_id,
             stage="extract",
             level="info",
             event_type="extraction_agent_called",
@@ -334,38 +371,60 @@ async def _record_page_failure_event(
 
 async def _mark_run_failed(
     session: AsyncSession,
-    run: CrawlRun,
     *,
+    run_id: uuid.UUID,
+    seed_url: str | None,
     error_message: str,
     discovered_count: int,
     fetched_count: int,
+    parsed_count: int,
     extracted_count: int,
     error_count: int,
 ) -> Literal["failed"]:
+    run = await session.get(CrawlRun, run_id)
+    if run is None:
+        return "failed"
     run.status = "failed"
     run.finished_at = utcnow()
     run.discovered_count = discovered_count
     run.fetched_count = fetched_count
-    run.parsed_count = 0
+    run.parsed_count = parsed_count
     run.extracted_count = extracted_count
     run.error_count = error_count
     run.error_message = error_message
+    _add_run_failed_event(
+        session,
+        run_id=run_id,
+        seed_url=seed_url,
+        error_message=error_message,
+        error_count=error_count,
+    )
+    await session.commit()
+    return "failed"
+
+
+def _add_run_failed_event(
+    session: AsyncSession,
+    *,
+    run_id: uuid.UUID,
+    seed_url: str | None,
+    error_message: str,
+    error_count: int,
+) -> None:
     session.add(
         CrawlRunEvent(
-            crawl_run_id=run.id,
+            crawl_run_id=run_id,
             stage="worker",
             level="error",
             event_type="run_failed",
             message=error_message,
-            related_url=run.seed_url,
+            related_url=seed_url,
             related_raw_page_id=None,
             related_content_item_id=None,
             counters_json={"error_count": error_count},
             agent_trace_json={},
         )
     )
-    await session.commit()
-    return "failed"
 
 
 def _body_hash(fetched: FetchedPage) -> str:

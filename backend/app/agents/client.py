@@ -148,9 +148,12 @@ class AgentClient:
         if error_message is not None:
             trace_summary_json["error"] = error_message
 
+        stripped_query = raw_query.strip()
+        optimized_query_text = stripped_query or "[empty query]"
+
         return QueryOptimizationResponse(
-            optimized_query_text=raw_query,
-            keyword_terms=[term for term in raw_query.split() if term],
+            optimized_query_text=optimized_query_text,
+            keyword_terms=[term for term in stripped_query.split() if term],
             entity_hints=[],
             time_hints_json={},
             query_intent="fallback_raw_query",

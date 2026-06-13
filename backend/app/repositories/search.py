@@ -5,8 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.search import AgentCall
 
-_DEFAULT_AGENT_CALL_SCHEMA_VERSION = "agent_call.v1"
-
 
 async def create_agent_call(
     session: AsyncSession,
@@ -22,6 +20,8 @@ async def create_agent_call(
     related_search_query_id: UUID | None = None,
     latency_ms: int | None = None,
     error_message: str | None = None,
+    request_schema_version: str = "agent_call.v1",
+    response_schema_version: str = "agent_call.v1",
 ) -> AgentCall:
     agent_call = AgentCall(
         agent_role=agent_role,
@@ -30,8 +30,8 @@ async def create_agent_call(
         related_raw_page_id=related_raw_page_id,
         related_content_item_id=related_content_item_id,
         related_search_query_id=related_search_query_id,
-        request_schema_version=_DEFAULT_AGENT_CALL_SCHEMA_VERSION,
-        response_schema_version=_DEFAULT_AGENT_CALL_SCHEMA_VERSION,
+        request_schema_version=request_schema_version,
+        response_schema_version=response_schema_version,
         status=status,
         input_summary_json=input_summary_json,
         output_summary_json=output_summary_json,

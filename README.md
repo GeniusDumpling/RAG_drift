@@ -6,12 +6,18 @@ A modular monolith prototype for observable open-source intelligence RAG.
 
 ```bash
 cp .env.example .env
-python3 -m pip install -e ".[dev]"
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
 docker compose up -d postgres qdrant
 alembic upgrade head
-python3 scripts/seed_demo.py
+python scripts/seed_demo.py
 uvicorn app.main:app --app-dir backend --reload
 ```
+
+If `python3 -m venv` reports that `ensurepip` is unavailable on Debian/Ubuntu,
+install `python3.12-venv` or `python3-venv` and retry. Alternatively, `make install`
+creates `.venv` and falls back to `uv venv --seed` when `uv` is available.
 
 Open the frontend after Task 11:
 

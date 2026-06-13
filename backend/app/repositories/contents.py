@@ -51,7 +51,7 @@ class ContentsRepository:
         crawl_run_id: uuid.UUID,
         requested_url: str,
         final_url: str | None,
-        raw_html: str | None,
+        raw_html: str,
         raw_text: str | None,
         item_type: str,
         title: str | None,
@@ -60,10 +60,7 @@ class ContentsRepository:
         tags: list[str],
         extraction_confidence: float | None,
     ) -> CreatedContent:
-        raw_body = (
-            raw_html if raw_html is not None else raw_text if raw_text is not None else cleaned_text
-        )
-        body_hash = stable_hash(raw_body)
+        body_hash = stable_hash(raw_html)
         content_hash = stable_hash(cleaned_text)
         canonical_url = final_url or requested_url
         dedup_key = stable_hash(f"{source_site_id}:{canonical_url}:{item_type}:{content_hash}")
@@ -74,7 +71,7 @@ class ContentsRepository:
             requested_url=requested_url,
             final_url=final_url,
             http_status=200,
-            content_type="text/html" if raw_html is not None else "text/plain",
+            content_type="text/html",
             response_headers_json={},
             raw_html=raw_html,
             raw_text=raw_text,

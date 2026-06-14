@@ -42,6 +42,8 @@ class _SearchHit:
     content_item_id: UUID | None
     score: float
     matched_by: Literal["vector", "keyword", "hybrid"]
+    vector_score: float | None = None
+    keyword_score: float | None = None
 
 
 @dataclass
@@ -279,6 +281,9 @@ async def retrieve_evidence(
             "keyword": {"hit_count": len(keyword_hits)},
             "merged_hit_count": len(merged_hits),
             "hydrated_evidence_count": len(evidence),
+            "component_scores": [
+                _hit_trace_summary(hit) for hit in merged_hits[: max(top_k * 2, top_k)]
+            ],
         },
     )
 
@@ -308,29 +313,40 @@ async def _keyword_search(
             ]
         )
 
+    candidate_limit = _keyword_candidate_limit(limit)
     stmt = (
         select(ContentChunk, ContentItem)
         .join(ContentItem, ContentChunk.content_item_id == ContentItem.id)
         .where(*_content_filter_clauses(filters), or_(*term_clauses))
-        .order_by(ContentItem.created_at.desc(), ContentChunk.chunk_index.asc())
-        .limit(limit)
+        .order_by(
+            ContentItem.created_at.desc(),
+            ContentChunk.chunk_index.asc(),
+            ContentChunk.id.asc(),
+        )
+        .limit(candidate_limit)
     )
     rows = (await session.execute(stmt)).all()
 
-    hits: list[_SearchHit] = []
+    scored_hits: list[tuple[_SearchHit, float, int, str]] = []
     for content_chunk, content_item in rows:
-        score = _keyword_score(content_item, content_chunk, terms)
+        score = _normalize_keyword_score(_keyword_score(content_item, content_chunk, terms))
         if score >= 0.20:
-            hits.append(
-                _SearchHit(
-                    chunk_id=content_chunk.id,
-                    content_item_id=content_item.id,
-                    score=score,
-                    matched_by="keyword",
+            scored_hits.append(
+                (
+                    _SearchHit(
+                        chunk_id=content_chunk.id,
+                        content_item_id=content_item.id,
+                        score=score,
+                        matched_by="keyword",
+                        keyword_score=score,
+                    ),
+                    _datetime_sort_value(content_item.created_at),
+                    content_chunk.chunk_index,
+                    str(content_chunk.id),
                 )
             )
-    hits.sort(key=lambda hit: hit.score, reverse=True)
-    return hits
+    scored_hits.sort(key=lambda item: (-item[0].score, -item[1], item[2], item[3]))
+    return [hit for hit, _, _, _ in scored_hits[:limit]]
 
 
 def _merge_hits(
@@ -341,13 +357,15 @@ def _merge_hits(
     merged: dict[UUID, _SearchHit] = {}
 
     for vector_hit in vector_hits:
+        score = _normalize_vector_score(vector_hit.score)
         _merge_hit(
             merged,
             _SearchHit(
                 chunk_id=vector_hit.chunk_id,
                 content_item_id=vector_hit.content_item_id,
-                score=vector_hit.score,
+                score=score,
                 matched_by="vector",
+                vector_score=score,
             ),
         )
     for keyword_hit in keyword_hits:
@@ -357,6 +375,7 @@ def _merge_hits(
 
 
 def _merge_hit(merged: dict[UUID, _SearchHit], incoming: _SearchHit) -> None:
+    incoming = _normalize_search_hit(incoming)
     key = incoming.chunk_id
     existing = merged.get(key)
     if existing is None:
@@ -364,21 +383,121 @@ def _merge_hit(merged: dict[UUID, _SearchHit], incoming: _SearchHit) -> None:
         return
 
     content_item_id = existing.content_item_id or incoming.content_item_id
+    vector_score = _max_optional(existing.vector_score, incoming.vector_score)
+    keyword_score = _max_optional(existing.keyword_score, incoming.keyword_score)
     if existing.matched_by == incoming.matched_by:
         merged[key] = _SearchHit(
             chunk_id=incoming.chunk_id,
             content_item_id=content_item_id,
             score=max(existing.score, incoming.score),
             matched_by=existing.matched_by,
+            vector_score=vector_score,
+            keyword_score=keyword_score,
         )
         return
 
     merged[key] = _SearchHit(
         chunk_id=incoming.chunk_id,
         content_item_id=content_item_id,
-        score=max(existing.score, incoming.score) + 0.1,
+        score=_hybrid_score(vector_score=vector_score, keyword_score=keyword_score),
         matched_by="hybrid",
+        vector_score=vector_score,
+        keyword_score=keyword_score,
     )
+
+
+def _normalize_search_hit(hit: _SearchHit) -> _SearchHit:
+    if hit.matched_by == "vector":
+        vector_score = _normalize_vector_score(
+            hit.vector_score if hit.vector_score is not None else hit.score
+        )
+        return _SearchHit(
+            chunk_id=hit.chunk_id,
+            content_item_id=hit.content_item_id,
+            score=vector_score,
+            matched_by="vector",
+            vector_score=vector_score,
+            keyword_score=hit.keyword_score,
+        )
+    if hit.matched_by == "keyword":
+        keyword_score = _normalize_keyword_score(
+            hit.keyword_score if hit.keyword_score is not None else hit.score
+        )
+        return _SearchHit(
+            chunk_id=hit.chunk_id,
+            content_item_id=hit.content_item_id,
+            score=keyword_score,
+            matched_by="keyword",
+            vector_score=hit.vector_score,
+            keyword_score=keyword_score,
+        )
+
+    hybrid_vector_score: float | None = (
+        _normalize_vector_score(hit.vector_score) if hit.vector_score is not None else None
+    )
+    hybrid_keyword_score: float | None = (
+        _normalize_keyword_score(hit.keyword_score) if hit.keyword_score is not None else None
+    )
+    score = (
+        _hybrid_score(vector_score=hybrid_vector_score, keyword_score=hybrid_keyword_score)
+        if hybrid_vector_score is not None or hybrid_keyword_score is not None
+        else _clamp_unit_score(hit.score)
+    )
+    return _SearchHit(
+        chunk_id=hit.chunk_id,
+        content_item_id=hit.content_item_id,
+        score=score,
+        matched_by="hybrid",
+        vector_score=hybrid_vector_score,
+        keyword_score=hybrid_keyword_score,
+    )
+
+
+def _normalize_vector_score(score: float) -> float:
+    return _clamp_unit_score(score)
+
+
+def _normalize_keyword_score(score: float) -> float:
+    return _clamp_unit_score(score)
+
+
+def _clamp_unit_score(score: float) -> float:
+    if math.isnan(score):
+        return 0.0
+    return min(max(score, 0.0), 1.0)
+
+
+def _hybrid_score(*, vector_score: float | None, keyword_score: float | None) -> float:
+    component_scores = [score for score in (vector_score, keyword_score) if score is not None]
+    if not component_scores:
+        return 0.0
+    return min(max(component_scores) + 0.1, 1.0)
+
+
+def _max_optional(left: float | None, right: float | None) -> float | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return max(left, right)
+
+
+def _keyword_candidate_limit(limit: int) -> int:
+    return min(max(limit * 20, 500), 1000)
+
+
+def _datetime_sort_value(value: datetime) -> float:
+    return _as_utc(value).timestamp()
+
+
+def _hit_trace_summary(hit: _SearchHit) -> dict[str, Any]:
+    return {
+        "chunk_id": str(hit.chunk_id),
+        "matched_by": hit.matched_by,
+        "score": hit.score,
+        "vector_score": hit.vector_score,
+        "keyword_score": hit.keyword_score,
+    }
 
 
 async def _hydrate_and_rank_evidence(
@@ -428,6 +547,8 @@ async def _hydrate_and_rank_evidence(
             EvidenceObject(
                 chunk_id=content_chunk.id,
                 content_item_id=content_item.id,
+                raw_page_id=content_item.raw_page_id,
+                source_site_id=content_item.source_site_id,
                 title=content_item.title,
                 snippet=_snippet(content_chunk.display_text, terms=snippet_terms),
                 canonical_url=content_item.canonical_url,
@@ -436,6 +557,8 @@ async def _hydrate_and_rank_evidence(
                 published_at=content_item.published_at,
                 item_type=content_item.item_type,
                 score=hit.score,
+                vector_score=hit.vector_score,
+                keyword_score=hit.keyword_score,
                 matched_by=hit.matched_by,
                 thread_summary=thread_summary,
             )

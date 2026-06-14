@@ -50,6 +50,8 @@ class SearchQueryRead(OrmBaseModel):
 class EvidenceObject(BaseModel):
     chunk_id: uuid.UUID
     content_item_id: uuid.UUID
+    raw_page_id: uuid.UUID
+    source_site_id: uuid.UUID
     title: str | None
     snippet: str
     canonical_url: str
@@ -58,6 +60,8 @@ class EvidenceObject(BaseModel):
     published_at: datetime | None
     item_type: str
     score: float
+    vector_score: float | None = None
+    keyword_score: float | None = None
     matched_by: Literal["vector", "keyword", "hybrid"]
     thread_summary: str | None
 

@@ -12,6 +12,10 @@ from app.services.embeddings import DeterministicEmbeddingService, EmbeddingServ
 from app.services.retrieval import retrieve_evidence
 
 
+class UnsupportedSearchModeError(ValueError):
+    """Raised when a search-only route is asked to run an unsupported mode."""
+
+
 class SearchService:
     def __init__(
         self,
@@ -30,6 +34,11 @@ class SearchService:
         self.embedding = embedding or DeterministicEmbeddingService()
 
     async def search(self, request: SearchRequest) -> SearchResponse:
+        if request.mode != "search":
+            raise UnsupportedSearchModeError(
+                "Use /answer for answer mode when it is available"
+            )
+
         repo = SearchRepository(self.session)
         filter_json = _filter_json(request)
         search_query = await repo.create_search_query(
@@ -46,8 +55,14 @@ class SearchService:
         )
         trace = dict(optimized.trace_summary_json)
         used_agent = not bool(trace.get("fallback"))
+        await repo.update_search_query_optimization(
+            search_query_id=search_query.id,
+            optimized=optimized,
+            used_agent=used_agent,
+            trace=trace,
+        )
 
-        evidence = await retrieve_evidence(
+        retrieval_result = await retrieve_evidence(
             self.session,
             raw_query=request.query,
             optimized_query_text=optimized.optimized_query_text,
@@ -58,16 +73,14 @@ class SearchService:
             qdrant_collection=self.settings.qdrant_collection,
             embedding=self.embedding,
         )
-        updated_query = await repo.update_search_query_optimization(
+        updated_query = await repo.update_search_query_retrieval(
             search_query_id=search_query.id,
-            optimized=optimized,
-            result_count=len(evidence),
-            used_agent=used_agent,
-            trace=trace,
+            result_count=len(retrieval_result.evidence),
+            retrieval_trace=retrieval_result.trace,
         )
         return SearchResponse(
             query=SearchQueryRead.model_validate(updated_query),
-            evidence=evidence,
+            evidence=retrieval_result.evidence,
         )
 
     def _optimize_query(

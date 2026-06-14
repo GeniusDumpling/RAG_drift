@@ -44,7 +44,6 @@ class SearchRepository:
         *,
         search_query_id: UUID,
         optimized: QueryOptimizationResponse,
-        result_count: int,
         used_agent: bool,
         trace: dict[str, Any],
     ) -> SearchQuery:
@@ -57,10 +56,34 @@ class SearchRepository:
         search_query.entity_hints_json = list(optimized.entity_hints)
         search_query.time_hints_json = dict(optimized.time_hints_json)
         search_query.used_agent = used_agent
-        search_query.query_trace_json = trace
+        search_query.query_trace_json = dict(trace)
         search_query.result_summary_json = {
             "query_intent": optimized.query_intent,
             "confidence": optimized.confidence,
+        }
+        await self.session.commit()
+        await self.session.refresh(search_query)
+        return search_query
+
+    async def update_search_query_retrieval(
+        self,
+        *,
+        search_query_id: UUID,
+        result_count: int,
+        retrieval_trace: dict[str, Any],
+    ) -> SearchQuery:
+        search_query = await self.get_search_query(search_query_id)
+        if search_query is None:
+            raise ValueError(f"Search query not found: {search_query_id}")
+
+        search_query.query_trace_json = {
+            **dict(search_query.query_trace_json),
+            "retrieval": dict(retrieval_trace),
+        }
+        search_query.result_summary_json = {
+            **dict(search_query.result_summary_json),
+            "result_count": result_count,
+            "retrieval": dict(retrieval_trace),
         }
         search_query.result_count = result_count
         await self.session.commit()
@@ -95,16 +118,28 @@ async def update_search_query_optimization(
     *,
     search_query_id: UUID,
     optimized: QueryOptimizationResponse,
-    result_count: int,
     used_agent: bool,
     trace: dict[str, Any],
 ) -> SearchQuery:
     return await SearchRepository(session).update_search_query_optimization(
         search_query_id=search_query_id,
         optimized=optimized,
-        result_count=result_count,
         used_agent=used_agent,
         trace=trace,
+    )
+
+
+async def update_search_query_retrieval(
+    session: AsyncSession,
+    *,
+    search_query_id: UUID,
+    result_count: int,
+    retrieval_trace: dict[str, Any],
+) -> SearchQuery:
+    return await SearchRepository(session).update_search_query_retrieval(
+        search_query_id=search_query_id,
+        result_count=result_count,
+        retrieval_trace=retrieval_trace,
     )
 
 

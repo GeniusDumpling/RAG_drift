@@ -3,6 +3,7 @@ import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, Literal
 from typing import cast as typing_cast
 from uuid import UUID
@@ -27,6 +28,12 @@ class VectorSearchHit:
     chunk_id: UUID
     content_item_id: UUID | None
     score: float
+
+
+@dataclass(frozen=True)
+class RetrievalResult:
+    evidence: list[EvidenceObject]
+    trace: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -224,9 +231,16 @@ async def retrieve_evidence(
     qdrant_url: str,
     qdrant_collection: str,
     embedding: EmbeddingService,
-) -> list[EvidenceObject]:
+) -> RetrievalResult:
     vector_hits: list[VectorSearchHit] = []
+    vector_trace: dict[str, Any] = {
+        "attempted": False,
+        "failed": False,
+        "error": None,
+        "hit_count": 0,
+    }
     try:
+        vector_trace["attempted"] = True
         vector_hits = QdrantIndexer(
             url=qdrant_url,
             collection=qdrant_collection,
@@ -236,9 +250,13 @@ async def retrieve_evidence(
             filters=_vector_filter_payload(filters),
             top_k=max(top_k * 2, top_k),
         )
+        vector_trace["hit_count"] = len(vector_hits)
     except Exception as exc:  # pragma: no cover - exact Qdrant failures are environment-specific.
+        vector_trace["failed"] = True
+        vector_trace["error"] = str(exc)
         logger.info("Vector search unavailable; continuing with SQL keyword retrieval: %s", exc)
 
+    snippet_terms = _normalized_terms(keyword_terms=keyword_terms, raw_query=raw_query)
     keyword_hits = await _keyword_search(
         session,
         raw_query=raw_query,
@@ -247,11 +265,21 @@ async def retrieve_evidence(
         limit=max(top_k * 10, 50),
     )
     merged_hits = _merge_hits(vector_hits=vector_hits, keyword_hits=keyword_hits)
-    return await _hydrate_and_rank_evidence(
+    evidence = await _hydrate_and_rank_evidence(
         session,
         hits=merged_hits,
         filters=filters,
         top_k=top_k,
+        snippet_terms=snippet_terms,
+    )
+    return RetrievalResult(
+        evidence=evidence,
+        trace={
+            "vector": vector_trace,
+            "keyword": {"hit_count": len(keyword_hits)},
+            "merged_hit_count": len(merged_hits),
+            "hydrated_evidence_count": len(evidence),
+        },
     )
 
 
@@ -274,7 +302,8 @@ async def _keyword_search(
             [
                 ContentItem.title.ilike(pattern, escape="\\"),
                 ContentItem.summary_text.ilike(pattern, escape="\\"),
-                ContentItem.cleaned_text.ilike(pattern, escape="\\"),
+                ContentChunk.display_text.ilike(pattern, escape="\\"),
+                ContentChunk.embed_text.ilike(pattern, escape="\\"),
                 sql_cast(ContentItem.tags, String).ilike(pattern, escape="\\"),
             ]
         )
@@ -290,7 +319,7 @@ async def _keyword_search(
 
     hits: list[_SearchHit] = []
     for content_chunk, content_item in rows:
-        score = _keyword_score(content_item, terms)
+        score = _keyword_score(content_item, content_chunk, terms)
         if score >= 0.20:
             hits.append(
                 _SearchHit(
@@ -300,6 +329,7 @@ async def _keyword_search(
                     matched_by="keyword",
                 )
             )
+    hits.sort(key=lambda hit: hit.score, reverse=True)
     return hits
 
 
@@ -308,7 +338,7 @@ def _merge_hits(
     vector_hits: list[VectorSearchHit],
     keyword_hits: list[_SearchHit],
 ) -> list[_SearchHit]:
-    merged: dict[tuple[UUID | None, UUID], _SearchHit] = {}
+    merged: dict[UUID, _SearchHit] = {}
 
     for vector_hit in vector_hits:
         _merge_hit(
@@ -326,17 +356,18 @@ def _merge_hits(
     return list(merged.values())
 
 
-def _merge_hit(merged: dict[tuple[UUID | None, UUID], _SearchHit], incoming: _SearchHit) -> None:
-    key = (incoming.content_item_id, incoming.chunk_id)
+def _merge_hit(merged: dict[UUID, _SearchHit], incoming: _SearchHit) -> None:
+    key = incoming.chunk_id
     existing = merged.get(key)
     if existing is None:
         merged[key] = incoming
         return
 
+    content_item_id = existing.content_item_id or incoming.content_item_id
     if existing.matched_by == incoming.matched_by:
         merged[key] = _SearchHit(
             chunk_id=incoming.chunk_id,
-            content_item_id=incoming.content_item_id,
+            content_item_id=content_item_id,
             score=max(existing.score, incoming.score),
             matched_by=existing.matched_by,
         )
@@ -344,7 +375,7 @@ def _merge_hit(merged: dict[tuple[UUID | None, UUID], _SearchHit], incoming: _Se
 
     merged[key] = _SearchHit(
         chunk_id=incoming.chunk_id,
-        content_item_id=incoming.content_item_id,
+        content_item_id=content_item_id,
         score=max(existing.score, incoming.score) + 0.1,
         matched_by="hybrid",
     )
@@ -356,11 +387,13 @@ async def _hydrate_and_rank_evidence(
     hits: list[_SearchHit],
     filters: SearchFilters,
     top_k: int,
+    snippet_terms: Sequence[str],
 ) -> list[EvidenceObject]:
     if not hits:
         return []
 
     chunk_ids = [hit.chunk_id for hit in hits]
+    hit_rank_by_chunk_id = {hit.chunk_id: index for index, hit in enumerate(hits)}
     thread_root = aliased(ContentItem)
     stmt = (
         select(
@@ -396,7 +429,7 @@ async def _hydrate_and_rank_evidence(
                 chunk_id=content_chunk.id,
                 content_item_id=content_item.id,
                 title=content_item.title,
-                snippet=_snippet(content_chunk.display_text),
+                snippet=_snippet(content_chunk.display_text, terms=snippet_terms),
                 canonical_url=content_item.canonical_url,
                 source_site_name=source_site_name,
                 author_name=author_name,
@@ -408,13 +441,18 @@ async def _hydrate_and_rank_evidence(
             )
         )
 
-    evidence.sort(key=lambda item: (-item.score, str(item.chunk_id)))
+    evidence.sort(
+        key=lambda item: (-item.score, hit_rank_by_chunk_id.get(item.chunk_id, len(hits)))
+    )
     return evidence[:top_k]
 
 
-def _keyword_score(content_item: ContentItem, terms: Sequence[str]) -> float:
+def _keyword_score(
+    content_item: ContentItem, content_chunk: ContentChunk, terms: Sequence[str]
+) -> float:
     score = 0.0
     tags = [tag.casefold() for tag in content_item.tags]
+    chunk_text = f"{content_chunk.display_text}\n{content_chunk.embed_text}".casefold()
     for term in terms:
         normalized = term.casefold()
         if content_item.title is not None and normalized in content_item.title.casefold():
@@ -424,7 +462,7 @@ def _keyword_score(content_item: ContentItem, terms: Sequence[str]) -> float:
             and normalized in content_item.summary_text.casefold()
         ):
             score += 0.30
-        if normalized in content_item.cleaned_text.casefold():
+        if normalized in chunk_text:
             score += 0.20
         if any(normalized in tag for tag in tags):
             score += 0.10
@@ -461,6 +499,10 @@ def _vector_filter_payload(filters: SearchFilters) -> dict[str, Any]:
         payload["language"] = filters.language
     if filters.tags:
         payload["tags"] = list(filters.tags)
+    if filters.published_after is not None:
+        payload["published_after"] = filters.published_after
+    if filters.published_before is not None:
+        payload["published_before"] = filters.published_before
     return payload
 
 
@@ -485,6 +527,18 @@ def _qdrant_filter(filters: dict[str, Any]) -> qdrant_models.Filter | None:
                         match=qdrant_models.MatchValue(value=tag),
                     )
                 )
+    published_after = _coerce_datetime(filters.get("published_after"))
+    published_before = _coerce_datetime(filters.get("published_before"))
+    if published_after is not None or published_before is not None:
+        conditions.append(
+            qdrant_models.FieldCondition(
+                key="published_at",
+                range=qdrant_models.DatetimeRange(
+                    gte=published_after,
+                    lte=published_before,
+                ),
+            )
+        )
     if not conditions:
         return None
     return qdrant_models.Filter(must=conditions)
@@ -502,7 +556,35 @@ def _memory_payload_matches(payload: Mapping[str, Any], filters: Mapping[str, An
             return False
         if not all(tag in payload_tags for tag in expected_tags):
             return False
+
+    published_after = _coerce_datetime(filters.get("published_after"))
+    published_before = _coerce_datetime(filters.get("published_before"))
+    if published_after is not None or published_before is not None:
+        published_at = _coerce_datetime(payload.get("published_at"))
+        if published_at is None:
+            return False
+        if published_after is not None and published_at < published_after:
+            return False
+        if published_before is not None and published_at > published_before:
+            return False
     return True
+
+
+def _coerce_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return _as_utc(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            return _as_utc(datetime.fromisoformat(value.replace("Z", "+00:00")))
+        except ValueError:
+            return None
+    return None
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _normalized_terms(*, keyword_terms: Sequence[str], raw_query: str) -> list[str]:
@@ -526,10 +608,31 @@ def _ilike_pattern(term: str) -> str:
     return f"%{escaped}%"
 
 
-def _snippet(text: str, max_chars: int = 300) -> str:
+def _snippet(text: str, *, terms: Sequence[str] = (), max_chars: int = 300) -> str:
     collapsed = " ".join(text.split())
     if len(collapsed) <= max_chars:
         return collapsed
+
+    folded = collapsed.casefold()
+    match_index = min(
+        (
+            index
+            for term in terms
+            if term and (index := folded.find(term.casefold())) >= 0
+        ),
+        default=-1,
+    )
+    if match_index >= 0:
+        start = max(0, match_index - max_chars // 2)
+        end = min(len(collapsed), start + max_chars)
+        start = max(0, end - max_chars)
+        snippet = collapsed[start:end].strip()
+        if start > 0:
+            snippet = f"…{snippet.lstrip()}"
+        if end < len(collapsed):
+            snippet = f"{snippet.rstrip()}…"
+        return snippet
+
     return f"{collapsed[: max_chars - 1].rstrip()}…"
 
 

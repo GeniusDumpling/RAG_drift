@@ -41,6 +41,15 @@ class ChunkIndexingResult:
     failed_count: int
 
 
+VectorIndexMetadata = dict[str, str | int]
+
+
+@dataclass(frozen=True)
+class VectorIndexTarget:
+    backend_name: Literal["memory", "qdrant"]
+    metadata: VectorIndexMetadata
+
+
 def run_once(run_limit: int = 1) -> WorkerRunResult:
     if run_limit < 1:
         return WorkerRunResult(claimed=0, succeeded=0, partial=0, failed=0)
@@ -257,14 +266,14 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
                     raw_page=raw_page,
                     response=response,
                 )
+                raw_page.parse_status = "parsed"
+                raw_page.extraction_method = "extraction_agent"
+                raw_page.extraction_confidence = response.extraction_confidence
                 indexing_result = await _chunk_and_index_content_items(
                     session=session,
                     run_id=run_id,
                     content_item_ids=normalization_result.content_item_ids,
                 )
-                raw_page.parse_status = "parsed"
-                raw_page.extraction_method = "extraction_agent"
-                raw_page.extraction_confidence = response.extraction_confidence
                 await session.commit()
 
                 extracted_count += len(normalization_result.created_item_ids)
@@ -358,6 +367,7 @@ async def _chunk_and_index_content_items(
     content_item_ids: list[uuid.UUID],
 ) -> ChunkIndexingResult:
     unique_item_ids = list(dict.fromkeys(content_item_ids))
+    vector_target = _current_vector_index_target()
     chunks_to_index: list[tuple[ContentChunk, ContentItem]] = []
     newly_created_chunk_count = 0
 
@@ -368,7 +378,10 @@ async def _chunk_and_index_content_items(
 
         existing_chunks = await _load_chunks_for_item(session, content_item_id)
         if existing_chunks:
-            for existing_chunk in _pending_or_failed_chunks(existing_chunks):
+            for existing_chunk in _chunks_requiring_indexing(
+                existing_chunks,
+                vector_target=vector_target,
+            ):
                 chunks_to_index.append((existing_chunk, content_item))
             continue
 
@@ -377,6 +390,7 @@ async def _chunk_and_index_content_items(
             session=session,
             content_item=content_item,
             thread_title=thread_title,
+            vector_target=vector_target,
         )
         for content_chunk in chunks_for_indexing:
             chunks_to_index.append((content_chunk, content_item))
@@ -384,6 +398,8 @@ async def _chunk_and_index_content_items(
 
     if not chunks_to_index:
         return ChunkIndexingResult(chunked_count=0, embedded_count=0, failed_count=0)
+
+    await session.commit()
 
     backend_name = "qdrant"
     try:
@@ -440,12 +456,12 @@ async def _chunk_and_index_content_items(
             continue
 
         embedded_count += 1
-        content_chunk.embed_status = "success"
-        content_chunk.embed_error = None
-        content_chunk.vector_backend = indexer.backend_name
-        content_chunk.vector_point_id = point_id
-        content_chunk.qdrant_point_id = point_id
-        content_chunk.embedded_at = utcnow()
+        _mark_chunk_success(
+            content_chunk=content_chunk,
+            backend_name=indexer.backend_name,
+            point_id=point_id,
+            index_metadata=vector_target.metadata,
+        )
 
     await session.flush()
     return ChunkIndexingResult(
@@ -466,8 +482,34 @@ async def _load_chunks_for_item(
     return list(chunks.all())
 
 
-def _pending_or_failed_chunks(chunks: list[ContentChunk]) -> list[ContentChunk]:
-    return [chunk for chunk in chunks if chunk.embed_status in {"pending", "failed"}]
+def _chunks_requiring_indexing(
+    chunks: list[ContentChunk],
+    *,
+    vector_target: VectorIndexTarget,
+) -> list[ContentChunk]:
+    return [
+        chunk
+        for chunk in chunks
+        if _chunk_requires_indexing(chunk, vector_target=vector_target)
+    ]
+
+
+def _chunk_requires_indexing(
+    chunk: ContentChunk,
+    *,
+    vector_target: VectorIndexTarget,
+) -> bool:
+    if chunk.embed_status in {"pending", "failed"}:
+        return True
+    if chunk.embed_status != "success":
+        return True
+    if chunk.vector_backend != vector_target.backend_name:
+        return True
+
+    metadata = chunk.chunk_metadata_json
+    return any(
+        metadata.get(key) != value for key, value in vector_target.metadata.items()
+    )
 
 
 async def _create_chunks_or_reload_existing(
@@ -475,6 +517,7 @@ async def _create_chunks_or_reload_existing(
     session: AsyncSession,
     content_item: ContentItem,
     thread_title: str | None,
+    vector_target: VectorIndexTarget,
 ) -> tuple[list[ContentChunk], int]:
     built_chunks = build_chunks(
         item_type=content_item.item_type,
@@ -513,7 +556,10 @@ async def _create_chunks_or_reload_existing(
         existing_chunks = await _load_chunks_for_item(session, content_item.id)
         if not existing_chunks:
             raise
-        return _pending_or_failed_chunks(existing_chunks), 0
+        return _chunks_requiring_indexing(
+            existing_chunks,
+            vector_target=vector_target,
+        ), 0
 
     return new_chunks, len(new_chunks)
 
@@ -543,6 +589,25 @@ def _build_qdrant_indexer() -> QdrantIndexer:
         collection=settings.qdrant_collection,
         embedding=DeterministicEmbeddingService(),
     )
+
+
+def _current_vector_index_target() -> VectorIndexTarget:
+    settings = get_settings()
+    embedding = DeterministicEmbeddingService()
+    return VectorIndexTarget(
+        backend_name=_vector_backend_name(settings.qdrant_url),
+        metadata={
+            "vector_collection": settings.qdrant_collection,
+            "embedding_model": embedding.model_name,
+            "embedding_dimension": embedding.dimension,
+        },
+    )
+
+
+def _vector_backend_name(url: str) -> Literal["memory", "qdrant"]:
+    if url == ":memory:" or url.startswith("memory://"):
+        return "memory"
+    return "qdrant"
 
 
 def _build_chunk_payload(
@@ -578,6 +643,25 @@ def _metadata_string(metadata_json: dict[str, Any], key: str) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
+
+
+def _mark_chunk_success(
+    *,
+    content_chunk: ContentChunk,
+    backend_name: str,
+    point_id: str,
+    index_metadata: VectorIndexMetadata,
+) -> None:
+    content_chunk.embed_status = "success"
+    content_chunk.embed_error = None
+    content_chunk.vector_backend = backend_name
+    content_chunk.vector_point_id = point_id
+    content_chunk.qdrant_point_id = point_id if backend_name == "qdrant" else None
+    content_chunk.embedded_at = utcnow()
+    content_chunk.chunk_metadata_json = {
+        **content_chunk.chunk_metadata_json,
+        **index_metadata,
+    }
 
 
 def _mark_chunk_failed(

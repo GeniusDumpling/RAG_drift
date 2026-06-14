@@ -2,12 +2,14 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.common import OrmBaseModel
 
 
 class SearchFilters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     source_site_id: uuid.UUID | None = None
     item_type: str | None = None
     language: str | None = None
@@ -17,8 +19,10 @@ class SearchFilters(BaseModel):
 
 
 class SearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     query: str
-    mode: Literal["search", "answer"] = "search"
+    mode: Literal["search"] = "search"
     filters: SearchFilters = Field(default_factory=SearchFilters)
     top_k: int = Field(default=10, ge=1, le=50)
 

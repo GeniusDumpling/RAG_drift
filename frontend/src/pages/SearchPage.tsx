@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { answer, search } from '../api/client';
 import type { EvidenceObject, SearchQueryRead, SearchRequest } from '../api/types';
 import { EvidenceCard } from '../components/EvidenceCard';
+import { formatErrorMessage } from '../utils/errors';
 
 const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
 
@@ -14,7 +15,7 @@ export function SearchPage({ initialQuery = '' }: SearchPageProps) {
   const [query, setQuery] = useState(initialQuery);
   const [sourceSiteId, setSourceSiteId] = useState('');
   const [itemType, setItemType] = useState('');
-  const [topK, setTopK] = useState(10);
+  const [topKInput, setTopKInput] = useState('10');
   const [evidence, setEvidence] = useState<EvidenceObject[]>([]);
   const [queryRecord, setQueryRecord] = useState<SearchQueryRead>();
   const [answerText, setAnswerText] = useState('');
@@ -31,13 +32,18 @@ export function SearchPage({ initialQuery = '' }: SearchPageProps) {
       setError('Query is required.');
       return null;
     }
+    const parsedTopK = Number(topKInput);
+    if (!Number.isInteger(parsedTopK) || parsedTopK < 1 || parsedTopK > 50) {
+      setError('Top K must be between 1 and 50.');
+      return null;
+    }
     return {
       query: trimmed,
       filters: {
         source_site_id: sourceSiteId.trim() || undefined,
         item_type: itemType || undefined,
       },
-      top_k: topK,
+      top_k: parsedTopK,
     };
   }
 
@@ -56,7 +62,7 @@ export function SearchPage({ initialQuery = '' }: SearchPageProps) {
     } catch (caught) {
       setEvidence([]);
       setQueryRecord(undefined);
-      setError(caught instanceof Error ? caught.message : 'Search failed.');
+      setError(formatErrorMessage('Search failed', caught));
     } finally {
       setLoading(false);
     }
@@ -78,10 +84,23 @@ export function SearchPage({ initialQuery = '' }: SearchPageProps) {
       setEvidence([]);
       setQueryRecord(undefined);
       setAnswerText('');
-      setError(caught instanceof Error ? caught.message : 'Answer failed.');
+      setError(formatErrorMessage('Answer failed', caught));
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleTopKChange(value: string) {
+    if (value === '') {
+      setTopKInput('');
+      return;
+    }
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      return;
+    }
+    const clamped = Math.min(50, Math.max(1, Math.trunc(parsed)));
+    setTopKInput(String(clamped));
   }
 
   return (
@@ -126,8 +145,8 @@ export function SearchPage({ initialQuery = '' }: SearchPageProps) {
             type="number"
             min="1"
             max="50"
-            value={topK}
-            onChange={(event) => setTopK(Number(event.target.value))}
+            value={topKInput}
+            onChange={(event) => handleTopKChange(event.target.value)}
           />
         </div>
         <div className="button-row">
@@ -138,7 +157,11 @@ export function SearchPage({ initialQuery = '' }: SearchPageProps) {
             Answer
           </button>
         </div>
-        {error ? <p className="error-text">{error}</p> : null}
+        {error ? (
+          <p className="error-text" role="alert">
+            {error}
+          </p>
+        ) : null}
       </section>
 
       {queryRecord ? (
@@ -177,7 +200,7 @@ export function SearchPage({ initialQuery = '' }: SearchPageProps) {
         <h2>Evidence</h2>
         {evidence.length ? (
           evidence.map((item) => <EvidenceCard evidence={item} key={item.chunk_id} />)
-        ) : (
+        ) : error ? null : (
           <p className="card empty-state">{EMPTY_STATE_COPY}</p>
         )}
       </section>

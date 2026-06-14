@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { listContents, listJobs, listRuns, listSources } from '../api/client';
 import type { ContentListItem, CrawlJob, CrawlRun, Page, SourceSite } from '../api/types';
+import { formatErrorMessage } from '../utils/errors';
 
 const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
 
@@ -19,22 +20,31 @@ type DashboardPageProps = {
 export function DashboardPage({ onSearch }: DashboardPageProps) {
   const [data, setData] = useState<DashboardData>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [query, setQuery] = useState('');
 
   useEffect(() => {
     let ignore = false;
     setLoading(true);
-    Promise.all([
-      listSources().catch(() => undefined),
-      listJobs().catch(() => undefined),
-      listRuns().catch(() => undefined),
-      listContents({ limit: 10 }).catch(() => undefined),
-    ]).then(([sources, jobs, runs, contents]) => {
-      if (!ignore) {
-        setData({ sources, jobs, runs, contents });
+    setError('');
+    Promise.allSettled([listSources(), listJobs(), listRuns(), listContents({ limit: 10 })]).then(
+      ([sourcesResult, jobsResult, runsResult, contentsResult]) => {
+        if (ignore) {
+          return;
+        }
+        const firstFailure = [sourcesResult, jobsResult, runsResult, contentsResult].find(
+          (result): result is PromiseRejectedResult => result.status === 'rejected',
+        );
+        setData({
+          sources: sourcesResult.status === 'fulfilled' ? sourcesResult.value : undefined,
+          jobs: jobsResult.status === 'fulfilled' ? jobsResult.value : undefined,
+          runs: runsResult.status === 'fulfilled' ? runsResult.value : undefined,
+          contents: contentsResult.status === 'fulfilled' ? contentsResult.value : undefined,
+        });
+        setError(firstFailure ? formatErrorMessage('Unable to load dashboard data', firstFailure.reason) : '');
         setLoading(false);
-      }
-    });
+      },
+    );
     return () => {
       ignore = true;
     };
@@ -102,7 +112,13 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
         </div>
       </form>
 
-      {!loading && !hasData ? <p className="card empty-state">{EMPTY_STATE_COPY}</p> : null}
+      {error ? (
+        <p className="card error-text" role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      {!loading && !error && !hasData ? <p className="card empty-state">{EMPTY_STATE_COPY}</p> : null}
 
       <div className="grid two-column">
         <section className="card">
@@ -118,7 +134,7 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
               ))}
             </ul>
           ) : (
-            <p className="muted">{EMPTY_STATE_COPY}</p>
+            <p className="muted">{error ? 'Recent runs unavailable while the API request is failing.' : EMPTY_STATE_COPY}</p>
           )}
         </section>
 
@@ -135,7 +151,9 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
               ))}
             </ul>
           ) : (
-            <p className="muted">{EMPTY_STATE_COPY}</p>
+            <p className="muted">
+              {error ? 'Recent content unavailable while the API request is failing.' : EMPTY_STATE_COPY}
+            </p>
           )}
         </section>
       </div>

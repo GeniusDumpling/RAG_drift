@@ -2,8 +2,11 @@ import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 
 import { getRun, getRunEvents, listRuns } from '../api/client';
 import type { CrawlRun, CrawlRunEvent, Page } from '../api/types';
+import { formatErrorMessage } from '../utils/errors';
 
 const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
+const RUN_UNAVAILABLE_COPY = 'Run data unavailable while the API request is failing.';
+const EVENTS_UNAVAILABLE_COPY = 'Run events unavailable while the API request is failing.';
 
 type CounterField =
   | 'discovered_count'
@@ -31,9 +34,13 @@ export function RunDetailPage() {
   const [selectedRunId, setSelectedRunId] = useState('');
   const [run, setRun] = useState<CrawlRun>();
   const [events, setEvents] = useState<Page<CrawlRunEvent>>();
+  const [runListError, setRunListError] = useState('');
+  const [runDetailError, setRunDetailError] = useState('');
+  const [eventError, setEventError] = useState('');
 
   useEffect(() => {
     let ignore = false;
+    setRunListError('');
     listRuns(25)
       .then((page) => {
         if (!ignore) {
@@ -41,9 +48,10 @@ export function RunDetailPage() {
           setSelectedRunId((current) => current || page.items[0]?.id || '');
         }
       })
-      .catch(() => {
+      .catch((caught) => {
         if (!ignore) {
           setRuns(undefined);
+          setRunListError(formatErrorMessage('Unable to load runs', caught));
         }
       });
     return () => {
@@ -52,6 +60,8 @@ export function RunDetailPage() {
   }, []);
 
   useEffect(() => {
+    setRunDetailError('');
+    setEventError('');
     if (!selectedRunId) {
       setRun(undefined);
       setEvents(undefined);
@@ -59,19 +69,24 @@ export function RunDetailPage() {
     }
 
     let ignore = false;
-    Promise.all([getRun(selectedRunId), getRunEvents(selectedRunId).catch(() => undefined)])
-      .then(([runDetail, runEvents]) => {
-        if (!ignore) {
-          setRun(runDetail);
-          setEvents(runEvents);
-        }
-      })
-      .catch(() => {
-        if (!ignore) {
-          setRun(undefined);
-          setEvents(undefined);
-        }
-      });
+    Promise.allSettled([getRun(selectedRunId), getRunEvents(selectedRunId)]).then(([runResult, eventsResult]) => {
+      if (ignore) {
+        return;
+      }
+      if (runResult.status === 'fulfilled') {
+        setRun(runResult.value);
+      } else {
+        setRun(undefined);
+        setRunDetailError(formatErrorMessage('Unable to load run detail', runResult.reason));
+      }
+
+      if (eventsResult.status === 'fulfilled') {
+        setEvents(eventsResult.value);
+      } else {
+        setEvents(undefined);
+        setEventError(formatErrorMessage('Unable to load run events', eventsResult.reason));
+      }
+    });
     return () => {
       ignore = true;
     };
@@ -85,6 +100,8 @@ export function RunDetailPage() {
   function handleRunChange(event: ChangeEvent<HTMLSelectElement | HTMLInputElement>) {
     setSelectedRunId(event.target.value);
   }
+
+  const runLoadFailed = Boolean(runListError || runDetailError);
 
   return (
     <section>
@@ -113,6 +130,22 @@ export function RunDetailPage() {
           />
         )}
       </div>
+
+      {runListError ? (
+        <p className="card error-text" role="alert">
+          {runListError}
+        </p>
+      ) : null}
+      {runDetailError ? (
+        <p className="card error-text" role="alert">
+          {runDetailError}
+        </p>
+      ) : null}
+      {eventError ? (
+        <p className="card error-text" role="alert">
+          {eventError}
+        </p>
+      ) : null}
 
       {run ? (
         <section className="card">
@@ -152,6 +185,8 @@ export function RunDetailPage() {
             </div>
           </dl>
         </section>
+      ) : runLoadFailed ? (
+        <p className="card muted">{RUN_UNAVAILABLE_COPY}</p>
       ) : (
         <p className="card empty-state">{EMPTY_STATE_COPY}</p>
       )}
@@ -168,7 +203,7 @@ export function RunDetailPage() {
             ))}
           </div>
         ) : (
-          <p className="muted">{EMPTY_STATE_COPY}</p>
+          <p className="muted">{runLoadFailed ? RUN_UNAVAILABLE_COPY : EMPTY_STATE_COPY}</p>
         )}
       </section>
 
@@ -198,7 +233,9 @@ export function RunDetailPage() {
             ))}
           </ol>
         ) : (
-          <p className="muted">{EMPTY_STATE_COPY}</p>
+          <p className="muted">
+            {eventError ? EVENTS_UNAVAILABLE_COPY : runLoadFailed ? RUN_UNAVAILABLE_COPY : EMPTY_STATE_COPY}
+          </p>
         )}
       </section>
 
@@ -209,7 +246,9 @@ export function RunDetailPage() {
             <pre key={event.id}>{JSON.stringify(event.agent_trace_json, null, 2)}</pre>
           ))
         ) : (
-          <p className="muted">{EMPTY_STATE_COPY}</p>
+          <p className="muted">
+            {eventError ? EVENTS_UNAVAILABLE_COPY : runLoadFailed ? RUN_UNAVAILABLE_COPY : EMPTY_STATE_COPY}
+          </p>
         )}
       </section>
     </section>

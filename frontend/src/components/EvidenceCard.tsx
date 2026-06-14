@@ -39,8 +39,20 @@ export function EvidenceCard({ evidence }: EvidenceCardProps) {
           <dd>{formatScore(evidence.keyword_score)}</dd>
         </div>
         <div>
+          <dt>Content item</dt>
+          <dd>{evidence.content_item_id}</dd>
+        </div>
+        <div>
+          <dt>Source</dt>
+          <dd>{evidence.source_site_id}</dd>
+        </div>
+        <div>
           <dt>Raw page</dt>
           <dd>{evidence.raw_page_id}</dd>
+        </div>
+        <div>
+          <dt>Chunk</dt>
+          <dd>{evidence.chunk_id}</dd>
         </div>
       </dl>
       <a href={evidence.canonical_url} target="_blank" rel="noreferrer">

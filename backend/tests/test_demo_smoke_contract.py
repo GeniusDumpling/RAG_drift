@@ -114,6 +114,10 @@ def test_demo_smoke_contract_targets_seeded_run_and_asserts_semantics() -> None:
     assert "--require-success" in worker_once_text
     assert "json.dumps" in worker_once_text
     assert "scripts/run_worker_once.py --json --require-success --run-id" in smoke_text
+    assert "SOURCE_ID" in smoke_text
+    assert "source_id" in smoke_text
+    assert 'RUN_ID="$(extract_seed_value run_id "$SEED_JSON")"' in smoke_text
+    assert 'SOURCE_ID="$(extract_seed_value source_id "$SEED_JSON")"' in smoke_text
     assert "assert_worker_result" in smoke_text
     assert 'payload != {"claimed": 1, "succeeded": 1, "partial": 0, "failed": 0}' in smoke_text
     assert "GET /runs/$RUN_ID" in smoke_text
@@ -137,6 +141,16 @@ def test_demo_smoke_contract_targets_seeded_run_and_asserts_semantics() -> None:
     assert ".venv/bin/alembic" in smoke_text
     assert "evidence" in smoke_text
     assert "supporting_evidence" in smoke_text
+    assert smoke_text.count('\\"filters\\":{\\"source_site_id\\":\\"$SOURCE_ID\\"}') == 2
+    assert '"filters":{}' not in smoke_text
+    assert '\\"filters\\":{}' not in smoke_text
+    assert 'assert_search_response "$SEARCH_JSON" "$SOURCE_ID"' in smoke_text
+    assert 'assert_answer_response "$ANSWER_JSON" "$SOURCE_ID"' in smoke_text
+    assert "source_site_id" in smoke_text
+    assert "expected seeded SOURCE_ID" in smoke_text
+    assert "https://example.com/docs/telemetry-settings" in smoke_text
+    assert "/search evidence did not include demo canonical_url" in smoke_text
+    assert "/answer supporting_evidence did not include exact demo canonical_url" in smoke_text
     assert "[1]" in smoke_text
     assert "telemetry" in smoke_text
     assert "settings" in smoke_text

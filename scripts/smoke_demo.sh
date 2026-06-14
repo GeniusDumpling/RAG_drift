@@ -281,16 +281,18 @@ is_memory_smoke_vector_url() {
   [[ "$url" == ":memory:" || "$url" == memory://* ]]
 }
 
-extract_seed_run_id() {
-  SEED_JSON="$1" "$PYTHON" - <<'PY'
+extract_seed_value() {
+  local key="$1"
+  SEED_JSON="$2" SEED_KEY="$key" "$PYTHON" - <<'PY'
 import json
 import os
 
 payload = json.loads(os.environ["SEED_JSON"])
-run_id = payload.get("run_id")
-if not isinstance(run_id, str) or not run_id:
-    raise SystemExit("seed_demo.py did not return a run_id")
-print(run_id)
+key = os.environ["SEED_KEY"]
+value = payload.get(key)
+if not isinstance(value, str) or not value:
+    raise SystemExit(f"seed_demo.py did not return a {key}")
+print(value)
 PY
 }
 
@@ -335,11 +337,13 @@ PY
 }
 
 assert_search_response() {
-  "$PYTHON" - "$1" <<'PY'
+  "$PYTHON" - "$1" "$2" <<'PY'
 import json
 import sys
 from pathlib import Path
 from typing import Any
+
+DEMO_CANONICAL_URL = "https://example.com/docs/telemetry-settings"
 
 
 def evidence_text(item: dict[str, Any]) -> str:
@@ -347,23 +351,54 @@ def evidence_text(item: dict[str, Any]) -> str:
     return " ".join(str(item.get(field) or "") for field in fields).casefold()
 
 
+def assert_all_evidence_from_source(
+    evidence: list[Any], expected_source_id: str, label: str
+) -> None:
+    for index, item in enumerate(evidence, start=1):
+        if not isinstance(item, dict):
+            raise SystemExit(f"{label} item {index} was not an object")
+        actual_source_id = str(item.get("source_site_id") or "")
+        if actual_source_id != expected_source_id:
+            raise SystemExit(
+                f"{label} item {index} had source_site_id {actual_source_id!r}; "
+                f"expected seeded SOURCE_ID {expected_source_id!r}"
+            )
+
+
+def has_demo_canonical_url(item: dict[str, Any]) -> bool:
+    canonical_url = str(item.get("canonical_url") or "")
+    return canonical_url == DEMO_CANONICAL_URL or DEMO_CANONICAL_URL in canonical_url
+
+
 with Path(sys.argv[1]).open() as handle:
     payload = json.load(handle)
+expected_source_id = sys.argv[2]
 
 evidence = payload.get("evidence")
 if not isinstance(evidence, list) or not evidence:
     raise SystemExit("/search evidence list was empty")
-if not any("telemetry" in evidence_text(item) and "settings" in evidence_text(item) for item in evidence if isinstance(item, dict)):
+assert_all_evidence_from_source(evidence, expected_source_id, "/search evidence")
+if not any(has_demo_canonical_url(item) for item in evidence if isinstance(item, dict)):
+    raise SystemExit(
+        f"/search evidence did not include demo canonical_url {DEMO_CANONICAL_URL}"
+    )
+if not any(
+    "telemetry" in evidence_text(item) and "settings" in evidence_text(item)
+    for item in evidence
+    if isinstance(item, dict)
+):
     raise SystemExit("/search evidence did not reference demo telemetry/settings in title/snippet/url")
 PY
 }
 
 assert_answer_response() {
-  "$PYTHON" - "$1" <<'PY'
+  "$PYTHON" - "$1" "$2" <<'PY'
 import json
 import sys
 from pathlib import Path
 from typing import Any
+
+DEMO_CANONICAL_URL = "https://example.com/docs/telemetry-settings"
 
 
 def evidence_text(item: dict[str, Any]) -> str:
@@ -371,12 +406,37 @@ def evidence_text(item: dict[str, Any]) -> str:
     return " ".join(str(item.get(field) or "") for field in fields).casefold()
 
 
+def assert_all_evidence_from_source(
+    evidence: list[Any], expected_source_id: str, label: str
+) -> None:
+    for index, item in enumerate(evidence, start=1):
+        if not isinstance(item, dict):
+            raise SystemExit(f"{label} item {index} was not an object")
+        actual_source_id = str(item.get("source_site_id") or "")
+        if actual_source_id != expected_source_id:
+            raise SystemExit(
+                f"{label} item {index} had source_site_id {actual_source_id!r}; "
+                f"expected seeded SOURCE_ID {expected_source_id!r}"
+            )
+
+
 with Path(sys.argv[1]).open() as handle:
     payload = json.load(handle)
+expected_source_id = sys.argv[2]
 
 supporting_evidence = payload.get("supporting_evidence")
 if not isinstance(supporting_evidence, list) or not supporting_evidence:
     raise SystemExit("/answer supporting_evidence list was empty")
+assert_all_evidence_from_source(
+    supporting_evidence, expected_source_id, "/answer supporting_evidence"
+)
+if not any(
+    isinstance(item, dict) and str(item.get("canonical_url") or "") == DEMO_CANONICAL_URL
+    for item in supporting_evidence
+):
+    raise SystemExit(
+        f"/answer supporting_evidence did not include exact demo canonical_url {DEMO_CANONICAL_URL}"
+    )
 answer = payload.get("answer")
 if not isinstance(answer, str) or "[1]" not in answer:
     raise SystemExit('/answer did not include citation "[1]"')
@@ -432,8 +492,9 @@ wait_for_api
 "$ALEMBIC" upgrade head
 SEED_JSON="$($PYTHON scripts/seed_demo.py)"
 printf '%s\n' "$SEED_JSON"
-RUN_ID="$(extract_seed_run_id "$SEED_JSON")"
-printf '\nWorker run for %s\n' "$RUN_ID"
+RUN_ID="$(extract_seed_value run_id "$SEED_JSON")"
+SOURCE_ID="$(extract_seed_value source_id "$SEED_JSON")"
+printf '\nWorker run for %s (source %s)\n' "$RUN_ID" "$SOURCE_ID"
 "$PYTHON" scripts/run_worker_once.py --json --require-success --run-id "$RUN_ID" | tee "$WORKER_JSON"
 assert_worker_result "$WORKER_JSON"
 
@@ -451,15 +512,15 @@ printf '\n'
 printf '\nPOST /search\n'
 curl -fsS -X POST "$API_BASE/search" \
   -H 'Content-Type: application/json' \
-  -d '{"query":"telemetry settings","mode":"search","filters":{},"top_k":5}' | tee "$SEARCH_JSON"
+  -d "{\"query\":\"telemetry settings\",\"mode\":\"search\",\"filters\":{\"source_site_id\":\"$SOURCE_ID\"},\"top_k\":5}" | tee "$SEARCH_JSON"
 printf '\n'
-assert_search_response "$SEARCH_JSON"
+assert_search_response "$SEARCH_JSON" "$SOURCE_ID"
 
 printf '\nPOST /answer\n'
 curl -fsS -X POST "$API_BASE/answer" \
   -H 'Content-Type: application/json' \
-  -d '{"query":"How is telemetry configured?","mode":"answer","filters":{},"top_k":5}' | tee "$ANSWER_JSON"
+  -d "{\"query\":\"How is telemetry configured?\",\"mode\":\"answer\",\"filters\":{\"source_site_id\":\"$SOURCE_ID\"},\"top_k\":5}" | tee "$ANSWER_JSON"
 printf '\n'
-assert_answer_response "$ANSWER_JSON"
+assert_answer_response "$ANSWER_JSON" "$SOURCE_ID"
 
 printf '\nSmoke demo completed.\n'

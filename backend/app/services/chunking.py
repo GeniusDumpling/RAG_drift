@@ -1,5 +1,8 @@
+import hashlib
 from dataclasses import dataclass
 from typing import Any
+
+CHUNKER_VERSION = "2026-06-14-v2"
 
 _CONTEXTUAL_ARTICLE_TYPES = {"article", "doc_page", "release_note", "thread"}
 
@@ -121,7 +124,7 @@ def _build_contextual_article_chunks(
     tags: list[str],
     max_chars: int,
 ) -> list[BuiltChunk]:
-    lead = _first_paragraph(cleaned_text)
+    lead_start, lead_end, lead = _lead_segment(cleaned_text, max_chars)
     chunks = [
         _make_chunk(
             chunk_index=0,
@@ -136,8 +139,8 @@ def _build_contextual_article_chunks(
                     ("Lead", lead),
                 ]
             ),
-            start_char=0,
-            end_char=len(lead),
+            start_char=lead_start,
+            end_char=lead_end,
             metadata={
                 "item_type": item_type,
                 "chunk_type": "title_lead",
@@ -146,7 +149,8 @@ def _build_contextual_article_chunks(
         )
     ]
 
-    for start in range(0, len(cleaned_text), max_chars):
+    body_start = _skip_whitespace(cleaned_text, lead_end)
+    for start in range(body_start, len(cleaned_text), max_chars):
         body_text = cleaned_text[start : start + max_chars]
         if not body_text:
             continue
@@ -201,16 +205,30 @@ def _make_chunk(
             "section_path": section_path,
             "start_char": start_char,
             "end_char": end_char,
+            "chunker_version": CHUNKER_VERSION,
+            "embed_text_hash": _embed_text_hash(embed_text),
         },
     )
 
 
-def _first_paragraph(text: str) -> str:
+def _lead_segment(text: str, max_chars: int) -> tuple[int, int, str]:
     for paragraph in text.split("\n\n"):
         stripped = paragraph.strip()
         if stripped:
-            return stripped
-    return ""
+            start_char = text.find(stripped)
+            lead = stripped[:max_chars]
+            return start_char, start_char + len(lead), lead
+    return 0, 0, ""
+
+
+def _skip_whitespace(text: str, start_char: int) -> int:
+    while start_char < len(text) and text[start_char].isspace():
+        start_char += 1
+    return start_char
+
+
+def _embed_text_hash(embed_text: str) -> str:
+    return hashlib.sha256(embed_text.encode("utf-8")).hexdigest()
 
 
 def _format_tags(tags: list[str]) -> str | None:

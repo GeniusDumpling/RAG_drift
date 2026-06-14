@@ -157,8 +157,17 @@ def test_demo_smoke_contract_targets_seeded_run_and_asserts_semantics() -> None:
     assert smoke_text.count('\\"filters\\":{\\"source_site_id\\":\\"$SOURCE_ID\\"}') == 2
     assert '"filters":{}' not in smoke_text
     assert '\\"filters\\":{}' not in smoke_text
-    assert 'assert_search_response "$SEARCH_JSON" "$SOURCE_ID"' in smoke_text
+    assert 'assert_search_response "$SEARCH_JSON" "$SOURCE_ID" "$QDRANT_URL"' in smoke_text
     assert 'assert_answer_response "$ANSWER_JSON" "$SOURCE_ID"' in smoke_text
+    assert "query_trace_json" in smoke_text
+    assert "retrieval" in smoke_text
+    assert "vector" in smoke_text
+    assert "attempted" in smoke_text
+    assert "failed" in smoke_text
+    assert "hit_count" in smoke_text
+    assert '{"vector", "hybrid"}' in smoke_text
+    assert "matched_by" in smoke_text
+    assert "Skipping cross-process vector retrieval assertion for memory QDRANT_URL" in smoke_text
     assert "source_site_id" in smoke_text
     assert "expected seeded SOURCE_ID" in smoke_text
     assert "https://example.com/docs/telemetry-settings" in smoke_text

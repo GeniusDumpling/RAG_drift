@@ -337,7 +337,7 @@ PY
 }
 
 assert_search_response() {
-  "$PYTHON" - "$1" "$2" <<'PY'
+  "$PYTHON" - "$1" "$2" "$3" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -349,6 +349,10 @@ DEMO_CANONICAL_URL = "https://example.com/docs/telemetry-settings"
 def evidence_text(item: dict[str, Any]) -> str:
     fields = ("title", "snippet", "canonical_url", "url", "source_url")
     return " ".join(str(item.get(field) or "") for field in fields).casefold()
+
+
+def is_memory_vector_url(value: str) -> bool:
+    return value == ":memory:" or value.startswith("memory://")
 
 
 def assert_all_evidence_from_source(
@@ -365,6 +369,35 @@ def assert_all_evidence_from_source(
             )
 
 
+def assert_real_vector_retrieval(payload: dict[str, Any], evidence: list[Any]) -> None:
+    query = payload.get("query")
+    if not isinstance(query, dict):
+        raise SystemExit('/search response did not include query object for vector trace assertion')
+    trace = query.get("query_trace_json")
+    if not isinstance(trace, dict):
+        raise SystemExit('/search query did not include query_trace_json for vector trace assertion')
+    retrieval = trace.get("retrieval")
+    if not isinstance(retrieval, dict):
+        raise SystemExit('/search query_trace_json did not include retrieval trace')
+    vector_trace = retrieval.get("vector")
+    if not isinstance(vector_trace, dict):
+        raise SystemExit('/search retrieval trace did not include vector trace')
+    if vector_trace.get("attempted") is not True:
+        raise SystemExit('/search vector retrieval was not attempted for real QDRANT_URL')
+    if vector_trace.get("failed") is not False:
+        raise SystemExit('/search vector retrieval failed for real QDRANT_URL')
+    hit_count = vector_trace.get("hit_count")
+    if not isinstance(hit_count, int) or hit_count <= 0:
+        raise SystemExit(
+            f"/search vector retrieval hit_count was {hit_count!r}; expected > 0"
+        )
+    if not any(
+        isinstance(item, dict) and item.get("matched_by") in {"vector", "hybrid"}
+        for item in evidence
+    ):
+        raise SystemExit('/search evidence did not include vector or hybrid matched_by item')
+
+
 def has_demo_canonical_url(item: dict[str, Any]) -> bool:
     canonical_url = str(item.get("canonical_url") or "")
     return canonical_url == DEMO_CANONICAL_URL or DEMO_CANONICAL_URL in canonical_url
@@ -373,6 +406,7 @@ def has_demo_canonical_url(item: dict[str, Any]) -> bool:
 with Path(sys.argv[1]).open() as handle:
     payload = json.load(handle)
 expected_source_id = sys.argv[2]
+qdrant_url = sys.argv[3]
 
 evidence = payload.get("evidence")
 if not isinstance(evidence, list) or not evidence:
@@ -388,6 +422,17 @@ if not any(
     if isinstance(item, dict)
 ):
     raise SystemExit("/search evidence did not reference demo telemetry/settings in title/snippet/url")
+
+# /search is the smoke script's authoritative vector assertion. /answer still checks
+# source/canonical/citation semantics below, but does not need to duplicate this trace check.
+if is_memory_vector_url(qdrant_url):
+    print(
+        "Skipping cross-process vector retrieval assertion for memory QDRANT_URL; "
+        "memory vectors are process-local convenience mode.",
+        file=sys.stderr,
+    )
+else:
+    assert_real_vector_retrieval(payload, evidence)
 PY
 }
 
@@ -514,7 +559,7 @@ curl -fsS --max-time 15 -X POST "$API_BASE/search" \
   -H 'Content-Type: application/json' \
   -d "{\"query\":\"telemetry settings\",\"mode\":\"search\",\"filters\":{\"source_site_id\":\"$SOURCE_ID\"},\"top_k\":5}" | tee "$SEARCH_JSON"
 printf '\n'
-assert_search_response "$SEARCH_JSON" "$SOURCE_ID"
+assert_search_response "$SEARCH_JSON" "$SOURCE_ID" "$QDRANT_URL"
 
 printf '\nPOST /answer\n'
 curl -fsS --max-time 15 -X POST "$API_BASE/answer" \

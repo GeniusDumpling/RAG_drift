@@ -37,7 +37,10 @@ vectors to Qdrant and the API reads them back from the same vector store. The sc
 local side effects: it may create `.env` from `.env.example` when `.env` is missing,
 starts Docker services unless skipped, runs Alembic migrations, seeds demo data,
 processes one targeted seeded run, writes demo vectors to the configured local vector
-backend, and verifies `/runs`, `/search`, and `/answer` against the API.
+backend, and verifies `/runs`, `/search`, and `/answer` against the API. In the
+default Docker/Qdrant path, the `/search` check now asserts real vector retrieval in
+the response trace: vector retrieval was attempted, did not fail, returned hits, and
+produced at least one `vector` or `hybrid` evidence match.
 
 Safety guards refuse non-local API, database, and `QDRANT_URL` settings by default. If
 `ALLOW_NONLOCAL_SMOKE_DB=1` is set, the script also exports
@@ -59,9 +62,11 @@ SKIP_DOCKER=1 QDRANT_URL=memory://smoke-demo bash scripts/smoke_demo.sh
 ```
 
 Because `memory://...` and `:memory:` vector stores are process-local, separate API and
-worker processes do not share in-memory vectors. In that convenience mode, `/search` and
-`/answer` may succeed through SQL keyword fallback rather than a cross-process vector
-round trip. Use the default Docker/Qdrant path when you need the true vector smoke.
+worker processes do not share in-memory vectors. In that convenience mode, the smoke
+script intentionally skips the cross-process vector trace assertion while keeping the
+SQL/source/canonical `/search` and `/answer` checks; those requests may succeed through
+SQL keyword fallback rather than a vector round trip. Use the default Docker/Qdrant path
+when you need the true vector smoke.
 
 ### Manual demo path
 

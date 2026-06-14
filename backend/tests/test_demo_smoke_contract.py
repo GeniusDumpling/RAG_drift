@@ -18,6 +18,39 @@ def test_demo_scripts_exist_and_are_executable() -> None:
         assert _is_executable(script), f"{script} must be executable"
 
 
+def test_seed_demo_has_local_db_guard_and_reconciles_demo_config() -> None:
+    root = Path(__file__).resolve().parents[2]
+    seed = root / "scripts" / "seed_demo.py"
+
+    seed_text = seed.read_text()
+
+    assert "ALLOW_NONLOCAL_DEMO_SEED" in seed_text
+    assert "Refusing to seed demo against a non-local database" in seed_text
+    assert "DATABASE_URL" in seed_text
+    assert "SYNC_DATABASE_URL" in seed_text
+    assert "safe_url" in seed_text
+    assert "DEMO_SOURCE_VALUES" in seed_text
+    assert "DEMO_JOB_VALUES" in seed_text
+    assert "config_json[\"kind\"]" in seed_text
+    assert "reconcile_source" in seed_text
+    assert "reconcile_job" in seed_text
+    assert "seed_config_json" in seed_text
+    assert "parser_profile" in seed_text
+    assert "agent_policy_json" in seed_text
+
+
+def test_readme_manual_demo_path_targets_seeded_run() -> None:
+    root = Path(__file__).resolve().parents[2]
+    readme = root / "README.md"
+
+    readme_text = readme.read_text()
+
+    assert "SEED_JSON" in readme_text
+    assert "RUN_ID" in readme_text
+    assert "run_id" in readme_text
+    assert 'scripts/run_worker_once.py --run-id "$RUN_ID"' in readme_text
+
+
 def test_demo_smoke_contract_targets_seeded_run_and_asserts_semantics() -> None:
     root = Path(__file__).resolve().parents[2]
     worker_once = root / "scripts" / "run_worker_once.py"
@@ -28,6 +61,9 @@ def test_demo_smoke_contract_targets_seeded_run_and_asserts_semantics() -> None:
 
     assert "--run-id" in worker_once_text
     assert "scripts/run_worker_once.py --run-id" in smoke_text
+    assert "ALLOW_NONLOCAL_SMOKE_API" in smoke_text
+    assert "Refusing to run smoke demo against a non-local API_BASE" in smoke_text
+    assert "require_local_api_base" in smoke_text
     assert "POST /search" in smoke_text
     assert "POST /answer" in smoke_text
     assert "json.load" in smoke_text

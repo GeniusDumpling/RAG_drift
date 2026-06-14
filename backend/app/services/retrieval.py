@@ -414,7 +414,7 @@ def _merge_hit(merged: dict[UUID, _SearchHit], incoming: _SearchHit) -> None:
         merged[key] = incoming
         return
 
-    content_item_id = existing.content_item_id or incoming.content_item_id
+    content_item_id = _preferred_content_item_id(existing, incoming)
     vector_score = _max_optional(existing.vector_score, incoming.vector_score)
     keyword_score = _max_optional(existing.keyword_score, incoming.keyword_score)
     if existing.matched_by == incoming.matched_by:
@@ -436,6 +436,14 @@ def _merge_hit(merged: dict[UUID, _SearchHit], incoming: _SearchHit) -> None:
         vector_score=vector_score,
         keyword_score=keyword_score,
     )
+
+
+def _preferred_content_item_id(existing: _SearchHit, incoming: _SearchHit) -> UUID | None:
+    if existing.matched_by == "keyword" and existing.content_item_id is not None:
+        return existing.content_item_id
+    if incoming.matched_by == "keyword" and incoming.content_item_id is not None:
+        return incoming.content_item_id
+    return existing.content_item_id or incoming.content_item_id
 
 
 def _normalize_search_hit(hit: _SearchHit) -> _SearchHit:

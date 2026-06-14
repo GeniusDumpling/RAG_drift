@@ -18,6 +18,8 @@ from app.schemas.search import (
 from app.services.embeddings import DeterministicEmbeddingService, EmbeddingService
 from app.services.retrieval import retrieve_evidence
 
+ANSWER_EVIDENCE_LIMIT = 3
+
 
 class UnsupportedSearchModeError(ValueError):
     """Raised when a search-only route is asked to run an unsupported mode."""
@@ -51,10 +53,11 @@ class SearchService:
 
     async def answer(self, request: AnswerRequest) -> AnswerResponse:
         query, evidence = await self._retrieve(request)
+        answer_evidence = evidence[:ANSWER_EVIDENCE_LIMIT]
         return AnswerResponse(
             query=query,
-            answer=_synthesize_answer(evidence),
-            supporting_evidence=evidence,
+            answer=_synthesize_answer(answer_evidence),
+            supporting_evidence=answer_evidence,
         )
 
     async def _retrieve(
@@ -128,7 +131,7 @@ def _synthesize_answer(evidence: list[EvidenceObject]) -> str:
         return "No supported answer found in the indexed sources."
     return " ".join(
         f"[{index}] {evidence_object.snippet}"
-        for index, evidence_object in enumerate(evidence[:3], start=1)
+        for index, evidence_object in enumerate(evidence, start=1)
     )
 
 

@@ -40,6 +40,7 @@ import app.db.session as db_session_module  # noqa: E402
 import app.models  # noqa: E402,F401
 from app.core.config import get_settings  # noqa: E402
 from app.db.base import Base  # noqa: E402
+from app.services.retrieval import _MEMORY_COLLECTIONS  # noqa: E402
 
 get_settings.cache_clear()
 old_engine = getattr(db_session_module, "engine", None)
@@ -59,6 +60,7 @@ def reset_worker_database() -> Iterator[None]:
     previous_qdrant_collection = os.environ.get("QDRANT_COLLECTION")
     os.environ["QDRANT_URL"] = "memory://worker-tests"
     os.environ["QDRANT_COLLECTION"] = "content_chunks_worker_tests"
+    _MEMORY_COLLECTIONS.clear()
     get_settings.cache_clear()
 
     engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
@@ -76,4 +78,5 @@ def reset_worker_database() -> Iterator[None]:
         os.environ.pop("QDRANT_COLLECTION", None)
     else:
         os.environ["QDRANT_COLLECTION"] = previous_qdrant_collection
+    _MEMORY_COLLECTIONS.clear()
     get_settings.cache_clear()

@@ -1,3 +1,4 @@
+import hashlib
 import os
 import subprocess
 import sys
@@ -114,6 +115,9 @@ def _current_vector_metadata() -> dict[str, object]:
     embedding = DeterministicEmbeddingService()
     return {
         "vector_collection": get_settings().qdrant_collection,
+        "vector_store_id": hashlib.sha256(
+            get_settings().qdrant_url.encode("utf-8")
+        ).hexdigest(),
         "embedding_model": embedding.model_name,
         "embedding_dimension": embedding.dimension,
     }
@@ -429,6 +433,92 @@ def test_success_chunks_with_stale_vector_collection_are_reindexed(
     assert {metadata["embedding_dimension"] for metadata in refreshed_chunk_metadata} == {384}
 
 
+def test_success_chunks_with_stale_vector_store_identity_are_reindexed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    collection = "content_chunks_same_collection"
+    first_url = "memory://worker-vector-store-a"
+    second_url = "memory://worker-vector-store-b"
+    monkeypatch.setenv("QDRANT_COLLECTION", collection)
+    monkeypatch.setenv("QDRANT_URL", first_url)
+    get_settings.cache_clear()
+
+    client = TestClient(app)
+    seed_url = "https://example.com/reindex-stale-vector-store"
+    job = _create_worker_job(client, urls=[seed_url], seed_url=seed_url)
+    first_run = _trigger_worker_job(client, job, seed_url=seed_url)
+
+    first_result = run_once(run_limit=1)
+    assert first_result.claimed == 1
+    assert first_result.succeeded == 1
+
+    first_detail = client.get(f"/runs/{first_run['id']}").json()
+    first_chunks = _fetch_db_rows(
+        """
+        select id, vector_backend, vector_point_id, qdrant_point_id, chunk_metadata_json
+        from content_chunks
+        order by chunk_index asc
+        """,
+        {},
+    )
+    assert first_detail["embedded_count"] == len(first_chunks)
+    assert len(first_chunks) >= 1
+    assert {chunk["vector_backend"] for chunk in first_chunks} == {"memory"}
+    assert all(chunk["vector_point_id"] == str(chunk["id"]) for chunk in first_chunks)
+    first_chunk_metadata = [
+        cast(dict[str, object], chunk["chunk_metadata_json"]) for chunk in first_chunks
+    ]
+    assert {metadata["vector_collection"] for metadata in first_chunk_metadata} == {
+        collection
+    }
+    assert {metadata["vector_store_id"] for metadata in first_chunk_metadata} == {
+        hashlib.sha256(first_url.encode("utf-8")).hexdigest()
+    }
+
+    monkeypatch.setenv("QDRANT_URL", second_url)
+    get_settings.cache_clear()
+    second_run = _trigger_worker_job(client, job, seed_url=seed_url)
+
+    second_result = run_once(run_limit=1)
+
+    assert second_result.claimed == 1
+    assert second_result.succeeded == 1
+    second_detail = client.get(f"/runs/{second_run['id']}").json()
+    assert second_detail["status"] == "success"
+    assert second_detail["deduped_count"] == 1
+    assert second_detail["chunked_count"] == 0
+    assert second_detail["embedded_count"] == len(first_chunks)
+
+    refreshed_chunks = _fetch_db_rows(
+        """
+        select id, vector_backend, vector_point_id, qdrant_point_id, chunk_metadata_json
+        from content_chunks
+        order by chunk_index asc
+        """,
+        {},
+    )
+    assert [chunk["id"] for chunk in refreshed_chunks] == [
+        chunk["id"] for chunk in first_chunks
+    ]
+    assert {chunk["vector_backend"] for chunk in refreshed_chunks} == {"memory"}
+    assert all(chunk["vector_point_id"] == str(chunk["id"]) for chunk in refreshed_chunks)
+    assert all(chunk["qdrant_point_id"] is None for chunk in refreshed_chunks)
+    refreshed_chunk_metadata = [
+        cast(dict[str, object], chunk["chunk_metadata_json"])
+        for chunk in refreshed_chunks
+    ]
+    assert {metadata["vector_collection"] for metadata in refreshed_chunk_metadata} == {
+        collection
+    }
+    assert {metadata["vector_store_id"] for metadata in refreshed_chunk_metadata} == {
+        hashlib.sha256(second_url.encode("utf-8")).hexdigest()
+    }
+    assert {metadata["embedding_model"] for metadata in refreshed_chunk_metadata} == {
+        "deterministic-hash-v1"
+    }
+    assert {metadata["embedding_dimension"] for metadata in refreshed_chunk_metadata} == {384}
+
+
 async def test_success_chunks_with_stale_chunker_metadata_are_updated_and_reindexed() -> None:
     cleaned_text = "I reproduced the issue on v1.2."
     async with db_session_module.AsyncSessionLocal() as session:
@@ -663,6 +753,13 @@ async def test_obsolete_vector_delete_failure_records_event_and_counts_failure(
             del chunk_id, embed_text, payload
             raise AssertionError("obsolete chunks must not be reindexed")
 
+    def _successful_indexer() -> QdrantIndexer:
+        return QdrantIndexer(
+            url=get_settings().qdrant_url,
+            collection=get_settings().qdrant_collection,
+            embedding=DeterministicEmbeddingService(),
+        )
+
     monkeypatch.setattr(chunk_indexer_module, "_build_qdrant_indexer", DeleteFailingIndexer)
 
     cleaned_text = "short body for a single chunk"
@@ -684,6 +781,22 @@ async def test_obsolete_vector_delete_failure_records_event_and_counts_failure(
         )[0]
         current_chunk_id = uuid.uuid4()
         obsolete_chunk_id = uuid.uuid4()
+        obsolete_point_id = str(obsolete_chunk_id)
+        memory_indexer = QdrantIndexer(
+            url=get_settings().qdrant_url,
+            collection=get_settings().qdrant_collection,
+            embedding=DeterministicEmbeddingService(),
+        )
+        memory_indexer.ensure_collection()
+        assert memory_indexer.upsert_chunk(
+            chunk_id=obsolete_chunk_id,
+            embed_text="obsolete embed",
+            payload={"content_item_id": str(content_item_id)},
+        ) == obsolete_point_id
+        memory_collection = _MEMORY_COLLECTIONS[
+            (memory_indexer.url, memory_indexer.collection)
+        ]
+        assert obsolete_point_id in memory_collection.points
         session.add_all(
             [
                 ContentChunk(
@@ -722,7 +835,7 @@ async def test_obsolete_vector_delete_failure_records_event_and_counts_failure(
                     },
                     qdrant_point_id=None,
                     vector_backend="memory",
-                    vector_point_id=str(obsolete_chunk_id),
+                    vector_point_id=obsolete_point_id,
                     embedded_at=utcnow(),
                     embed_status="success",
                     embed_error=None,
@@ -747,18 +860,53 @@ async def test_obsolete_vector_delete_failure_records_event_and_counts_failure(
                 )
             )
         ).all()
+        assert obsolete_chunk is not None
+        failed_delete_embed_status = obsolete_chunk.embed_status
+        failed_delete_embed_error = obsolete_chunk.embed_error
+        failed_delete_vector_backend = obsolete_chunk.vector_backend
+        failed_delete_vector_point_id = obsolete_chunk.vector_point_id
+        failed_delete_qdrant_point_id = obsolete_chunk.qdrant_point_id
+        failed_delete_embedded_at = obsolete_chunk.embedded_at
+        failed_delete_point_still_indexed = obsolete_point_id in memory_collection.points
+
+        monkeypatch.setattr(
+            chunk_indexer_module, "_build_qdrant_indexer", _successful_indexer
+        )
+        retry_result = await chunk_indexer_module.chunk_and_index_content_items(
+            session=session,
+            run_id=run_id,
+            content_item_ids=[content_item_id],
+        )
+        await session.commit()
+        retried_obsolete_chunk = await session.get(ContentChunk, obsolete_chunk_id)
+        retry_point_still_indexed = obsolete_point_id in memory_collection.points
 
     assert result.chunked_count == 0
     assert result.embedded_count == 0
     assert result.failed_count == 1
-    assert obsolete_chunk is not None
-    assert obsolete_chunk.embed_status == "obsolete"
-    assert obsolete_chunk.embed_error == "obsolete chunk"
-    assert obsolete_chunk.vector_backend is None
-    assert obsolete_chunk.vector_point_id is None
+    assert failed_delete_embed_status == "obsolete"
+    assert failed_delete_embed_error == "obsolete chunk"
+    assert failed_delete_vector_backend == "memory"
+    assert failed_delete_vector_point_id == obsolete_point_id
+    assert failed_delete_qdrant_point_id is None
+    assert failed_delete_embedded_at is not None
+    assert failed_delete_point_still_indexed
     assert len(events) == 1
     assert "simulated vector delete outage" in events[0].message
     assert events[0].related_content_item_id == content_item_id
+
+    assert retry_result.chunked_count == 0
+    assert retry_result.embedded_count == 0
+    assert retry_result.failed_count == 0
+    assert retried_obsolete_chunk is not None
+    assert retried_obsolete_chunk.embed_status == "obsolete"
+    assert retried_obsolete_chunk.embed_error == "obsolete chunk"
+    assert retried_obsolete_chunk.vector_backend is None
+    assert retried_obsolete_chunk.vector_point_id is None
+    assert retried_obsolete_chunk.qdrant_point_id is None
+    assert retried_obsolete_chunk.embedded_at is None
+    assert retried_obsolete_chunk.chunk_metadata_json["vector_cleanup_status"] == "deleted"
+    assert not retry_point_still_indexed
 
 
 def test_vector_upsert_failure_marks_run_partial_and_failed_chunks_are_retried(

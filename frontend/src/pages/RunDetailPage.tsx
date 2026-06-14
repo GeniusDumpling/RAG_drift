@@ -7,6 +7,8 @@ import { formatErrorMessage } from '../utils/errors';
 const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
 const RUN_UNAVAILABLE_COPY = 'Run data unavailable while the API request is failing.';
 const EVENTS_UNAVAILABLE_COPY = 'Run events unavailable while the API request is failing.';
+const LOADING_RUN_COPY = 'Loading run data...';
+const LOADING_EVENTS_COPY = 'Loading run events...';
 
 type CounterField =
   | 'discovered_count'
@@ -41,10 +43,14 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
   const [runListError, setRunListError] = useState('');
   const [runDetailError, setRunDetailError] = useState('');
   const [eventError, setEventError] = useState('');
+  const [runListLoading, setRunListLoading] = useState(true);
+  const [runDetailLoading, setRunDetailLoading] = useState(Boolean(externallySelectedRunId));
+  const [eventLoading, setEventLoading] = useState(Boolean(externallySelectedRunId));
 
   useEffect(() => {
     let ignore = false;
     setRunListError('');
+    setRunListLoading(true);
     listRuns(25)
       .then((page) => {
         if (!ignore) {
@@ -56,6 +62,11 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
         if (!ignore) {
           setRuns(undefined);
           setRunListError(formatErrorMessage('Unable to load runs', caught));
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setRunListLoading(false);
         }
       });
     return () => {
@@ -75,10 +86,16 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
     if (!activeRunId) {
       setRun(undefined);
       setEvents(undefined);
+      setRunDetailLoading(false);
+      setEventLoading(false);
       return;
     }
 
     let ignore = false;
+    setRun(undefined);
+    setEvents(undefined);
+    setRunDetailLoading(true);
+    setEventLoading(true);
     Promise.allSettled([getRun(activeRunId), getRunEvents(activeRunId)]).then(([runResult, eventsResult]) => {
       if (ignore) {
         return;
@@ -96,22 +113,52 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
         setEvents(undefined);
         setEventError(formatErrorMessage('Unable to load run events', eventsResult.reason));
       }
+      setRunDetailLoading(false);
+      setEventLoading(false);
     });
     return () => {
       ignore = true;
     };
   }, [activeRunId]);
 
+  const displayedRun = run?.id === activeRunId ? run : undefined;
+  const displayedEvents = events?.items.length && events.items.some((event) => event.crawl_run_id !== activeRunId)
+    ? undefined
+    : events;
   const agentTraceEvents = useMemo(
-    () => (events?.items ?? []).filter((event) => Object.keys(event.agent_trace_json).length > 0),
-    [events],
+    () => (displayedEvents?.items ?? []).filter((event) => Object.keys(event.agent_trace_json).length > 0),
+    [displayedEvents],
   );
+  const runOptions = useMemo(() => {
+    const loadedRuns = runs?.items ?? [];
+    if (!loadedRuns.length) {
+      return [];
+    }
+
+    const options = loadedRuns.map((item) => ({
+      id: item.id,
+      label: `${item.status} · ${item.id}`,
+    }));
+    if (activeRunId && !loadedRuns.some((item) => item.id === activeRunId)) {
+      const selectedRun = displayedRun;
+      return [
+        {
+          id: activeRunId,
+          label: `${selectedRun?.status ?? 'selected'} · ${activeRunId}`,
+        },
+        ...options,
+      ];
+    }
+    return options;
+  }, [activeRunId, displayedRun, runs]);
 
   function handleRunChange(event: ChangeEvent<HTMLSelectElement | HTMLInputElement>) {
     setActiveRunId(event.target.value);
   }
 
   const runLoadFailed = Boolean(runListError || runDetailError);
+  const runSelectionPending = Boolean(activeRunId && !displayedRun && !runDetailError);
+  const loading = runListLoading || runDetailLoading || eventLoading || runSelectionPending;
 
   return (
     <section>
@@ -123,11 +170,11 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
 
       <div className="card controls-card">
         <label htmlFor="run-selector">Run</label>
-        {runs?.items.length ? (
+        {runOptions.length ? (
           <select id="run-selector" value={activeRunId} onChange={handleRunChange}>
-            {runs.items.map((item) => (
+            {runOptions.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.status} · {item.id}
+                {item.label}
               </option>
             ))}
           </select>
@@ -156,46 +203,51 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
           {eventError}
         </p>
       ) : null}
+      {loading ? (
+        <p className="card status-line" role="status" aria-live="polite">
+          {LOADING_RUN_COPY}
+        </p>
+      ) : null}
 
-      {run ? (
+      {displayedRun ? (
         <section className="card">
           <div className="card-header">
             <div>
-              <h2>{run.id}</h2>
+              <h2>{displayedRun.id}</h2>
               <p className="muted compact">
-                Source {run.source_site_id} · Job {run.crawl_job_id}
+                Source {displayedRun.source_site_id} · Job {displayedRun.crawl_job_id}
               </p>
             </div>
-            <span className="badge">{run.status}</span>
+            <span className="badge">{displayedRun.status}</span>
           </div>
           <dl className="kv-grid">
             <div>
               <dt>Trigger</dt>
-              <dd>{run.trigger_type}</dd>
+              <dd>{displayedRun.trigger_type}</dd>
             </div>
             <div>
               <dt>Mode</dt>
-              <dd>{run.execution_mode}</dd>
+              <dd>{displayedRun.execution_mode}</dd>
             </div>
             <div>
               <dt>Seed URL</dt>
-              <dd>{run.seed_url || 'n/a'}</dd>
+              <dd>{displayedRun.seed_url || 'n/a'}</dd>
             </div>
             <div>
               <dt>Started</dt>
-              <dd>{run.started_at ? new Date(run.started_at).toLocaleString() : 'n/a'}</dd>
+              <dd>{displayedRun.started_at ? new Date(displayedRun.started_at).toLocaleString() : 'n/a'}</dd>
             </div>
             <div>
               <dt>Finished</dt>
-              <dd>{run.finished_at ? new Date(run.finished_at).toLocaleString() : 'n/a'}</dd>
+              <dd>{displayedRun.finished_at ? new Date(displayedRun.finished_at).toLocaleString() : 'n/a'}</dd>
             </div>
             <div>
               <dt>Error</dt>
-              <dd>{run.error_message || 'none'}</dd>
+              <dd>{displayedRun.error_message || 'none'}</dd>
             </div>
           </dl>
         </section>
-      ) : runLoadFailed ? (
+      ) : loading ? null : runLoadFailed ? (
         <p className="card muted">{RUN_UNAVAILABLE_COPY}</p>
       ) : (
         <p className="card empty-state">{EMPTY_STATE_COPY}</p>
@@ -203,25 +255,25 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
 
       <section className="card">
         <h2>Stage Counters</h2>
-        {run ? (
+        {displayedRun ? (
           <div className="grid counter-grid">
             {COUNTER_FIELDS.map(([field, label]) => (
               <div className="counter" key={String(field)}>
                 <span className="muted">{label}</span>
-                <strong>{run[field]}</strong>
+                <strong>{displayedRun[field]}</strong>
               </div>
             ))}
           </div>
         ) : (
-          <p className="muted">{runLoadFailed ? RUN_UNAVAILABLE_COPY : EMPTY_STATE_COPY}</p>
+          <p className="muted">{loading ? LOADING_RUN_COPY : runLoadFailed ? RUN_UNAVAILABLE_COPY : EMPTY_STATE_COPY}</p>
         )}
       </section>
 
       <section className="card">
         <h2>Event Timeline</h2>
-        {events?.items.length ? (
+        {displayedEvents?.items.length ? (
           <ol className="timeline">
-            {events.items.map((event) => (
+            {displayedEvents.items.map((event) => (
               <li key={event.id}>
                 <div className="timeline-marker" />
                 <div>
@@ -244,7 +296,15 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
           </ol>
         ) : (
           <p className="muted">
-            {eventError ? EVENTS_UNAVAILABLE_COPY : runLoadFailed ? RUN_UNAVAILABLE_COPY : EMPTY_STATE_COPY}
+            {loading
+              ? eventLoading
+                ? LOADING_EVENTS_COPY
+                : LOADING_RUN_COPY
+              : eventError
+                ? EVENTS_UNAVAILABLE_COPY
+                : runLoadFailed
+                  ? RUN_UNAVAILABLE_COPY
+                  : EMPTY_STATE_COPY}
           </p>
         )}
       </section>
@@ -257,7 +317,15 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
           ))
         ) : (
           <p className="muted">
-            {eventError ? EVENTS_UNAVAILABLE_COPY : runLoadFailed ? RUN_UNAVAILABLE_COPY : EMPTY_STATE_COPY}
+            {loading
+              ? eventLoading
+                ? LOADING_EVENTS_COPY
+                : LOADING_RUN_COPY
+              : eventError
+                ? EVENTS_UNAVAILABLE_COPY
+                : runLoadFailed
+                  ? RUN_UNAVAILABLE_COPY
+                  : EMPTY_STATE_COPY}
           </p>
         )}
       </section>

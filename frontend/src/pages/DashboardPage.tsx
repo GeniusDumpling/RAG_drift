@@ -5,6 +5,7 @@ import type { ContentListItem, CrawlJob, CrawlRun, Page, SourceSite } from '../a
 import { formatErrorMessage } from '../utils/errors';
 
 const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
+const LOADING_STATE_COPY = 'Loading dashboard data...';
 
 type DashboardData = {
   sources?: Page<SourceSite>;
@@ -117,6 +118,11 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
           {error}
         </p>
       ) : null}
+      {loading ? (
+        <p className="card status-line" role="status" aria-live="polite">
+          {LOADING_STATE_COPY}
+        </p>
+      ) : null}
 
       {!loading && !error && !hasData ? <p className="card empty-state">{EMPTY_STATE_COPY}</p> : null}
 
@@ -134,7 +140,9 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
               ))}
             </ul>
           ) : (
-            <p className="muted">{error ? 'Recent runs unavailable while the API request is failing.' : EMPTY_STATE_COPY}</p>
+            <p className="muted">
+              {loading ? LOADING_STATE_COPY : error ? 'Recent runs unavailable while the API request is failing.' : EMPTY_STATE_COPY}
+            </p>
           )}
         </section>
 
@@ -152,7 +160,11 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
             </ul>
           ) : (
             <p className="muted">
-              {error ? 'Recent content unavailable while the API request is failing.' : EMPTY_STATE_COPY}
+              {loading
+                ? LOADING_STATE_COPY
+                : error
+                  ? 'Recent content unavailable while the API request is failing.'
+                  : EMPTY_STATE_COPY}
             </p>
           )}
         </section>

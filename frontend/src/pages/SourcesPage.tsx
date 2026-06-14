@@ -5,18 +5,21 @@ import type { CrawlJob, Page, SourceSite } from '../api/types';
 import { formatErrorMessage } from '../utils/errors';
 
 const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
+const LOADING_STATE_COPY = 'Loading sources data...';
 
 export function SourcesPage() {
   const [sources, setSources] = useState<Page<SourceSite>>();
   const [jobs, setJobs] = useState<Page<CrawlJob>>();
   const [message, setMessage] = useState('');
   const [loadError, setLoadError] = useState('');
+  const [loading, setLoading] = useState(true);
   const [pendingJobIds, setPendingJobIds] = useState<Set<string>>(() => new Set());
   const pendingJobIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let ignore = false;
     setLoadError('');
+    setLoading(true);
     Promise.allSettled([listSources(), listJobs()]).then(([sourceResult, jobResult]) => {
       if (ignore) {
         return;
@@ -27,6 +30,7 @@ export function SourcesPage() {
       setSources(sourceResult.status === 'fulfilled' ? sourceResult.value : undefined);
       setJobs(jobResult.status === 'fulfilled' ? jobResult.value : undefined);
       setLoadError(firstFailure ? formatErrorMessage('Unable to load sources data', firstFailure.reason) : '');
+      setLoading(false);
     });
     return () => {
       ignore = true;
@@ -80,6 +84,11 @@ export function SourcesPage() {
       {loadError ? (
         <p className="card error-text" role="alert">
           {loadError}
+        </p>
+      ) : null}
+      {loading ? (
+        <p className="card status-line" role="status" aria-live="polite">
+          {LOADING_STATE_COPY}
         </p>
       ) : null}
 
@@ -149,7 +158,7 @@ export function SourcesPage() {
         </div>
       ) : loadError ? (
         <p className="card muted">Source data unavailable while the API request is failing.</p>
-      ) : (
+      ) : loading ? null : (
         <p className="card empty-state">{EMPTY_STATE_COPY}</p>
       )}
     </section>

@@ -11,9 +11,10 @@ const ANSWER_LOADING_COPY = 'Generating answer...';
 
 type SearchPageProps = {
   initialQuery?: string;
+  onOpenContent?: (contentItemId: string) => void;
 };
 
-export function SearchPage({ initialQuery = '' }: SearchPageProps) {
+export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps) {
   const [query, setQuery] = useState(initialQuery);
   const [sourceSiteId, setSourceSiteId] = useState('');
   const [itemType, setItemType] = useState('');
@@ -221,7 +222,7 @@ export function SearchPage({ initialQuery = '' }: SearchPageProps) {
       <section>
         <h2>Evidence</h2>
         {evidence.length ? (
-          evidence.map((item) => <EvidenceCard evidence={item} key={item.chunk_id} />)
+          evidence.map((item) => <EvidenceCard evidence={item} key={item.chunk_id} onOpenContent={onOpenContent} />)
         ) : loading || error ? null : (
           <p className="card empty-state">{EMPTY_STATE_COPY}</p>
         )}

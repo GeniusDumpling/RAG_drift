@@ -140,6 +140,7 @@ export function SourcesPage() {
                             onClick={() => void handleTrigger(job)}
                             disabled={!job.enabled || triggerPending}
                             aria-busy={triggerPending}
+                            aria-label={`Trigger ${job.name}`}
                           >
                             Trigger
                           </button>

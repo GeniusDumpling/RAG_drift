@@ -184,6 +184,45 @@ describe('ContentDetailPage', () => {
     expect(screen.getByText(`Raw page link unavailable: ${unsafeUrl}`)).toBeInTheDocument();
   });
 
+  it('preserves and displays an externally selected content id that is absent from the loaded content page', async () => {
+    const selectedItem: ContentListItem = {
+      ...contentItem,
+      id: 'content-selected',
+      canonical_url: 'https://example.test/docs/selected',
+      title: 'Selected Evidence Guide',
+    };
+    const selectedDetail: ContentDetail = {
+      ...detail,
+      ...selectedItem,
+      raw_page: { ...rawPage, requested_url: selectedItem.canonical_url, final_url: selectedItem.canonical_url },
+      chunks: [{ ...chunk, id: 'chunk-selected', content_item_id: selectedItem.id, display_text: 'Selected detail chunk.' }],
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/contents?limit=25&offset=0')) {
+        return Promise.resolve(jsonResponse(page<ContentListItem>([contentItem])));
+      }
+      if (url.endsWith('/contents/content-selected')) {
+        return Promise.resolve(jsonResponse(selectedDetail));
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<ContentDetailPage selectedContentId={selectedItem.id} />);
+
+    expect(await screen.findByRole('heading', { name: 'Selected Evidence Guide' })).toBeInTheDocument();
+    const selector = screen.getByLabelText('Content item') as HTMLSelectElement;
+    expect(selector.tagName).toBe('SELECT');
+    expect(selector.value).toBe(selectedItem.id);
+    expect(Array.from(selector.options).map((option) => option.value)).toContain(selectedItem.id);
+    expect(screen.getByRole('option', { name: /content-selected/ })).toBeInTheDocument();
+    expect(screen.getByText('Selected detail chunk.', { selector: 'pre' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([request]) => String(request).endsWith('/contents/content-selected'))).toBe(true);
+    });
+  });
+
   it('renders an explicit API error when content list loading fails', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('backend offline')));
 

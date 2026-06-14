@@ -103,7 +103,7 @@ describe('SourcesPage', () => {
       screen.getByText((_content, element) => element?.textContent === 'Daily Crawl · docs · max 5'),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Trigger' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Trigger Daily Crawl' }));
 
     expect(await screen.findByText('Queued run run-1 for Daily Crawl.')).toBeInTheDocument();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
@@ -136,7 +136,7 @@ describe('SourcesPage', () => {
 
     render(<SourcesPage />);
 
-    const triggerButton = await screen.findByRole('button', { name: 'Trigger' });
+    const triggerButton = await screen.findByRole('button', { name: 'Trigger Daily Crawl' });
     fireEvent.click(triggerButton);
 
     expect(triggerButton).toBeDisabled();

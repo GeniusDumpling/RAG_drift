@@ -11,12 +11,13 @@ const LOADING_CONTENT_COPY = 'Loading content data...';
 const LOADING_CONTENT_DETAIL_COPY = 'Loading content detail...';
 
 type ContentDetailPageProps = {
+  selectedContentId?: string;
   onOpenRun?: (runId: string) => void;
 };
 
-export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
+export function ContentDetailPage({ selectedContentId: externallySelectedContentId = '', onOpenRun }: ContentDetailPageProps = {}) {
   const [contents, setContents] = useState<Page<ContentListItem>>();
-  const [selectedContentId, setSelectedContentId] = useState('');
+  const [activeContentId, setActiveContentId] = useState(externallySelectedContentId);
   const [detail, setDetail] = useState<ContentDetail>();
   const [listError, setListError] = useState('');
   const [detailError, setDetailError] = useState('');
@@ -31,7 +32,7 @@ export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
       .then((page) => {
         if (!ignore) {
           setContents(page);
-          setSelectedContentId((current) => current || page.items[0]?.id || '');
+          setActiveContentId((current) => current || externallySelectedContentId || page.items[0]?.id || '');
         }
       })
       .catch((caught) => {
@@ -51,8 +52,14 @@ export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
   }, []);
 
   useEffect(() => {
+    if (externallySelectedContentId) {
+      setActiveContentId(externallySelectedContentId);
+    }
+  }, [externallySelectedContentId]);
+
+  useEffect(() => {
     setDetailError('');
-    if (!selectedContentId) {
+    if (!activeContentId) {
       setDetail(undefined);
       setDetailLoading(false);
       return;
@@ -60,7 +67,7 @@ export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
     let ignore = false;
     setDetail(undefined);
     setDetailLoading(true);
-    getContent(selectedContentId)
+    getContent(activeContentId)
       .then((content) => {
         if (!ignore) {
           setDetail(content);
@@ -80,9 +87,9 @@ export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
     return () => {
       ignore = true;
     };
-  }, [selectedContentId]);
+  }, [activeContentId]);
 
-  const displayedDetail = detail?.id === selectedContentId ? detail : undefined;
+  const displayedDetail = detail?.id === activeContentId ? detail : undefined;
   const indexedTextPreview = useMemo(() => {
     if (!displayedDetail) {
       return '';
@@ -91,13 +98,34 @@ export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
   }, [displayedDetail]);
   const rawPageUrl = displayedDetail?.raw_page.final_url || displayedDetail?.raw_page.requested_url || '';
   const rawPageHref = safeExternalHref(rawPageUrl);
+  const contentOptions = useMemo(() => {
+    const loadedContents = contents?.items ?? [];
+    if (!loadedContents.length) {
+      return [];
+    }
+
+    const options = loadedContents.map((item) => ({
+      id: item.id,
+      label: `${item.item_type} · ${item.title || item.canonical_url}`,
+    }));
+    if (activeContentId && !loadedContents.some((item) => item.id === activeContentId)) {
+      return [
+        {
+          id: activeContentId,
+          label: `${displayedDetail?.item_type ?? 'selected'} · ${displayedDetail?.title || displayedDetail?.canonical_url || activeContentId} · ${activeContentId}`,
+        },
+        ...options,
+      ];
+    }
+    return options;
+  }, [activeContentId, contents, displayedDetail]);
 
   function handleContentChange(event: ChangeEvent<HTMLSelectElement | HTMLInputElement>) {
-    setSelectedContentId(event.target.value);
+    setActiveContentId(event.target.value);
   }
 
   const contentLoadFailed = Boolean(listError || detailError);
-  const detailSelectionPending = Boolean(selectedContentId && !displayedDetail && !detailError);
+  const detailSelectionPending = Boolean(activeContentId && !displayedDetail && !detailError);
   const loading = listLoading || detailLoading || detailSelectionPending;
   const loadingCopy = detailLoading || detailSelectionPending ? LOADING_CONTENT_DETAIL_COPY : LOADING_CONTENT_COPY;
 
@@ -111,18 +139,18 @@ export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
 
       <div className="card controls-card">
         <label htmlFor="content-selector">Content item</label>
-        {contents?.items.length ? (
-          <select id="content-selector" value={selectedContentId} onChange={handleContentChange}>
-            {contents.items.map((item) => (
+        {contentOptions.length ? (
+          <select id="content-selector" value={activeContentId} onChange={handleContentChange}>
+            {contentOptions.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.item_type} · {item.title || item.canonical_url}
+                {item.label}
               </option>
             ))}
           </select>
         ) : (
           <input
             id="content-selector"
-            value={selectedContentId}
+            value={activeContentId}
             onChange={handleContentChange}
             placeholder="Paste content item id"
           />

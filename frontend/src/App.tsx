@@ -14,6 +14,7 @@ export function App() {
   const [activeView, setActiveView] = useState<View>('Dashboard');
   const [searchSeed, setSearchSeed] = useState('');
   const [selectedRunId, setSelectedRunId] = useState('');
+  const [selectedContentId, setSelectedContentId] = useState('');
 
   function openSearch(query: string) {
     setSearchSeed(query);
@@ -23,6 +24,11 @@ export function App() {
   function openRun(runId: string) {
     setSelectedRunId(runId);
     setActiveView('Runs');
+  }
+
+  function openContent(contentItemId: string) {
+    setSelectedContentId(contentItemId);
+    setActiveView('Content');
   }
 
   return (
@@ -53,8 +59,8 @@ export function App() {
         {activeView === 'Dashboard' ? <DashboardPage onSearch={openSearch} /> : null}
         {activeView === 'Sources' ? <SourcesPage /> : null}
         {activeView === 'Runs' ? <RunDetailPage selectedRunId={selectedRunId} /> : null}
-        {activeView === 'Search' ? <SearchPage initialQuery={searchSeed} /> : null}
-        {activeView === 'Content' ? <ContentDetailPage onOpenRun={openRun} /> : null}
+        {activeView === 'Search' ? <SearchPage initialQuery={searchSeed} onOpenContent={openContent} /> : null}
+        {activeView === 'Content' ? <ContentDetailPage selectedContentId={selectedContentId} onOpenRun={openRun} /> : null}
       </main>
     </div>
   );

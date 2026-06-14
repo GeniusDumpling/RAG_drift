@@ -10,9 +10,10 @@ function formatScore(score: number | null | undefined): string {
 
 type EvidenceCardProps = {
   evidence: EvidenceObject;
+  onOpenContent?: (contentItemId: string) => void;
 };
 
-export function EvidenceCard({ evidence }: EvidenceCardProps) {
+export function EvidenceCard({ evidence, onOpenContent }: EvidenceCardProps) {
   const canonicalHref = safeExternalHref(evidence.canonical_url);
 
   return (
@@ -43,7 +44,20 @@ export function EvidenceCard({ evidence }: EvidenceCardProps) {
         </div>
         <div>
           <dt>Content item</dt>
-          <dd>{evidence.content_item_id}</dd>
+          <dd>
+            {onOpenContent ? (
+              <button
+                aria-label={`Open content item ${evidence.content_item_id}`}
+                className="link-button"
+                type="button"
+                onClick={() => onOpenContent(evidence.content_item_id)}
+              >
+                {evidence.content_item_id}
+              </button>
+            ) : (
+              evidence.content_item_id
+            )}
+          </dd>
         </div>
         <div>
           <dt>Source</dt>

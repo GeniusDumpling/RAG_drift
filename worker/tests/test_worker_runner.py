@@ -511,6 +511,160 @@ async def test_normalizer_does_not_mutate_reused_item_relationships_on_replay() 
     assert reused_item.thread_root_id == original_thread_root_id
 
 
+async def test_normalizer_duplicate_occurrence_does_not_overwrite_creator_relationships() -> None:
+    async with db_session_module.AsyncSessionLocal() as session:
+        source_site = SourceSite(
+            name="Duplicate Occurrence Source",
+            site_type="forum",
+            base_url="https://example.com",
+            allowed_domains=["example.com"],
+            fetch_mode="manual",
+            default_language="en",
+            active=True,
+            config_json={},
+        )
+        session.add(source_site)
+        await session.flush()
+
+        crawl_job = CrawlJob(
+            source_site_id=source_site.id,
+            name="Duplicate occurrence job",
+            trigger_mode="manual",
+            cron_expr=None,
+            seed_config_json={"urls": ["https://example.com/duplicate-thread"]},
+            parser_profile="forum_thread",
+            max_pages=1,
+            enabled=True,
+            agent_policy_json={},
+        )
+        session.add(crawl_job)
+        await session.flush()
+
+        crawl_run = CrawlRun(
+            source_site_id=source_site.id,
+            crawl_job_id=crawl_job.id,
+            trigger_type="manual",
+            seed_url="https://example.com/duplicate-thread",
+            status="running",
+            config_snapshot_json={},
+        )
+        session.add(crawl_run)
+        await session.flush()
+
+        raw_page = RawPage(
+            source_site_id=source_site.id,
+            crawl_run_id=crawl_run.id,
+            requested_url="https://example.com/duplicate-thread",
+            final_url="https://example.com/duplicate-thread",
+            http_status=200,
+            content_type="text/html",
+            response_headers_json={},
+            raw_html="<html></html>",
+            raw_text="duplicate body",
+            raw_json={},
+            fetched_at=utcnow(),
+            fetch_error=None,
+            parser_profile="forum_thread",
+            extraction_method=None,
+            extraction_confidence=None,
+            parse_status="pending",
+            parse_error=None,
+            body_hash="duplicate-body-hash",
+        )
+        session.add(raw_page)
+        await session.flush()
+
+        response = ExtractionAgentResponse(
+            page_kind="forum_thread",
+            items=[
+                ExtractionItem(
+                    item_type="thread",
+                    external_item_id="thread-a",
+                    title="Thread A",
+                    author=None,
+                    published_at=None,
+                    body_text="thread a body",
+                    summary_text=None,
+                    tags=[],
+                    parent_ref=None,
+                    thread_root_ref=None,
+                    metadata_json={},
+                ),
+                ExtractionItem(
+                    item_type="comment",
+                    external_item_id="duplicate-comment",
+                    title=None,
+                    author=None,
+                    published_at=None,
+                    body_text="duplicate comment body",
+                    summary_text=None,
+                    tags=[],
+                    parent_ref="thread-a",
+                    thread_root_ref="thread-a",
+                    metadata_json={},
+                ),
+                ExtractionItem(
+                    item_type="thread",
+                    external_item_id="thread-b",
+                    title="Thread B",
+                    author=None,
+                    published_at=None,
+                    body_text="thread b body",
+                    summary_text=None,
+                    tags=[],
+                    parent_ref=None,
+                    thread_root_ref=None,
+                    metadata_json={},
+                ),
+                ExtractionItem(
+                    item_type="comment",
+                    external_item_id="duplicate-comment",
+                    title=None,
+                    author=None,
+                    published_at=None,
+                    body_text="duplicate comment body",
+                    summary_text=None,
+                    tags=[],
+                    parent_ref="thread-b",
+                    thread_root_ref="thread-b",
+                    metadata_json={},
+                ),
+            ],
+            extraction_confidence=0.8,
+            warnings=[],
+            trace_summary_json={"provider": "test"},
+        )
+
+        normalization = await normalize_extraction_response(
+            session,
+            source_site=source_site,
+            raw_page=raw_page,
+            response=response,
+        )
+        await session.flush()
+
+        first_thread_id = normalization.content_item_ids[0]
+        first_comment_id = normalization.content_item_ids[1]
+        second_thread_id = normalization.content_item_ids[2]
+        second_comment_id = normalization.content_item_ids[3]
+        duplicate_comment = await session.get(ContentItem, first_comment_id)
+        assert duplicate_comment is not None
+        same_dedup_key_comments = (
+            await session.scalars(
+                select(ContentItem).where(ContentItem.dedup_key == duplicate_comment.dedup_key)
+            )
+        ).all()
+
+    assert first_comment_id == second_comment_id
+    assert len(same_dedup_key_comments) == 1
+    assert normalization.reused_item_ids == [first_comment_id]
+    assert normalization.deduped_count == 1
+    assert duplicate_comment.parent_item_id == first_thread_id
+    assert duplicate_comment.thread_root_id == first_thread_id
+    assert duplicate_comment.parent_item_id != second_thread_id
+    assert duplicate_comment.thread_root_id != second_thread_id
+
+
 async def test_normalizer_recovers_when_dedup_insert_loses_race() -> None:
     async with db_session_module.AsyncSessionLocal() as session:
         source_site = SourceSite(

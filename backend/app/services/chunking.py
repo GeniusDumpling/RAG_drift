@@ -2,7 +2,7 @@ import hashlib
 from dataclasses import dataclass
 from typing import Any
 
-CHUNKER_VERSION = "2026-06-14-v2"
+CHUNKER_VERSION = "2026-06-14-v3"
 
 _CONTEXTUAL_ARTICLE_TYPES = {"article", "doc_page", "release_note", "thread"}
 
@@ -33,12 +33,11 @@ def build_chunks(
     if max_chars < 1:
         raise ValueError("max_chars must be at least 1")
 
-    normalized_text = cleaned_text.strip()
     normalized_tags = [tag.strip() for tag in tags if tag.strip()]
     if item_type == "comment":
         return _build_contextual_comment_chunks(
             item_type=item_type,
-            cleaned_text=normalized_text,
+            cleaned_text=cleaned_text,
             tags=normalized_tags,
             thread_title=thread_title,
             max_chars=max_chars,
@@ -48,7 +47,7 @@ def build_chunks(
         return _build_contextual_article_chunks(
             item_type=item_type,
             title=title,
-            cleaned_text=normalized_text,
+            cleaned_text=cleaned_text,
             summary_text=summary_text,
             tags=normalized_tags,
             max_chars=max_chars,
@@ -57,7 +56,7 @@ def build_chunks(
     return _build_contextual_article_chunks(
         item_type=item_type,
         title=title,
-        cleaned_text=normalized_text,
+        cleaned_text=cleaned_text,
         summary_text=summary_text,
         tags=normalized_tags,
         max_chars=max_chars,
@@ -73,12 +72,13 @@ def _build_contextual_comment_chunks(
     max_chars: int,
 ) -> list[BuiltChunk]:
     chunks: list[BuiltChunk] = []
-    if not cleaned_text:
+    body_start, body_end = _trimmed_text_span(cleaned_text)
+    if body_start == body_end:
         ranges = [(0, "")]
     else:
         ranges = [
-            (start, cleaned_text[start : start + max_chars])
-            for start in range(0, len(cleaned_text), max_chars)
+            (start, cleaned_text[start : min(start + max_chars, body_end)])
+            for start in range(body_start, body_end, max_chars)
         ]
 
     for chunk_index, (start, comment_text) in enumerate(ranges):
@@ -108,6 +108,13 @@ def _build_contextual_comment_chunks(
                     "chunk_type": chunk_type,
                     "thread_title": thread_title,
                     "tags": tags,
+                    "offset_basis": "cleaned_text",
+                    "offset_text": "body_span",
+                    "contextual_display_fields": [],
+                    "contextual_embed_fields": _contextual_fields(
+                        ("thread_title", thread_title),
+                        ("tags", _format_tags(tags)),
+                    ),
                 },
             )
         )
@@ -124,7 +131,7 @@ def _build_contextual_article_chunks(
     tags: list[str],
     max_chars: int,
 ) -> list[BuiltChunk]:
-    lead_start, lead_end, lead = _lead_segment(cleaned_text, max_chars)
+    lead_start, lead_end, body_start, body_end, lead = _lead_segment(cleaned_text, max_chars)
     chunks = [
         _make_chunk(
             chunk_index=0,
@@ -145,13 +152,23 @@ def _build_contextual_article_chunks(
                 "item_type": item_type,
                 "chunk_type": "title_lead",
                 "tags": tags,
+                "offset_basis": "cleaned_text",
+                "offset_text": "body_span",
+                "contextual_display_fields": _contextual_fields(
+                    ("title", title),
+                    ("summary", summary_text),
+                ),
+                "contextual_embed_fields": _contextual_fields(
+                    ("title", title),
+                    ("summary", summary_text),
+                    ("tags", _format_tags(tags)),
+                ),
             },
         )
     ]
 
-    body_start = _skip_whitespace(cleaned_text, lead_end)
-    for start in range(body_start, len(cleaned_text), max_chars):
-        body_text = cleaned_text[start : start + max_chars]
+    for start in range(body_start, body_end, max_chars):
+        body_text = cleaned_text[start : min(start + max_chars, body_end)]
         if not body_text:
             continue
         chunks.append(
@@ -173,6 +190,13 @@ def _build_contextual_article_chunks(
                     "item_type": item_type,
                     "chunk_type": "body_section",
                     "tags": tags,
+                    "offset_basis": "cleaned_text",
+                    "offset_text": "body_span",
+                    "contextual_display_fields": [],
+                    "contextual_embed_fields": _contextual_fields(
+                        ("title", title),
+                        ("tags", _format_tags(tags)),
+                    ),
                 },
             )
         )
@@ -211,14 +235,45 @@ def _make_chunk(
     )
 
 
-def _lead_segment(text: str, max_chars: int) -> tuple[int, int, str]:
+def _lead_segment(text: str, max_chars: int) -> tuple[int, int, int, int, str]:
+    body_start, body_end = _trimmed_text_span(text)
+    if body_start == body_end:
+        return 0, 0, 0, 0, ""
+
+    for paragraph_start, paragraph_end in _paragraph_body_spans(text):
+        lead_end = min(paragraph_start + max_chars, paragraph_end)
+        lead = text[paragraph_start:lead_end]
+        next_body_start = lead_end
+        if lead_end >= paragraph_end:
+            next_body_start = _skip_whitespace(text, paragraph_end)
+        return paragraph_start, lead_end, min(next_body_start, body_end), body_end, lead
+
+    lead_end = min(body_start + max_chars, body_end)
+    return body_start, lead_end, lead_end, body_end, text[body_start:lead_end]
+
+
+def _trimmed_text_span(text: str) -> tuple[int, int]:
+    start_char = 0
+    end_char = len(text)
+    while start_char < end_char and text[start_char].isspace():
+        start_char += 1
+    while end_char > start_char and text[end_char - 1].isspace():
+        end_char -= 1
+    return start_char, end_char
+
+
+def _paragraph_body_spans(text: str) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    offset = 0
     for paragraph in text.split("\n\n"):
-        stripped = paragraph.strip()
-        if stripped:
-            start_char = text.find(stripped)
-            lead = stripped[:max_chars]
-            return start_char, start_char + len(lead), lead
-    return 0, 0, ""
+        paragraph_start = offset
+        paragraph_end = paragraph_start + len(paragraph)
+        body_start = paragraph_start + (len(paragraph) - len(paragraph.lstrip()))
+        body_end = paragraph_start + len(paragraph.rstrip())
+        if body_start < body_end:
+            spans.append((body_start, body_end))
+        offset = paragraph_end + 2
+    return spans
 
 
 def _skip_whitespace(text: str, start_char: int) -> int:
@@ -229,6 +284,10 @@ def _skip_whitespace(text: str, start_char: int) -> int:
 
 def _embed_text_hash(embed_text: str) -> str:
     return hashlib.sha256(embed_text.encode("utf-8")).hexdigest()
+
+
+def _contextual_fields(*fields: tuple[str, str | None]) -> list[str]:
+    return [name for name, value in fields if value and value.strip()]
 
 
 def _format_tags(tags: list[str]) -> str | None:

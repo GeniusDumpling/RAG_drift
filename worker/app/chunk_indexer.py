@@ -1,3 +1,4 @@
+import hashlib
 import uuid
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -36,6 +37,7 @@ class ObsoleteVectorPoint:
     backend_name: str
     point_id: str
     collection: str | None
+    store_id: str | None
 
 
 async def chunk_and_index_content_items(
@@ -310,13 +312,10 @@ def _mark_chunk_obsolete(chunk: ContentChunk) -> ObsoleteVectorPoint | None:
     previous_backend = chunk.vector_backend
     previous_point_id = chunk.vector_point_id or chunk.qdrant_point_id
     previous_collection = _metadata_string(chunk.chunk_metadata_json, "vector_collection")
+    previous_store_id = _metadata_string(chunk.chunk_metadata_json, "vector_store_id")
 
     chunk.embed_status = "obsolete"
     chunk.embed_error = "obsolete chunk"
-    chunk.qdrant_point_id = None
-    chunk.vector_backend = None
-    chunk.vector_point_id = None
-    chunk.embedded_at = None
 
     if previous_backend is None or previous_point_id is None:
         return None
@@ -325,6 +324,7 @@ def _mark_chunk_obsolete(chunk: ContentChunk) -> ObsoleteVectorPoint | None:
         backend_name=previous_backend,
         point_id=previous_point_id,
         collection=previous_collection,
+        store_id=previous_store_id,
     )
 
 
@@ -365,6 +365,7 @@ async def _delete_obsolete_vector_points(
             if deletion_indexer is None:
                 continue
             deletion_indexer.delete_chunk(point_id=obsolete_vector_point.point_id)
+            _mark_obsolete_vector_delete_success(obsolete_vector_point.content_chunk)
         except Exception as exc:
             failed_count += 1
             await _record_vector_delete_failure_event(
@@ -386,6 +387,10 @@ def _deletion_indexer_for_obsolete_vector_point(
 ) -> QdrantIndexer | None:
     if obsolete_vector_point.backend_name != active_indexer.backend_name:
         return None
+    if obsolete_vector_point.store_id is not None:
+        active_store_id = _vector_store_id(active_indexer.url)
+        if obsolete_vector_point.store_id != active_store_id:
+            return None
     if (
         obsolete_vector_point.collection is None
         or obsolete_vector_point.collection == active_indexer.collection
@@ -432,6 +437,7 @@ def _current_vector_index_target() -> VectorIndexTarget:
         backend_name=_vector_backend_name(settings.qdrant_url),
         metadata={
             "vector_collection": settings.qdrant_collection,
+            "vector_store_id": _vector_store_id(settings.qdrant_url),
             "embedding_model": embedding.model_name,
             "embedding_dimension": embedding.dimension,
         },
@@ -452,6 +458,7 @@ def _vector_index_target_from_indexer(
                 "collection",
                 fallback=str(fallback.metadata["vector_collection"]),
             ),
+            "vector_store_id": _vector_store_id_from_indexer(indexer, fallback=fallback),
             "embedding_model": _string_attribute(
                 embedding,
                 "model_name",
@@ -470,6 +477,24 @@ def _vector_backend_name(url: str) -> Literal["memory", "qdrant"]:
     if url == ":memory:" or url.startswith("memory://"):
         return "memory"
     return "qdrant"
+
+
+def _vector_store_id(url: str) -> str:
+    return hashlib.sha256(url.encode("utf-8")).hexdigest()
+
+
+def _vector_store_id_from_indexer(
+    indexer: object,
+    *,
+    fallback: VectorIndexTarget,
+) -> str:
+    url = getattr(indexer, "url", None)
+    if isinstance(url, str) and url.strip():
+        return _vector_store_id(url.strip())
+    fallback_store_id = fallback.metadata.get("vector_store_id")
+    if isinstance(fallback_store_id, str) and fallback_store_id.strip():
+        return fallback_store_id
+    return _vector_store_id(get_settings().qdrant_url)
 
 
 def _string_attribute(obj: object, name: str, *, fallback: str) -> str:
@@ -537,6 +562,17 @@ def _mark_chunk_success(
     content_chunk.chunk_metadata_json = {
         **content_chunk.chunk_metadata_json,
         **index_metadata,
+    }
+
+
+def _mark_obsolete_vector_delete_success(content_chunk: ContentChunk) -> None:
+    content_chunk.qdrant_point_id = None
+    content_chunk.vector_backend = None
+    content_chunk.vector_point_id = None
+    content_chunk.embedded_at = None
+    content_chunk.chunk_metadata_json = {
+        **content_chunk.chunk_metadata_json,
+        "vector_cleanup_status": "deleted",
     }
 
 

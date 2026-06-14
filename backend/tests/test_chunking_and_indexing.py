@@ -67,6 +67,60 @@ def test_article_chunking_short_normalized_text_uses_single_title_lead() -> None
     assert chunks[0].end_char == len("short normalized body")
 
 
+def test_article_chunking_offsets_are_relative_to_unstripped_input() -> None:
+    cleaned_text = "\n  Alpha beta  \n"
+
+    chunks = build_chunks(
+        item_type="article",
+        title="Operator guide",
+        cleaned_text=cleaned_text,
+        summary_text="Short summary",
+        tags=["telemetry"],
+        max_chars=50,
+    )
+
+    assert [chunk.chunk_type for chunk in chunks] == ["title_lead"]
+    assert chunks[0].display_text == "Operator guide\n\nShort summary\n\nAlpha beta"
+    assert chunks[0].start_char == cleaned_text.index("Alpha")
+    assert chunks[0].end_char == cleaned_text.index("Alpha") + len("Alpha beta")
+    assert cleaned_text[chunks[0].start_char : chunks[0].end_char] == "Alpha beta"
+    assert chunks[0].chunk_metadata_json["offset_basis"] == "cleaned_text"
+    assert chunks[0].chunk_metadata_json["offset_text"] == "body_span"
+    assert chunks[0].chunk_metadata_json["contextual_display_fields"] == [
+        "title",
+        "summary",
+    ]
+    assert chunks[0].chunk_metadata_json["contextual_embed_fields"] == [
+        "title",
+        "summary",
+        "tags",
+    ]
+
+
+def test_long_article_chunking_starts_body_after_bounded_lead_span() -> None:
+    cleaned_text = "  abcdefghij klmnop  "
+
+    chunks = build_chunks(
+        item_type="article",
+        title=None,
+        cleaned_text=cleaned_text,
+        summary_text=None,
+        tags=[],
+        max_chars=10,
+    )
+
+    assert [chunk.chunk_type for chunk in chunks] == ["title_lead", "body_section"]
+    assert chunks[0].display_text == "abcdefghij"
+    assert chunks[0].start_char == 2
+    assert chunks[0].end_char == 12
+    assert chunks[1].display_text == " klmnop"
+    assert chunks[1].start_char == chunks[0].end_char
+    assert chunks[1].end_char == len(cleaned_text.rstrip())
+    assert cleaned_text[chunks[1].start_char : chunks[1].end_char] == chunks[1].display_text
+    assert "".join(chunk.display_text for chunk in chunks) == cleaned_text.strip()
+    assert chunks[1].chunk_metadata_json["contextual_display_fields"] == []
+
+
 def test_chunks_include_chunker_version_and_embed_text_hash_metadata() -> None:
     chunks = build_chunks(
         item_type="comment",

@@ -15,6 +15,10 @@ python scripts/seed_demo.py
 uvicorn app.main:app --app-dir backend --reload
 ```
 
+Migration policy for this unmerged prototype branch: the initial migration may be edited
+in place. If you have already applied it to a local dev/test database, reset that
+database before rerunning migrations.
+
 If `python3 -m venv` reports that `ensurepip` is unavailable on Debian/Ubuntu,
 install `python3.12-venv` or `python3-venv` and retry. Alternatively, `make install`
 creates `.venv` and falls back to `uv venv --seed` when `uv` is available.

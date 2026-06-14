@@ -42,7 +42,7 @@ async def normalize_extraction_response(
 
     inserted_items: list[ContentItem] = []
     created_item_ids: list[uuid.UUID] = []
-    created_item_id_set: set[uuid.UUID] = set()
+    created_item_occurrences: list[bool] = []
     reused_item_ids: list[uuid.UUID] = []
     item_by_ref: dict[str, ContentItem] = {}
     canonical_url = raw_page.final_url or raw_page.requested_url
@@ -62,6 +62,7 @@ async def normalize_extraction_response(
         content_item = await session.scalar(
             select(ContentItem).where(ContentItem.dedup_key == dedup_key)
         )
+        created_item_for_occurrence = False
         if content_item is None:
             content_item = ContentItem(
                 source_site_id=source_site.id,
@@ -101,19 +102,22 @@ async def normalize_extraction_response(
             )
             if created:
                 created_item_ids.append(content_item.id)
-                created_item_id_set.add(content_item.id)
+                created_item_for_occurrence = True
             else:
                 reused_item_ids.append(content_item.id)
         else:
             reused_item_ids.append(content_item.id)
 
         inserted_items.append(content_item)
+        created_item_occurrences.append(created_item_for_occurrence)
         for ref in _reference_keys(index=index, item=item):
             item_by_ref[ref] = content_item
 
     first_thread = next((item for item in inserted_items if item.item_type == "thread"), None)
-    for source_item, content_item in zip(response.items, inserted_items, strict=True):
-        if content_item.id not in created_item_id_set:
+    for source_item, content_item, created_item_for_occurrence in zip(
+        response.items, inserted_items, created_item_occurrences, strict=True
+    ):
+        if not created_item_for_occurrence:
             continue
 
         if source_item.parent_ref is not None:

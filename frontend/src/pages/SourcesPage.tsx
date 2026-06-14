@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { listJobs, listSources, triggerJob } from '../api/client';
 import type { CrawlJob, Page, SourceSite } from '../api/types';
@@ -11,6 +11,8 @@ export function SourcesPage() {
   const [jobs, setJobs] = useState<Page<CrawlJob>>();
   const [message, setMessage] = useState('');
   const [loadError, setLoadError] = useState('');
+  const [pendingJobIds, setPendingJobIds] = useState<Set<string>>(() => new Set());
+  const pendingJobIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let ignore = false;
@@ -40,13 +42,29 @@ export function SourcesPage() {
     return grouped;
   }, [jobs]);
 
+  function setJobPending(jobId: string, pending: boolean) {
+    if (pending) {
+      pendingJobIdsRef.current.add(jobId);
+    } else {
+      pendingJobIdsRef.current.delete(jobId);
+    }
+    setPendingJobIds(new Set(pendingJobIdsRef.current));
+  }
+
   async function handleTrigger(job: CrawlJob) {
+    if (!job.enabled || pendingJobIdsRef.current.has(job.id)) {
+      return;
+    }
+
+    setJobPending(job.id, true);
     setMessage(`Triggering ${job.name}...`);
     try {
       const run = await triggerJob(job.id);
       setMessage(`Queued run ${run.id} for ${job.name}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to trigger job.');
+    } finally {
+      setJobPending(job.id, false);
     }
   }
 
@@ -100,17 +118,25 @@ export function SourcesPage() {
                 <h3>Jobs</h3>
                 {sourceJobs.length ? (
                   <ul className="dense-list">
-                    {sourceJobs.map((job) => (
-                      <li key={job.id}>
-                        <span>
-                          <strong>{job.name}</strong> · {job.parser_profile} · max {job.max_pages}
-                        </span>
-                        <span className="badge">{job.enabled ? 'enabled' : 'disabled'}</span>
-                        <button type="button" onClick={() => void handleTrigger(job)} disabled={!job.enabled}>
-                          Trigger
-                        </button>
-                      </li>
-                    ))}
+                    {sourceJobs.map((job) => {
+                      const triggerPending = pendingJobIds.has(job.id);
+                      return (
+                        <li key={job.id}>
+                          <span>
+                            <strong>{job.name}</strong> · {job.parser_profile} · max {job.max_pages}
+                          </span>
+                          <span className="badge">{job.enabled ? 'enabled' : 'disabled'}</span>
+                          <button
+                            type="button"
+                            onClick={() => void handleTrigger(job)}
+                            disabled={!job.enabled || triggerPending}
+                            aria-busy={triggerPending}
+                          >
+                            Trigger
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 ) : (
                   <p className="muted">

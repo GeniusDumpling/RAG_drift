@@ -81,7 +81,6 @@ export type CrawlRunEvent = {
 export type ContentListItem = {
   id: UUID;
   source_site_id: UUID;
-  raw_page_id?: UUID;
   item_type: string;
   canonical_url: string;
   title: string | null;
@@ -137,7 +136,6 @@ export type ContentChunk = {
 };
 
 export type ContentDetail = ContentListItem & {
-  cleaned_text?: string | null;
   raw_page: RawPage;
   source: SourceSite;
   crawl_run: CrawlRun;

@@ -29,9 +29,13 @@ const COUNTER_FIELDS: Array<[CounterField, string]> = [
   ['error_count', 'Errors'],
 ];
 
-export function RunDetailPage() {
+type RunDetailPageProps = {
+  selectedRunId?: string;
+};
+
+export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: RunDetailPageProps = {}) {
   const [runs, setRuns] = useState<Page<CrawlRun>>();
-  const [selectedRunId, setSelectedRunId] = useState('');
+  const [activeRunId, setActiveRunId] = useState(externallySelectedRunId);
   const [run, setRun] = useState<CrawlRun>();
   const [events, setEvents] = useState<Page<CrawlRunEvent>>();
   const [runListError, setRunListError] = useState('');
@@ -45,7 +49,7 @@ export function RunDetailPage() {
       .then((page) => {
         if (!ignore) {
           setRuns(page);
-          setSelectedRunId((current) => current || page.items[0]?.id || '');
+          setActiveRunId((current) => current || externallySelectedRunId || page.items[0]?.id || '');
         }
       })
       .catch((caught) => {
@@ -60,16 +64,22 @@ export function RunDetailPage() {
   }, []);
 
   useEffect(() => {
+    if (externallySelectedRunId) {
+      setActiveRunId(externallySelectedRunId);
+    }
+  }, [externallySelectedRunId]);
+
+  useEffect(() => {
     setRunDetailError('');
     setEventError('');
-    if (!selectedRunId) {
+    if (!activeRunId) {
       setRun(undefined);
       setEvents(undefined);
       return;
     }
 
     let ignore = false;
-    Promise.allSettled([getRun(selectedRunId), getRunEvents(selectedRunId)]).then(([runResult, eventsResult]) => {
+    Promise.allSettled([getRun(activeRunId), getRunEvents(activeRunId)]).then(([runResult, eventsResult]) => {
       if (ignore) {
         return;
       }
@@ -90,7 +100,7 @@ export function RunDetailPage() {
     return () => {
       ignore = true;
     };
-  }, [selectedRunId]);
+  }, [activeRunId]);
 
   const agentTraceEvents = useMemo(
     () => (events?.items ?? []).filter((event) => Object.keys(event.agent_trace_json).length > 0),
@@ -98,7 +108,7 @@ export function RunDetailPage() {
   );
 
   function handleRunChange(event: ChangeEvent<HTMLSelectElement | HTMLInputElement>) {
-    setSelectedRunId(event.target.value);
+    setActiveRunId(event.target.value);
   }
 
   const runLoadFailed = Boolean(runListError || runDetailError);
@@ -114,7 +124,7 @@ export function RunDetailPage() {
       <div className="card controls-card">
         <label htmlFor="run-selector">Run</label>
         {runs?.items.length ? (
-          <select id="run-selector" value={selectedRunId} onChange={handleRunChange}>
+          <select id="run-selector" value={activeRunId} onChange={handleRunChange}>
             {runs.items.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.status} · {item.id}
@@ -124,7 +134,7 @@ export function RunDetailPage() {
         ) : (
           <input
             id="run-selector"
-            value={selectedRunId}
+            value={activeRunId}
             onChange={handleRunChange}
             placeholder="Paste crawl run id"
           />

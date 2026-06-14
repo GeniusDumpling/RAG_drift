@@ -8,7 +8,11 @@ import { safeExternalHref } from '../utils/links';
 const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
 const CONTENT_UNAVAILABLE_COPY = 'Content detail unavailable while the API request is failing.';
 
-export function ContentDetailPage() {
+type ContentDetailPageProps = {
+  onOpenRun?: (runId: string) => void;
+};
+
+export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
   const [contents, setContents] = useState<Page<ContentListItem>>();
   const [selectedContentId, setSelectedContentId] = useState('');
   const [detail, setDetail] = useState<ContentDetail>();
@@ -60,16 +64,11 @@ export function ContentDetailPage() {
     };
   }, [selectedContentId]);
 
-  const cleanedText = useMemo(() => {
+  const indexedTextPreview = useMemo(() => {
     if (!detail) {
       return '';
     }
-    return (
-      detail.cleaned_text ||
-      detail.chunks.map((chunk) => chunk.display_text).join('\n\n') ||
-      detail.raw_page.raw_text ||
-      ''
-    );
+    return detail.chunks.map((chunk) => chunk.display_text).join('\n\n') || detail.raw_page.raw_text || '';
   }, [detail]);
   const rawPageUrl = detail?.raw_page.final_url || detail?.raw_page.requested_url || '';
   const rawPageHref = safeExternalHref(rawPageUrl);
@@ -169,13 +168,21 @@ export function ContentDetailPage() {
                   Raw page link unavailable: {rawPageUrl || 'n/a'}
                 </span>
               )}
-              <a href={`#run-${detail.crawl_run.id}`}>Run link</a>
+              {onOpenRun ? (
+                <button className="link-button" type="button" onClick={() => onOpenRun(detail.crawl_run.id)}>
+                  Run link
+                </button>
+              ) : (
+                <span className="muted" aria-disabled="true">
+                  Run link unavailable
+                </span>
+              )}
             </div>
           </section>
 
           <section className="card">
-            <h2>Cleaned Text</h2>
-            {cleanedText ? <pre>{cleanedText}</pre> : <p className="muted">{EMPTY_STATE_COPY}</p>}
+            <h2>Indexed Text Preview</h2>
+            {indexedTextPreview ? <pre>{indexedTextPreview}</pre> : <p className="muted">{EMPTY_STATE_COPY}</p>}
           </section>
 
           <section className="card">

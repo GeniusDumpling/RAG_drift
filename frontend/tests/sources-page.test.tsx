@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { CrawlJob, CrawlRun, Page, SourceSite } from '../src/api/types';
@@ -112,6 +112,43 @@ describe('SourcesPage', () => {
     const [, init] = triggerCall!;
     expect(init).toMatchObject({ method: 'POST' });
     expect(JSON.parse(String(init?.body))).toEqual({ seed_url: null });
+  });
+
+  it('disables a job trigger while pending and prevents duplicate POSTs', async () => {
+    let resolveTrigger!: (response: Response) => void;
+    const pendingTrigger = new Promise<Response>((resolve) => {
+      resolveTrigger = resolve;
+    });
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/sources?limit=50&offset=0')) {
+        return Promise.resolve(jsonResponse(page<SourceSite>([source])));
+      }
+      if (url.endsWith('/jobs?limit=50&offset=0')) {
+        return Promise.resolve(jsonResponse(page<CrawlJob>([job])));
+      }
+      if (url.endsWith('/jobs/job-1/trigger') && init?.method === 'POST') {
+        return pendingTrigger;
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SourcesPage />);
+
+    const triggerButton = await screen.findByRole('button', { name: 'Trigger' });
+    fireEvent.click(triggerButton);
+
+    expect(triggerButton).toBeDisabled();
+    fireEvent.click(triggerButton);
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/jobs/job-1/trigger'))).toHaveLength(1);
+
+    await act(async () => {
+      resolveTrigger(jsonResponse(run));
+    });
+
+    expect(await screen.findByText('Queued run run-1 for Daily Crawl.')).toBeInTheDocument();
+    await waitFor(() => expect(triggerButton).not.toBeDisabled());
   });
 
   it('renders an explicit API error when sources or jobs fail to load', async () => {

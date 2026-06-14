@@ -71,6 +71,60 @@ if not is_local_api_base(api_base):
 PY
 }
 
+require_local_smoke_vector() {
+  if [[ "${ALLOW_NONLOCAL_SMOKE_VECTOR:-0}" == "1" ]]; then
+    return 0
+  fi
+
+  "$PYTHON" - <<'PY'
+import os
+import sys
+from urllib.parse import urlparse
+
+
+LOCAL_VECTOR_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def safe_url(value: str) -> str:
+    if value == ":memory:" or value.startswith("memory://"):
+        return value
+    parsed = urlparse(value)
+    if parsed.hostname is None:
+        scheme = parsed.scheme or "qdrant"
+        return f"{scheme}://<missing-host>"
+    host = parsed.hostname
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    if port is not None:
+        host = f"{host}:{port}"
+    return parsed._replace(netloc=host, params="", query="", fragment="").geturl()
+
+
+def is_local_vector_url(value: str) -> bool:
+    if value == ":memory:" or value.startswith("memory://"):
+        return True
+    host = urlparse(value).hostname
+    if host is None:
+        return False
+    return host.lower() in LOCAL_VECTOR_HOSTS
+
+
+qdrant_url = os.environ.get("QDRANT_URL", "http://localhost:6333")
+if not is_local_vector_url(qdrant_url):
+    print(
+        "Refusing to run smoke demo against a non-local QDRANT_URL. "
+        "Set ALLOW_NONLOCAL_SMOKE_VECTOR=1 to override. Offending setting: "
+        f"QDRANT_URL={safe_url(qdrant_url)}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+PY
+}
+
 require_local_smoke_db() {
   if [[ "${ALLOW_NONLOCAL_SMOKE_DB:-0}" == "1" ]]; then
     return 0
@@ -222,6 +276,11 @@ wait_for_api() {
   return 1
 }
 
+is_memory_smoke_vector_url() {
+  local url="$1"
+  [[ "$url" == ":memory:" || "$url" == memory://* ]]
+}
+
 extract_seed_run_id() {
   SEED_JSON="$1" "$PYTHON" - <<'PY'
 import json
@@ -337,6 +396,13 @@ if [[ ! -f .env && -f .env.example ]]; then
   cp .env.example .env
   printf 'Created .env from .env.example for smoke demo defaults.\n'
 fi
+
+if [[ "${SKIP_DOCKER:-0}" == "1" ]]; then
+  export QDRANT_URL="${QDRANT_URL:-memory://smoke-demo}"
+else
+  export QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
+fi
+
 require_local_smoke_db
 if [[ "${ALLOW_NONLOCAL_SMOKE_DB:-0}" == "1" ]]; then
   # The smoke DB override covers both Alembic and seed_demo.py so it does not fail halfway.
@@ -344,6 +410,7 @@ if [[ "${ALLOW_NONLOCAL_SMOKE_DB:-0}" == "1" ]]; then
   printf 'ALLOW_NONLOCAL_SMOKE_DB=1; exporting ALLOW_NONLOCAL_DEMO_SEED=1 for seed_demo.py.\n'
 fi
 require_local_api_base
+require_local_smoke_vector
 
 if [[ "${SKIP_DOCKER:-0}" != "1" ]]; then
   if docker compose up --help 2>&1 | grep -q -- '--wait'; then
@@ -351,12 +418,16 @@ if [[ "${SKIP_DOCKER:-0}" != "1" ]]; then
   else
     docker compose up -d postgres qdrant
     wait_for_tcp 127.0.0.1 54329 postgres
-    wait_for_http "${QDRANT_URL:-http://localhost:6333}" qdrant
   fi
 else
   printf '\nSKIP_DOCKER=1; skipping docker compose up -d postgres qdrant\n'
-  export QDRANT_URL="${QDRANT_URL:-memory://smoke-demo}"
 fi
+
+if ! is_memory_smoke_vector_url "$QDRANT_URL"; then
+  wait_for_http "$QDRANT_URL" "Qdrant"
+fi
+
+wait_for_api
 
 "$ALEMBIC" upgrade head
 SEED_JSON="$($PYTHON scripts/seed_demo.py)"

@@ -32,6 +32,35 @@ def test_comment_chunking_adds_context() -> None:
     assert "Telemetry issue thread" in chunks[0].embed_text
 
 
+def test_long_comment_chunking_splits_comment_text_by_max_chars() -> None:
+    comment_text = "abcdefghijklmnopqrstuvwxyz0123456789"
+
+    chunks = build_chunks(
+        item_type="comment",
+        title=None,
+        cleaned_text=comment_text,
+        summary_text=None,
+        tags=["bug", "regression"],
+        thread_title="Telemetry issue thread",
+        max_chars=10,
+    )
+
+    assert [chunk.chunk_index for chunk in chunks] == [0, 1, 2, 3]
+    assert chunks[0].chunk_type == "comment_contextual"
+    assert {chunk.chunk_type for chunk in chunks[1:]} == {"comment_contextual_continued"}
+    assert "Telemetry issue thread" in chunks[0].embed_text
+    assert "bug, regression" in chunks[0].embed_text
+    assert "Comment: abcdefghij" in chunks[0].embed_text
+    assert all(len(chunk.display_text) <= 10 for chunk in chunks)
+    assert "".join(chunk.display_text for chunk in chunks) == comment_text
+    assert [(chunk.start_char, chunk.end_char) for chunk in chunks] == [
+        (0, 10),
+        (10, 20),
+        (20, 30),
+        (30, 36),
+    ]
+
+
 def test_deterministic_embedding_has_fixed_dimension_and_repeatability() -> None:
     service = DeterministicEmbeddingService(dimension=32)
     first = service.embed("telemetry settings")

@@ -493,10 +493,10 @@ def upgrade() -> None:
             server_default=_JSONB_OBJECT_DEFAULT,
             nullable=False,
         ),
-        sa.Column("mode", sa.String(length=40), server_default=sa.text("'hybrid'"), nullable=False),
+        sa.Column("mode", sa.String(length=40), server_default=sa.text("'search'"), nullable=False),
         sa.Column("top_k", sa.Integer(), server_default=sa.text("10"), nullable=False),
         sa.Column("used_agent", sa.Boolean(), server_default=sa.text("false"), nullable=False),
-        sa.Column("optimized_query", sa.Text(), nullable=True),
+        sa.Column("optimized_query_text", sa.Text(), nullable=True),
         sa.Column(
             "keyword_terms_json",
             postgresql.JSONB(),
@@ -517,6 +517,12 @@ def upgrade() -> None:
         ),
         sa.Column(
             "result_summary_json",
+            postgresql.JSONB(),
+            server_default=_JSONB_OBJECT_DEFAULT,
+            nullable=False,
+        ),
+        sa.Column(
+            "query_trace_json",
             postgresql.JSONB(),
             server_default=_JSONB_OBJECT_DEFAULT,
             nullable=False,

@@ -55,9 +55,25 @@ db_session_module.AsyncSessionLocal = async_sessionmaker(
 
 @pytest.fixture(autouse=True)
 def reset_worker_database() -> Iterator[None]:
+    previous_qdrant_url = os.environ.get("QDRANT_URL")
+    previous_qdrant_collection = os.environ.get("QDRANT_COLLECTION")
+    os.environ["QDRANT_URL"] = "memory://worker-tests"
+    os.environ["QDRANT_COLLECTION"] = "content_chunks_worker_tests"
+    get_settings.cache_clear()
+
     engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
     with engine.begin() as connection:
         Base.metadata.drop_all(connection)
         Base.metadata.create_all(connection)
     engine.dispose()
     yield
+
+    if previous_qdrant_url is None:
+        os.environ.pop("QDRANT_URL", None)
+    else:
+        os.environ["QDRANT_URL"] = previous_qdrant_url
+    if previous_qdrant_collection is None:
+        os.environ.pop("QDRANT_COLLECTION", None)
+    else:
+        os.environ["QDRANT_COLLECTION"] = previous_qdrant_collection
+    get_settings.cache_clear()

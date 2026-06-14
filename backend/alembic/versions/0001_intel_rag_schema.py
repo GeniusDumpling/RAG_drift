@@ -415,6 +415,9 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("qdrant_point_id", sa.String(length=255), nullable=True),
+        sa.Column("vector_backend", sa.String(length=40), nullable=True),
+        sa.Column("vector_point_id", sa.String(length=255), nullable=True),
+        sa.Column("embedded_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "embed_status",
             sa.String(length=40),

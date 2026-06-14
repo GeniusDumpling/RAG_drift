@@ -190,6 +190,13 @@ def test_critical_nullability_and_defaults_are_declared() -> None:
     assert search_queries.c.used_agent.server_default is not None
 
 
+def test_content_chunks_track_vector_indexing_state() -> None:
+    table = Base.metadata.tables["content_chunks"]
+
+    for column_name in ["vector_backend", "vector_point_id", "embedded_at"]:
+        assert column_name in table.c
+
+
 def test_content_chunk_order_is_unique_per_content_item() -> None:
     unique_column_sets = _unique_constraint_column_sets("content_chunks")
     assert ("content_item_id", "chunk_index") in unique_column_sets

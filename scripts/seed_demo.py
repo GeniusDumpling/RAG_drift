@@ -52,6 +52,10 @@ DEMO_JOB_VALUES: dict[str, Any] = {
 }
 
 
+class DemoSeedSafetyError(RuntimeError):
+    """Raised when demo seeding would touch records not marked as demo-owned."""
+
+
 def _copied_values(values: dict[str, Any]) -> dict[str, Any]:
     return {key: deepcopy(value) for key, value in values.items()}
 
@@ -86,7 +90,7 @@ def _is_local_database_url(value: str) -> bool:
         return True
 
     normalized = host.lower()
-    return normalized == "localhost" or normalized == "::1" or normalized.startswith("127.")
+    return normalized in {"localhost", "127.0.0.1", "::1"}
 
 
 def _configured_database_urls() -> tuple[tuple[str, str], tuple[str, str]]:
@@ -163,9 +167,15 @@ async def _find_demo_source(session: AsyncSession) -> SourceSite | None:
         .order_by(SourceSite.created_at.asc())
     )
     candidates = list(result)
-    for source in candidates:
-        if _source_has_demo_marker(source):
-            return source
+    unmarked_sources = [source for source in candidates if not _source_has_demo_marker(source)]
+    if unmarked_sources:
+        source_ids = ", ".join(str(source.id) for source in unmarked_sources)
+        raise DemoSeedSafetyError(
+            "Refusing to seed demo because existing SourceSite named "
+            f"'{DEMO_SOURCE_NAME}' is not marked as demo-owned "
+            f"(expected config_json.kind == '{DEMO_KIND}'; id(s): {source_ids}). "
+            "Rename or remove the unmarked record before running the demo seed."
+        )
     return candidates[0] if candidates else None
 
 
@@ -179,9 +189,16 @@ async def _find_demo_job(session: AsyncSession, source: SourceSite) -> CrawlJob 
         .order_by(CrawlJob.created_at.asc())
     )
     candidates = list(result)
-    for job in candidates:
-        if _job_has_demo_marker(job):
-            return job
+    unmarked_jobs = [job for job in candidates if not _job_has_demo_marker(job)]
+    if unmarked_jobs:
+        job_ids = ", ".join(str(job.id) for job in unmarked_jobs)
+        raise DemoSeedSafetyError(
+            "Refusing to seed demo because existing CrawlJob named "
+            f"'{DEMO_JOB_NAME}' for SourceSite '{DEMO_SOURCE_NAME}' is not marked as "
+            f"demo-owned (expected seed_config_json.kind == '{DEMO_KIND}' or "
+            f"agent_policy_json.kind == '{DEMO_KIND}'; id(s): {job_ids}). "
+            "Rename or remove the unmarked record before running the demo seed."
+        )
     return candidates[0] if candidates else None
 
 
@@ -264,7 +281,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    print(json.dumps(asyncio.run(seed_demo(new_run=args.new_run)), sort_keys=True))
+    try:
+        payload = asyncio.run(seed_demo(new_run=args.new_run))
+    except DemoSeedSafetyError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1) from None
+    print(json.dumps(payload, sort_keys=True))
 
 
 if __name__ == "__main__":

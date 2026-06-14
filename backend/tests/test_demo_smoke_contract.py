@@ -31,7 +31,14 @@ def test_seed_demo_has_local_db_guard_and_reconciles_demo_config() -> None:
     assert "safe_url" in seed_text
     assert "DEMO_SOURCE_VALUES" in seed_text
     assert "DEMO_JOB_VALUES" in seed_text
-    assert "config_json[\"kind\"]" in seed_text
+    assert "config_json" in seed_text
+    assert "kind" in seed_text
+    assert "DemoSeedSafetyError" in seed_text
+    assert "not marked as demo-owned" in seed_text
+    assert "SourceSite named" in seed_text
+    assert "CrawlJob named" in seed_text
+    assert "unmarked_sources" in seed_text
+    assert "unmarked_jobs" in seed_text
     assert "reconcile_source" in seed_text
     assert "reconcile_job" in seed_text
     assert "seed_config_json" in seed_text
@@ -67,11 +74,15 @@ def test_demo_smoke_contract_targets_seeded_run_and_asserts_semantics() -> None:
     assert "POST /search" in smoke_text
     assert "POST /answer" in smoke_text
     assert "json.load" in smoke_text
+    assert ".venv/bin/python" in smoke_text
+    assert ".venv/bin/alembic" in smoke_text
     assert "evidence" in smoke_text
     assert "supporting_evidence" in smoke_text
     assert "[1]" in smoke_text
     assert "telemetry" in smoke_text
     assert "settings" in smoke_text
+    assert "/answer supporting_evidence did not reference demo telemetry/settings" in smoke_text
+    assert "startswith(\"127.\")" not in smoke_text
 
 
 def test_smoke_demo_shell_syntax_is_valid() -> None:

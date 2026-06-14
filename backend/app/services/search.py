@@ -7,7 +7,14 @@ from app.agents.client import AgentClient
 from app.agents.contracts import QueryOptimizationResponse
 from app.core.config import Settings, get_settings
 from app.repositories.search import SearchRepository
-from app.schemas.search import SearchQueryRead, SearchRequest, SearchResponse
+from app.schemas.search import (
+    AnswerRequest,
+    AnswerResponse,
+    EvidenceObject,
+    SearchQueryRead,
+    SearchRequest,
+    SearchResponse,
+)
 from app.services.embeddings import DeterministicEmbeddingService, EmbeddingService
 from app.services.retrieval import retrieve_evidence
 
@@ -39,6 +46,20 @@ class SearchService:
                 "Use /answer for answer mode when it is available"
             )
 
+        query, evidence = await self._retrieve(request)
+        return SearchResponse(query=query, evidence=evidence)
+
+    async def answer(self, request: AnswerRequest) -> AnswerResponse:
+        query, evidence = await self._retrieve(request)
+        return AnswerResponse(
+            query=query,
+            answer=_synthesize_answer(evidence),
+            supporting_evidence=evidence,
+        )
+
+    async def _retrieve(
+        self, request: SearchRequest | AnswerRequest
+    ) -> tuple[SearchQueryRead, list[EvidenceObject]]:
         repo = SearchRepository(self.session)
         filter_json = _filter_json(request)
         search_query = await repo.create_search_query(
@@ -78,10 +99,7 @@ class SearchService:
             result_count=len(retrieval_result.evidence),
             retrieval_trace=retrieval_result.trace,
         )
-        return SearchResponse(
-            query=SearchQueryRead.model_validate(updated_query),
-            evidence=retrieval_result.evidence,
-        )
+        return SearchQueryRead.model_validate(updated_query), retrieval_result.evidence
 
     def _optimize_query(
         self,
@@ -101,8 +119,17 @@ class SearchService:
             return _fallback_optimization(raw_query=raw_query, error_message=str(exc))
 
 
-def _filter_json(request: SearchRequest) -> dict[str, Any]:
+def _filter_json(request: SearchRequest | AnswerRequest) -> dict[str, Any]:
     return request.filters.model_dump(mode="json", exclude_none=True)
+
+
+def _synthesize_answer(evidence: list[EvidenceObject]) -> str:
+    if not evidence:
+        return "No supported answer found in the indexed sources."
+    return " ".join(
+        f"[{index}] {evidence_object.snippet}"
+        for index, evidence_object in enumerate(evidence[:3], start=1)
+    )
 
 
 def _fallback_optimization(*, raw_query: str, error_message: str) -> QueryOptimizationResponse:

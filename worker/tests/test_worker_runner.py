@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 from typing import cast
 
@@ -12,10 +13,11 @@ from app.main import app
 from app.models.content import ContentItem, RawPage
 from app.models.control import CrawlJob, CrawlRun, SourceSite
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, event, insert, select, text
+from sqlalchemy.orm import Session
 
 import worker.app.runner as runner_module
-from worker.app.adapters import OfficialSiteAdapter
+from worker.app.adapters import DiscoveredPage, FetchedPage, OfficialSiteAdapter
 from worker.app.normalizer import normalize_extraction_response
 from worker.app.runner import run_once
 
@@ -46,6 +48,7 @@ def _create_worker_job(
             },
         ).json(),
     )
+    configured_urls = [seed_url] if urls is None else urls
     return cast(
         dict[str, object],
         client.post(
@@ -55,7 +58,7 @@ def _create_worker_job(
                 "name": "Manual official crawl",
                 "trigger_mode": "manual",
                 "cron_expr": None,
-                "seed_config_json": {"urls": urls or [seed_url]},
+                "seed_config_json": {"urls": configured_urls},
                 "parser_profile": parser_profile,
                 "max_pages": max_pages,
                 "enabled": True,
@@ -167,6 +170,59 @@ def test_unsupported_parser_profile_marks_run_failed_without_raising() -> None:
     run_failed_events = [event for event in events if event["event_type"] == "run_failed"]
     assert len(run_failed_events) == 1
     assert "Unsupported parser_profile: unsupported_profile" in run_failed_events[0]["message"]
+
+
+def test_unexpected_process_run_exception_marks_claimed_run_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail_after_claim(run_id: uuid.UUID) -> runner_module.RunOutcome:
+        raise RuntimeError(f"unexpected finalization failure for {run_id}")
+
+    monkeypatch.setattr(runner_module, "_process_run", fail_after_claim)
+    client = TestClient(app)
+    run = _queue_worker_run(client)
+
+    result = run_once(run_limit=1)
+    assert result.claimed == 1
+    assert result.succeeded == 0
+    assert result.partial == 0
+    assert result.failed == 1
+
+    detail = client.get(f"/runs/{run['id']}").json()
+    assert detail["status"] == "failed"
+    assert detail["error_count"] == 1
+    assert "unexpected finalization failure" in detail["error_message"]
+
+    events = client.get(f"/runs/{run['id']}/events").json()["items"]
+    run_failed_events = [event for event in events if event["event_type"] == "run_failed"]
+    assert len(run_failed_events) == 1
+    assert "unexpected finalization failure" in run_failed_events[0]["message"]
+
+
+def test_zero_discovered_pages_marks_run_failed_with_explicit_message() -> None:
+    client = TestClient(app)
+    run = _queue_worker_run(client, urls=[], seed_url="")
+
+    result = run_once(run_limit=1)
+    assert result.claimed == 1
+    assert result.succeeded == 0
+    assert result.partial == 0
+    assert result.failed == 1
+
+    detail = client.get(f"/runs/{run['id']}").json()
+    assert detail["status"] == "failed"
+    assert detail["discovered_count"] == 0
+    assert detail["fetched_count"] == 0
+    assert detail["parsed_count"] == 0
+    assert detail["extracted_count"] == 0
+    assert detail["deduped_count"] == 0
+    assert detail["error_count"] == 1
+    assert detail["error_message"] == "No pages were discovered."
+
+    events = client.get(f"/runs/{run['id']}/events").json()["items"]
+    run_failed_events = [event for event in events if event["event_type"] == "run_failed"]
+    assert len(run_failed_events) == 1
+    assert run_failed_events[0]["message"] == "No pages were discovered."
 
 
 def test_agent_fallback_response_records_fallback_used_status(
@@ -306,6 +362,166 @@ def test_replaying_same_deterministic_page_reuses_existing_content_item() -> Non
     assert [raw_page["parse_status"] for raw_page in raw_pages] == ["parsed", "parsed"]
 
 
+async def test_normalizer_recovers_when_dedup_insert_loses_race() -> None:
+    async with db_session_module.AsyncSessionLocal() as session:
+        source_site = SourceSite(
+            name="Race Source",
+            site_type="forum",
+            base_url="https://example.com",
+            allowed_domains=["example.com"],
+            fetch_mode="manual",
+            default_language="en",
+            active=True,
+            config_json={},
+        )
+        session.add(source_site)
+        await session.flush()
+
+        crawl_job = CrawlJob(
+            source_site_id=source_site.id,
+            name="Race job",
+            trigger_mode="manual",
+            cron_expr=None,
+            seed_config_json={"urls": ["https://example.com/race"]},
+            parser_profile="forum_thread",
+            max_pages=1,
+            enabled=True,
+            agent_policy_json={},
+        )
+        session.add(crawl_job)
+        await session.flush()
+
+        crawl_run = CrawlRun(
+            source_site_id=source_site.id,
+            crawl_job_id=crawl_job.id,
+            trigger_type="manual",
+            seed_url="https://example.com/race",
+            status="running",
+            config_snapshot_json={},
+        )
+        session.add(crawl_run)
+        await session.flush()
+
+        raw_page = RawPage(
+            source_site_id=source_site.id,
+            crawl_run_id=crawl_run.id,
+            requested_url="https://example.com/race",
+            final_url="https://example.com/race",
+            http_status=200,
+            content_type="text/html",
+            response_headers_json={},
+            raw_html="<html></html>",
+            raw_text="race body",
+            raw_json={},
+            fetched_at=utcnow(),
+            fetch_error=None,
+            parser_profile="forum_thread",
+            extraction_method=None,
+            extraction_confidence=None,
+            parse_status="pending",
+            parse_error=None,
+            body_hash="race-body-hash",
+        )
+        session.add(raw_page)
+        await session.commit()
+
+        conflict_item_id = uuid.uuid4()
+        conflict_inserted = False
+
+        def insert_conflicting_winner(sync_session: Session, *_args: object) -> None:
+            nonlocal conflict_inserted
+            if conflict_inserted:
+                return
+            pending_item = next(
+                (
+                    item
+                    for item in sync_session.new
+                    if isinstance(item, ContentItem)
+                ),
+                None,
+            )
+            if pending_item is None:
+                return
+
+            conflict_inserted = True
+            engine = create_engine(os.environ["SYNC_DATABASE_URL"], pool_pre_ping=True)
+            try:
+                with engine.begin() as connection:
+                    connection.execute(
+                        insert(ContentItem).values(
+                            id=conflict_item_id,
+                            source_site_id=pending_item.source_site_id,
+                            raw_page_id=pending_item.raw_page_id,
+                            crawl_run_id=pending_item.crawl_run_id,
+                            author_id=pending_item.author_id,
+                            parent_item_id=None,
+                            thread_root_id=None,
+                            item_type=pending_item.item_type,
+                            title=pending_item.title,
+                            canonical_url=pending_item.canonical_url,
+                            source_url=pending_item.source_url,
+                            published_at=pending_item.published_at,
+                            language=pending_item.language,
+                            raw_text=pending_item.raw_text,
+                            cleaned_text=pending_item.cleaned_text,
+                            summary_text=pending_item.summary_text,
+                            structured_by=pending_item.structured_by,
+                            extraction_confidence=pending_item.extraction_confidence,
+                            tags=pending_item.tags,
+                            metadata_json=pending_item.metadata_json,
+                            content_hash=pending_item.content_hash,
+                            dedup_key=pending_item.dedup_key,
+                            search_tsv=None,
+                        )
+                    )
+            finally:
+                engine.dispose()
+
+        event.listen(session.sync_session, "before_flush", insert_conflicting_winner)
+        try:
+            response = ExtractionAgentResponse(
+                page_kind="forum_thread",
+                items=[
+                    ExtractionItem(
+                        item_type="comment",
+                        external_item_id="race-comment-1",
+                        title=None,
+                        author=None,
+                        published_at=None,
+                        body_text="race body",
+                        summary_text=None,
+                        tags=[],
+                        parent_ref=None,
+                        thread_root_ref=None,
+                        metadata_json={},
+                    )
+                ],
+                extraction_confidence=0.8,
+                warnings=[],
+                trace_summary_json={"provider": "test"},
+            )
+
+            normalization = await normalize_extraction_response(
+                session,
+                source_site=source_site,
+                raw_page=raw_page,
+                response=response,
+            )
+            await session.commit()
+        finally:
+            event.remove(session.sync_session, "before_flush", insert_conflicting_winner)
+
+        content_items = (await session.scalars(select(ContentItem))).all()
+
+    assert conflict_inserted is True
+    assert len(content_items) == 1
+    assert content_items[0].id == conflict_item_id
+    assert normalization.content_item_ids == [conflict_item_id]
+    assert normalization.created_item_ids == []
+    assert normalization.reused_item_ids == [conflict_item_id]
+    assert normalization.deduped_count == 1
+
+
 async def test_normalizer_distinguishes_same_body_items_by_type_and_external_id() -> None:
     async with db_session_module.AsyncSessionLocal() as session:
         source_site = SourceSite(
@@ -434,6 +650,46 @@ async def test_normalizer_distinguishes_same_body_items_by_type_and_external_id(
     assert set(normalization.created_item_ids) == {item.id for item in content_items}
     assert normalization.reused_item_ids == []
     assert normalization.deduped_count == 0
+
+
+def test_page_level_failure_for_one_page_marks_run_partial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_second_fetch(self: OfficialSiteAdapter, page: DiscoveredPage) -> FetchedPage:
+        if page.requested_url == "https://example.com/b":
+            raise RuntimeError("test fetch failure for second page")
+        return original_fetch(self, page)
+
+    original_fetch = OfficialSiteAdapter.fetch
+    monkeypatch.setattr(OfficialSiteAdapter, "fetch", fail_second_fetch)
+    client = TestClient(app)
+    run = _queue_worker_run(
+        client,
+        urls=["https://example.com/a", "https://example.com/b"],
+        max_pages=2,
+    )
+
+    result = run_once(run_limit=1)
+    assert result.claimed == 1
+    assert result.succeeded == 0
+    assert result.partial == 1
+    assert result.failed == 0
+
+    detail = client.get(f"/runs/{run['id']}").json()
+    assert detail["status"] == "partial"
+    assert detail["discovered_count"] == 2
+    assert detail["fetched_count"] == 1
+    assert detail["parsed_count"] == 1
+    assert detail["extracted_count"] == 1
+    assert detail["deduped_count"] == 0
+    assert detail["error_count"] == 1
+    assert detail["error_message"] == "1 page(s) failed during worker processing."
+
+    events = client.get(f"/runs/{run['id']}/events").json()["items"]
+    page_failed_events = [event for event in events if event["event_type"] == "page_failed"]
+    assert len(page_failed_events) == 1
+    assert page_failed_events[0]["related_url"] == "https://example.com/b"
+    assert "test fetch failure for second page" in page_failed_events[0]["message"]
 
 
 def test_page_level_failure_for_all_pages_marks_run_failed(

@@ -7,6 +7,7 @@ from app.agents.contracts import ExtractionAgentResponse, ExtractionItem
 from app.models.content import Author, ContentItem, RawPage
 from app.models.control import SourceSite
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -92,9 +93,15 @@ async def normalize_extraction_response(
                 dedup_key=dedup_key,
                 search_tsv=None,
             )
-            session.add(content_item)
-            await session.flush()
-            created_item_ids.append(content_item.id)
+            content_item, created = await _insert_content_item_or_reuse_dedup_winner(
+                session,
+                content_item=content_item,
+                dedup_key=dedup_key,
+            )
+            if created:
+                created_item_ids.append(content_item.id)
+            else:
+                reused_item_ids.append(content_item.id)
         else:
             reused_item_ids.append(content_item.id)
 
@@ -130,6 +137,27 @@ async def normalize_extraction_response(
         reused_item_ids=reused_item_ids,
         deduped_count=len(reused_item_ids),
     )
+
+
+async def _insert_content_item_or_reuse_dedup_winner(
+    session: AsyncSession,
+    *,
+    content_item: ContentItem,
+    dedup_key: str,
+) -> tuple[ContentItem, bool]:
+    try:
+        async with session.begin_nested():
+            session.add(content_item)
+            await session.flush()
+    except IntegrityError:
+        dedup_winner = await session.scalar(
+            select(ContentItem).where(ContentItem.dedup_key == dedup_key)
+        )
+        if dedup_winner is None:
+            raise
+        return dedup_winner, False
+
+    return content_item, True
 
 
 async def _upsert_author(

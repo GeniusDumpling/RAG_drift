@@ -43,7 +43,13 @@ async def _run_once_async(*, run_limit: int) -> WorkerRunResult:
     failed = 0
 
     for run_id in claimed_run_ids:
-        outcome = await _process_run(run_id)
+        try:
+            outcome = await _process_run(run_id)
+        except Exception as exc:
+            await _mark_unexpected_run_failure(run_id, exc)
+            failed += 1
+            continue
+
         if outcome == "success":
             succeeded += 1
         elif outcome == "partial":
@@ -72,6 +78,29 @@ async def _claim_queued_runs(*, run_limit: int) -> list[uuid.UUID]:
             run.started_at = started_at
         await session.commit()
         return [run.id for run in runs]
+
+
+async def _mark_unexpected_run_failure(run_id: uuid.UUID, exc: Exception) -> None:
+    try:
+        async with db_session_module.AsyncSessionLocal() as session:
+            run = await session.get(CrawlRun, run_id)
+            if run is None:
+                return
+
+            await _mark_run_failed(
+                session,
+                run_id=run_id,
+                seed_url=run.seed_url,
+                error_message=f"Worker failed unexpectedly: {exc}",
+                discovered_count=run.discovered_count,
+                fetched_count=run.fetched_count,
+                parsed_count=run.parsed_count,
+                extracted_count=run.extracted_count,
+                deduped_count=run.deduped_count,
+                error_count=run.error_count + 1,
+            )
+    except Exception:
+        return
 
 
 async def _process_run(run_id: uuid.UUID) -> RunOutcome:
@@ -124,6 +153,20 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
             )
 
         discovered_count = len(discovered_pages)
+        if discovered_count == 0:
+            return await _mark_run_failed(
+                session,
+                run_id=run_id,
+                seed_url=run_seed_url,
+                error_message="No pages were discovered.",
+                discovered_count=0,
+                fetched_count=0,
+                parsed_count=0,
+                extracted_count=0,
+                deduped_count=0,
+                error_count=1,
+            )
+
         fetched_count = 0
         extracted_count = 0
         deduped_count = 0

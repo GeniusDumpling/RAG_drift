@@ -101,6 +101,13 @@ async def test_content_list_and_detail_hydrate_source_raw_run_chunks_and_hashes(
         assert "content_hash" not in detail["raw_page"]
         assert detail["source"]["name"] == "Forum Demo"
         assert detail["chunks"] != []
+        chunk = detail["chunks"][0]
+        assert "vector_backend" in chunk
+        assert "vector_point_id" in chunk
+        assert "embedded_at" in chunk
+        assert chunk["vector_backend"] is None
+        assert chunk["vector_point_id"] is None
+        assert chunk["embedded_at"] is None
 
     content_item = await db_session.get(ContentItem, uuid.UUID(content_id))
     assert content_item is not None

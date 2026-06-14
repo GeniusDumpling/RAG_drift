@@ -59,6 +59,9 @@ class ContentChunkRead(BaseModel):
     token_count: int | None
     chunk_metadata_json: dict[str, Any]
     qdrant_point_id: str | None
+    vector_backend: str | None
+    vector_point_id: str | None
+    embedded_at: datetime | None
     embed_status: str
     embed_error: str | None
     created_at: datetime

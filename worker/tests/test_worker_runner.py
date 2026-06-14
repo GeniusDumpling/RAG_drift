@@ -240,6 +240,58 @@ def test_run_worker_once_script_executes_directly_with_no_queued_runs() -> None:
     assert "WorkerRunResult(claimed=0, succeeded=0, partial=0, failed=0)" in completed.stdout
 
 
+def test_run_worker_once_script_json_output_with_missing_run_id_is_valid_json() -> None:
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_worker_once.py",
+            "--json",
+            "--run-id",
+            "00000000-0000-0000-0000-000000000000",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout) == {
+        "claimed": 0,
+        "succeeded": 0,
+        "partial": 0,
+        "failed": 0,
+    }
+
+
+def test_run_worker_once_script_require_success_fails_when_target_run_not_claimed() -> None:
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_worker_once.py",
+            "--require-success",
+            "--run-id",
+            "00000000-0000-0000-0000-000000000000",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 1
+    assert "WorkerRunResult(claimed=0, succeeded=0, partial=0, failed=0)" in completed.stdout
+    assert "Worker did not complete exactly one run successfully" in completed.stderr
+
+
 def test_seed_demo_reuses_existing_queued_run_unless_new_run_is_requested() -> None:
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)

@@ -22,9 +22,11 @@ PYTHON="$(prefer_command "${PYTHON:-}" "$ROOT/.venv/bin/python" "python3")"
 ALEMBIC="$(prefer_command "${ALEMBIC:-}" "$ROOT/.venv/bin/alembic" "alembic")"
 API_BASE="${API_BASE:-http://localhost:8000}"
 export API_BASE
+WORKER_JSON="$(mktemp)"
+RUN_JSON="$(mktemp)"
 SEARCH_JSON="$(mktemp)"
 ANSWER_JSON="$(mktemp)"
-trap 'rm -f "$SEARCH_JSON" "$ANSWER_JSON"' EXIT
+trap 'rm -f "$WORKER_JSON" "$RUN_JSON" "$SEARCH_JSON" "$ANSWER_JSON"' EXIT
 
 require_local_api_base() {
   if [[ "${ALLOW_NONLOCAL_SMOKE_API:-0}" == "1" ]]; then
@@ -199,6 +201,46 @@ print(run_id)
 PY
 }
 
+assert_worker_result() {
+  "$PYTHON" - "$1" <<'PY'
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+with Path(sys.argv[1]).open() as handle:
+    payload: dict[str, Any] = json.load(handle)
+
+if payload != {"claimed": 1, "succeeded": 1, "partial": 0, "failed": 0}:
+    raise SystemExit(
+        "Targeted worker run did not complete exactly one run successfully: "
+        f"{payload!r}"
+    )
+PY
+}
+
+assert_run_status_success() {
+  "$PYTHON" - "$1" "$2" <<'PY'
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+with Path(sys.argv[1]).open() as handle:
+    payload: dict[str, Any] = json.load(handle)
+expected_run_id = sys.argv[2]
+
+if payload.get("id") != expected_run_id:
+    raise SystemExit(
+        f"/runs returned id {payload.get('id')!r}; expected {expected_run_id!r}"
+    )
+if payload.get("status") != "success":
+    raise SystemExit(
+        f"/runs/{expected_run_id} status was {payload.get('status')!r}; expected 'success'"
+    )
+PY
+}
+
 assert_search_response() {
   "$PYTHON" - "$1" <<'PY'
 import json
@@ -278,9 +320,16 @@ fi
 SEED_JSON="$($PYTHON scripts/seed_demo.py)"
 printf '%s\n' "$SEED_JSON"
 RUN_ID="$(extract_seed_run_id "$SEED_JSON")"
-"$PYTHON" scripts/run_worker_once.py --run-id "$RUN_ID"
+printf '\nWorker run for %s\n' "$RUN_ID"
+"$PYTHON" scripts/run_worker_once.py --json --require-success --run-id "$RUN_ID" | tee "$WORKER_JSON"
+assert_worker_result "$WORKER_JSON"
 
 wait_for_api
+
+printf '\nGET /runs/$RUN_ID (%s)\n' "$RUN_ID"
+curl -fsS "$API_BASE/runs/$RUN_ID" | tee "$RUN_JSON"
+printf '\n'
+assert_run_status_success "$RUN_JSON" "$RUN_ID"
 
 printf '\nGET /health\n'
 curl -fsS "$API_BASE/health"

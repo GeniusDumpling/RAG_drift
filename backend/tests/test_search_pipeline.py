@@ -5,6 +5,8 @@ import pytest
 from app.core.config import Settings
 from app.main import app
 from app.models.search import SearchQuery
+from app.repositories.contents import ContentsRepository, CreatedContent
+from app.repositories.sources import SourcesRepository
 from app.schemas.search import SearchFilters, SearchRequest
 from app.services import search as search_service_module
 from app.services.embeddings import DeterministicEmbeddingService
@@ -16,6 +18,7 @@ from app.services.retrieval import (
     _merge_hits,
     _SearchHit,
     _vector_filter_payload,
+    retrieve_evidence,
 )
 from app.services.search import SearchService
 from fastapi.testclient import TestClient
@@ -104,6 +107,65 @@ def _first_chunk_id(ingest: dict[str, object]) -> uuid.UUID:
     assert isinstance(chunk_ids, list)
     assert chunk_ids != []
     return uuid.UUID(str(chunk_ids[0]))
+
+
+async def _create_retrieval_content(
+    session: AsyncSession,
+    *,
+    url_path: str,
+    title: str,
+    cleaned_text: str,
+    summary_text: str | None = None,
+    tags: list[str] | None = None,
+) -> tuple[CreatedContent, uuid.UUID]:
+    sources_repo = SourcesRepository(session)
+    source = await sources_repo.create_source(
+        {
+            "name": f"Docs {uuid.uuid4()}",
+            "site_type": "docs",
+            "base_url": f"https://docs-{uuid.uuid4()}.example.com",
+            "allowed_domains": ["docs.example.com"],
+            "fetch_mode": "manual",
+            "default_language": "en",
+            "active": True,
+            "config_json": {},
+        }
+    )
+    job = await sources_repo.create_job(
+        {
+            "source_site_id": source.id,
+            "name": "Docs crawl",
+            "trigger_mode": "manual",
+            "cron_expr": None,
+            "seed_config_json": {"urls": [f"https://docs.example.com/{url_path}"]},
+            "parser_profile": "official_site",
+            "max_pages": 1,
+            "enabled": True,
+            "agent_policy_json": {"extraction_mode": "hybrid"},
+        }
+    )
+    run = await sources_repo.create_run_with_queued_event(
+        job,
+        trigger_type="manual",
+        status="queued",
+        seed_url=f"https://docs.example.com/{url_path}",
+    )
+    created = await ContentsRepository(session).create_raw_page_and_item_for_test_ingest(
+        source_site_id=source.id,
+        crawl_run_id=run.id,
+        requested_url=f"https://docs.example.com/{url_path}",
+        final_url=f"https://docs.example.com/{url_path}",
+        raw_html=f"<p>{cleaned_text}</p>",
+        raw_text=None,
+        item_type="doc_page",
+        title=title,
+        cleaned_text=cleaned_text,
+        summary_text=summary_text,
+        tags=tags or [],
+        extraction_confidence=None,
+    )
+    await session.flush()
+    return created, source.id
 
 
 def _index_memory_chunk(
@@ -406,6 +468,81 @@ def test_search_endpoint_marks_hybrid_when_vector_and_keyword_hit_same_chunk(
     assert trace["component_scores"][0]["keyword_score"] is not None
 
 
+async def test_keyword_retrieval_excludes_obsolete_chunk(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _use_memory_vector_backend(monkeypatch)
+    keyword = "obsoletekeyword"
+    created, source_id = await _create_retrieval_content(
+        db_session,
+        url_path="obsolete-keyword",
+        title="Obsolete keyword bulletin",
+        cleaned_text=f"This obsolete chunk contains {keyword} and must not be evidence.",
+        summary_text=None,
+        tags=[],
+    )
+    created.chunks[0].embed_status = "obsolete"
+    await db_session.flush()
+
+    result = await retrieve_evidence(
+        db_session,
+        raw_query=keyword,
+        optimized_query_text=keyword,
+        keyword_terms=[keyword],
+        filters=SearchFilters(source_site_id=source_id, item_type="doc_page"),
+        top_k=5,
+        qdrant_url=settings.qdrant_url,
+        qdrant_collection=settings.qdrant_collection,
+        embedding=DeterministicEmbeddingService(),
+    )
+
+    assert result.evidence == []
+    assert result.trace["keyword"]["hit_count"] == 0
+    assert result.trace["hydrated_evidence_count"] == 0
+
+
+async def test_stale_vector_hit_for_obsolete_chunk_is_not_hydrated(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _use_memory_vector_backend(monkeypatch)
+    vector_query = "obsolete-vector-only-signal"
+    created, source_id = await _create_retrieval_content(
+        db_session,
+        url_path="obsolete-vector",
+        title="Obsolete vector bulletin",
+        cleaned_text="This retired bulletin should not hydrate from a stale vector point.",
+        summary_text=None,
+        tags=[],
+    )
+    obsolete_chunk = created.chunks[0]
+    obsolete_chunk.embed_status = "obsolete"
+    await db_session.flush()
+    _index_memory_chunk(
+        settings=settings,
+        chunk_id=obsolete_chunk.id,
+        embed_text=vector_query,
+        source_id=str(source_id),
+        item_type="doc_page",
+        content_item_id=created.content_item.id,
+    )
+
+    result = await retrieve_evidence(
+        db_session,
+        raw_query=vector_query,
+        optimized_query_text=vector_query,
+        keyword_terms=[],
+        filters=SearchFilters(source_site_id=source_id, item_type="doc_page"),
+        top_k=3,
+        qdrant_url=settings.qdrant_url,
+        qdrant_collection=settings.qdrant_collection,
+        embedding=DeterministicEmbeddingService(),
+    )
+
+    assert result.trace["vector"]["hit_count"] == 1
+    assert result.evidence == []
+    assert result.trace["hydrated_evidence_count"] == 0
+
+
 def test_search_endpoint_drops_vector_hit_with_wrong_content_item_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -568,13 +705,51 @@ def test_blank_search_query_is_rejected() -> None:
     assert response.status_code == 422
 
 
+def test_search_endpoint_rejects_unknown_filter_field() -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/search",
+        json={
+            "query": "telemetry",
+            "mode": "search",
+            "filters": {"source_site_uuid": str(uuid.uuid4())},
+        },
+    )
+
+    assert response.status_code == 422
+    assert any(
+        error["type"] == "extra_forbidden"
+        and error["loc"] == ["body", "filters", "source_site_uuid"]
+        for error in response.json()["detail"]
+    )
+
+
+def test_search_endpoint_rejects_unknown_top_level_field() -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/search",
+        json={"query": "telemetry", "mode": "search", "top_kk": 5},
+    )
+
+    assert response.status_code == 422
+    assert any(
+        error["type"] == "extra_forbidden" and error["loc"] == ["body", "top_kk"]
+        for error in response.json()["detail"]
+    )
+
+
 def test_search_endpoint_rejects_answer_mode() -> None:
     client = TestClient(app)
 
     response = client.post("/search", json={"query": "telemetry", "mode": "answer"})
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Use /answer for answer mode when it is available"
+    assert response.status_code == 422
+    assert any(
+        error["type"] == "literal_error" and error["loc"] == ["body", "mode"]
+        for error in response.json()["detail"]
+    )
 
 
 def test_merge_hits_deduplicates_by_chunk_id_when_vector_hit_lacks_content_item_id() -> None:

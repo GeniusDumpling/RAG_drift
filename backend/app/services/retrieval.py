@@ -60,6 +60,7 @@ class _MemoryCollection:
 
 _MEMORY_COLLECTIONS: dict[tuple[str, str], _MemoryCollection] = {}
 _TERM_RE = re.compile(r"[\w-]+", re.UNICODE)
+_OBSOLETE_EMBED_STATUS = "obsolete"
 
 
 class QdrantIndexer:
@@ -317,7 +318,11 @@ async def _keyword_search(
     stmt = (
         select(ContentChunk, ContentItem)
         .join(ContentItem, ContentChunk.content_item_id == ContentItem.id)
-        .where(*_content_filter_clauses(filters), or_(*term_clauses))
+        .where(
+            _searchable_chunk_predicate(),
+            *_content_filter_clauses(filters),
+            or_(*term_clauses),
+        )
         .order_by(
             ContentItem.created_at.desc(),
             ContentChunk.chunk_index.asc(),
@@ -526,7 +531,11 @@ async def _hydrate_and_rank_evidence(
         .join(SourceSite, ContentItem.source_site_id == SourceSite.id)
         .outerjoin(Author, ContentItem.author_id == Author.id)
         .outerjoin(thread_root, ContentItem.thread_root_id == thread_root.id)
-        .where(ContentChunk.id.in_(chunk_ids), *_content_filter_clauses(filters))
+        .where(
+            ContentChunk.id.in_(chunk_ids),
+            _searchable_chunk_predicate(),
+            *_content_filter_clauses(filters),
+        )
     )
     rows = (await session.execute(stmt)).all()
     row_by_chunk_id = {row[0].id: row for row in rows}
@@ -593,6 +602,15 @@ def _keyword_score(
     if score > 0.0:
         return max(score, 0.20)
     return 0.0
+
+
+def _searchable_chunk_predicate() -> Any:
+    """Return the shared chunk-level predicate for retrieval candidates.
+
+    Pending, successful, and failed chunks remain searchable for keyword fallback and stale
+    vector hydration. Only chunks explicitly marked obsolete are hidden from evidence.
+    """
+    return ContentChunk.embed_status != _OBSOLETE_EMBED_STATUS
 
 
 def _content_filter_clauses(filters: SearchFilters) -> list[Any]:

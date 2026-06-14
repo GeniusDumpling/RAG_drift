@@ -1,11 +1,13 @@
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import pytest
 from app.core.config import Settings
 from app.main import app
+from app.models.content import ContentChunk, ContentItem, RawPage
 from app.models.search import SearchQuery
-from app.repositories.contents import ContentsRepository, CreatedContent
+from app.repositories.contents import ContentsRepository, CreatedContent, stable_hash
 from app.repositories.sources import SourcesRepository
 from app.schemas.search import SearchFilters, SearchRequest
 from app.services import search as search_service_module
@@ -107,6 +109,147 @@ def _first_chunk_id(ingest: dict[str, object]) -> uuid.UUID:
     assert isinstance(chunk_ids, list)
     assert chunk_ids != []
     return uuid.UUID(str(chunk_ids[0]))
+
+
+class _ControlledEmbeddingService:
+    model_name = "controlled-test-embedding"
+    dimension = 2
+
+    def __init__(self, vectors: dict[str, list[float]]) -> None:
+        self._vectors = vectors
+
+    def embed(self, text: str) -> list[float]:
+        return list(self._vectors.get(text, [0.0, 1.0]))
+
+
+async def _create_retrieval_source_run(
+    session: AsyncSession,
+    *,
+    url_path: str,
+) -> tuple[uuid.UUID, uuid.UUID]:
+    sources_repo = SourcesRepository(session)
+    source = await sources_repo.create_source(
+        {
+            "name": f"Docs {uuid.uuid4()}",
+            "site_type": "docs",
+            "base_url": f"https://docs-{uuid.uuid4()}.example.com",
+            "allowed_domains": ["docs.example.com"],
+            "fetch_mode": "manual",
+            "default_language": "en",
+            "active": True,
+            "config_json": {},
+        }
+    )
+    job = await sources_repo.create_job(
+        {
+            "source_site_id": source.id,
+            "name": "Docs crawl",
+            "trigger_mode": "manual",
+            "cron_expr": None,
+            "seed_config_json": {"urls": [f"https://docs.example.com/{url_path}"]},
+            "parser_profile": "official_site",
+            "max_pages": 1,
+            "enabled": True,
+            "agent_policy_json": {"extraction_mode": "hybrid"},
+        }
+    )
+    run = await sources_repo.create_run_with_queued_event(
+        job,
+        trigger_type="manual",
+        status="queued",
+        seed_url=f"https://docs.example.com/{url_path}",
+    )
+    return source.id, run.id
+
+
+def _build_single_chunk_content(
+    *,
+    source_id: uuid.UUID,
+    run_id: uuid.UUID,
+    url_path: str,
+    item_type: str,
+    title: str,
+    cleaned_text: str,
+    summary_text: str | None,
+    tags: list[str],
+    created_at: datetime,
+) -> tuple[RawPage, ContentItem, ContentChunk]:
+    raw_page_id = uuid.uuid4()
+    content_item_id = uuid.uuid4()
+    chunk_id = uuid.uuid4()
+    requested_url = f"https://docs.example.com/{url_path}"
+    raw_html = f"<p>{cleaned_text}</p>"
+    body_hash = stable_hash(raw_html)
+    content_hash = stable_hash(cleaned_text)
+    raw_page = RawPage(
+        id=raw_page_id,
+        source_site_id=source_id,
+        crawl_run_id=run_id,
+        requested_url=requested_url,
+        final_url=requested_url,
+        http_status=200,
+        content_type="text/html",
+        response_headers_json={},
+        raw_html=raw_html,
+        raw_text=None,
+        raw_json={},
+        fetched_at=created_at,
+        fetch_error=None,
+        parser_profile=None,
+        extraction_method="test_ingest",
+        extraction_confidence=None,
+        parse_status="parsed",
+        parse_error=None,
+        body_hash=body_hash,
+        created_at=created_at,
+    )
+    content_item = ContentItem(
+        id=content_item_id,
+        source_site_id=source_id,
+        raw_page_id=raw_page_id,
+        crawl_run_id=run_id,
+        author_id=None,
+        parent_item_id=None,
+        thread_root_id=None,
+        item_type=item_type,
+        title=title,
+        canonical_url=requested_url,
+        source_url=requested_url,
+        published_at=None,
+        language=None,
+        raw_text=raw_html,
+        cleaned_text=cleaned_text,
+        summary_text=summary_text,
+        structured_by="test_ingest",
+        extraction_confidence=None,
+        tags=tags,
+        metadata_json={"body_hash": body_hash, "ingest_route": "bulk-test-ingest"},
+        content_hash=content_hash,
+        dedup_key=stable_hash(f"{source_id}:{requested_url}:{item_type}:{content_hash}"),
+        search_tsv=None,
+        created_at=created_at,
+        updated_at=created_at,
+    )
+    content_chunk = ContentChunk(
+        id=chunk_id,
+        content_item_id=content_item_id,
+        chunk_index=0,
+        char_start=0,
+        char_end=len(cleaned_text),
+        display_text=cleaned_text,
+        embed_text=cleaned_text,
+        token_count=len(cleaned_text.split()),
+        chunk_metadata_json={},
+        qdrant_point_id=None,
+        vector_backend=None,
+        vector_point_id=None,
+        embedded_at=None,
+        embed_status="pending",
+        embed_error=None,
+        created_at=created_at,
+        updated_at=created_at,
+    )
+    return raw_page, content_item, content_chunk
 
 
 async def _create_retrieval_content(
@@ -312,54 +455,65 @@ def test_keyword_fallback_returns_later_matching_chunk(monkeypatch: pytest.Monke
     assert later_only_term in evidence[0]["snippet"].casefold()
 
 
-def test_keyword_fallback_scores_candidates_before_truncating_recent_matches(
-    monkeypatch: pytest.MonkeyPatch,
+async def test_keyword_fallback_scores_candidates_before_truncating_more_than_1000_recent_matches(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        "app.services.retrieval.QdrantIndexer.search_chunks",
-        lambda self, *, query_text, filters, top_k: [],
+    settings = _use_memory_vector_backend(monkeypatch)
+    source_id, run_id = await _create_retrieval_source_run(
+        db_session, url_path="older-exact-alpha-beta"
     )
-    client = TestClient(app)
-    ids = _create_source_job_run(client)
-    exact_ingest = _ingest_content(
-        client,
-        source_id=ids["source_id"],
-        run_id=ids["run_id"],
+    older_created_at = datetime(2025, 1, 1, tzinfo=UTC)
+    recent_created_at = datetime(2025, 1, 2, tzinfo=UTC)
+    exact_raw_page, exact_item, exact_chunk = _build_single_chunk_content(
+        source_id=source_id,
+        run_id=run_id,
         url_path="older-exact-alpha-beta",
         item_type="doc_page",
         title="Alpha beta canonical field report",
         cleaned_text="Alpha beta appears together in the older authoritative report.",
         summary_text="Alpha beta exact source of truth.",
         tags=["alpha", "beta"],
+        created_at=older_created_at,
     )
-    for index in range(55):
-        _ingest_content(
-            client,
-            source_id=ids["source_id"],
-            run_id=ids["run_id"],
-            url_path=f"recent-weak-alpha-{index}",
-            item_type="doc_page",
-            title=f"Recent alpha status {index}",
-            cleaned_text="Alpha appears in this recent weaker note without the second term.",
-            summary_text=None,
-            tags=[],
+    recent_records: list[tuple[RawPage, ContentItem, ContentChunk]] = []
+    for index in range(1001):
+        recent_records.append(
+            _build_single_chunk_content(
+                source_id=source_id,
+                run_id=run_id,
+                url_path=f"recent-weak-alpha-{index}",
+                item_type="doc_page",
+                title=f"Recent alpha status {index}",
+                cleaned_text="Alpha appears in this recent weaker note without the second term.",
+                summary_text=None,
+                tags=[],
+                created_at=recent_created_at + timedelta(microseconds=index),
+            )
         )
+    records = [(exact_raw_page, exact_item, exact_chunk), *recent_records]
+    db_session.add_all([raw_page for raw_page, _, _ in records])
+    await db_session.flush()
+    db_session.add_all([content_item for _, content_item, _ in records])
+    await db_session.flush()
+    db_session.add_all([content_chunk for _, _, content_chunk in records])
+    await db_session.flush()
 
-    response = client.post(
-        "/search",
-        json={
-            "query": "alpha beta",
-            "mode": "search",
-            "filters": {"source_site_id": ids["source_id"], "item_type": "doc_page"},
-            "top_k": 1,
-        },
+    result = await retrieve_evidence(
+        db_session,
+        raw_query="alpha beta",
+        optimized_query_text="alpha beta",
+        keyword_terms=["alpha", "beta"],
+        filters=SearchFilters(source_site_id=source_id, item_type="doc_page"),
+        top_k=1,
+        qdrant_url=settings.qdrant_url,
+        qdrant_collection=settings.qdrant_collection,
+        embedding=DeterministicEmbeddingService(),
     )
 
-    assert response.status_code == 200
-    evidence = response.json()["evidence"]
-    assert evidence != []
-    assert evidence[0]["content_item_id"] == exact_ingest["content_item_id"]
-    assert evidence[0]["matched_by"] == "keyword"
+    assert result.evidence != []
+    assert result.evidence[0].content_item_id == exact_item.id
+    assert result.evidence[0].matched_by == "keyword"
+    assert result.evidence[0].keyword_score == pytest.approx(1.0)
 
 
 def test_search_endpoint_returns_vector_only_evidence_from_memory_backend(
@@ -414,6 +568,60 @@ def test_search_endpoint_returns_vector_only_evidence_from_memory_backend(
     assert trace["vector"]["hit_count"] == 1
     assert trace["keyword"]["hit_count"] == 0
     assert trace["component_scores"][0]["vector_score"] == pytest.approx(1.0)
+
+
+async def test_low_similarity_vector_only_hit_is_not_returned_as_evidence(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _use_memory_vector_backend(monkeypatch)
+    query_text = "controlled-vector-query"
+    indexed_text = "controlled-opposite-vector-document"
+    embedding = _ControlledEmbeddingService(
+        {
+            query_text: [1.0, 0.0],
+            indexed_text: [-1.0, 0.0],
+        }
+    )
+    created, source_id = await _create_retrieval_content(
+        db_session,
+        url_path="low-similarity-vector",
+        title="Ordinary archived bulletin",
+        cleaned_text="This bulletin has no lexical overlap with the semantic probe.",
+        summary_text=None,
+        tags=[],
+    )
+    indexer = QdrantIndexer(
+        url=settings.qdrant_url,
+        collection=settings.qdrant_collection,
+        embedding=embedding,
+    )
+    indexer.ensure_collection()
+    indexer.upsert_chunk(
+        chunk_id=created.chunks[0].id,
+        embed_text=indexed_text,
+        payload={
+            "source_site_id": str(source_id),
+            "item_type": "doc_page",
+            "content_item_id": str(created.content_item.id),
+            "tags": [],
+        },
+    )
+
+    result = await retrieve_evidence(
+        db_session,
+        raw_query=query_text,
+        optimized_query_text=query_text,
+        keyword_terms=[],
+        filters=SearchFilters(source_site_id=source_id, item_type="doc_page"),
+        top_k=3,
+        qdrant_url=settings.qdrant_url,
+        qdrant_collection=settings.qdrant_collection,
+        embedding=embedding,
+    )
+
+    assert result.trace["vector"]["hit_count"] == 0
+    assert result.evidence == []
+    assert result.trace["hydrated_evidence_count"] == 0
 
 
 def test_search_endpoint_marks_hybrid_when_vector_and_keyword_hit_same_chunk(

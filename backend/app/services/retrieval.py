@@ -1,3 +1,4 @@
+import inspect
 import logging
 import math
 import re
@@ -10,7 +11,7 @@ from uuid import UUID
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qdrant_models
-from sqlalchemy import String, or_, select
+from sqlalchemy import String, case, func, literal, or_, select
 from sqlalchemy import cast as sql_cast
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -61,6 +62,8 @@ class _MemoryCollection:
 _MEMORY_COLLECTIONS: dict[tuple[str, str], _MemoryCollection] = {}
 _TERM_RE = re.compile(r"[\w-]+", re.UNICODE)
 _OBSOLETE_EMBED_STATUS = "obsolete"
+DEFAULT_VECTOR_SCORE_THRESHOLD = 0.20
+_KEYWORD_MINIMUM_MATCH_SCORE = 0.20
 
 
 class QdrantIndexer:
@@ -144,23 +147,33 @@ class QdrantIndexer:
         query_text: str,
         filters: dict[str, Any],
         top_k: int,
+        score_threshold: float = DEFAULT_VECTOR_SCORE_THRESHOLD,
     ) -> list[VectorSearchHit]:
         if top_k < 1 or not query_text.strip():
             return []
 
         query_vector = self.embedding.embed(query_text)
         if self.backend_name == "memory":
-            return self._search_memory(query_vector=query_vector, filters=filters, top_k=top_k)
+            return self._search_memory(
+                query_vector=query_vector,
+                filters=filters,
+                top_k=top_k,
+                score_threshold=score_threshold,
+            )
 
-        scored_points = self._require_client().search(
-            collection_name=self.collection,
-            query_vector=query_vector,
-            query_filter=_qdrant_filter(filters),
-            limit=top_k,
-            with_payload=True,
-            with_vectors=False,
-            timeout=1,
-        )
+        client = self._require_client()
+        search_kwargs: dict[str, Any] = {
+            "collection_name": self.collection,
+            "query_vector": query_vector,
+            "query_filter": _qdrant_filter(filters),
+            "limit": top_k,
+            "with_payload": True,
+            "with_vectors": False,
+            "timeout": 1,
+        }
+        if _qdrant_search_supports_score_threshold(client.search):
+            search_kwargs["score_threshold"] = score_threshold
+        scored_points = client.search(**search_kwargs)
         hits: list[VectorSearchHit] = []
         for point in scored_points:
             payload = point.payload or {}
@@ -195,6 +208,7 @@ class QdrantIndexer:
         query_vector: Sequence[float],
         filters: dict[str, Any],
         top_k: int,
+        score_threshold: float,
     ) -> list[VectorSearchHit]:
         collection = _MEMORY_COLLECTIONS.get((self.url, self.collection))
         if collection is None:
@@ -207,11 +221,14 @@ class QdrantIndexer:
             chunk_id = _uuid_from_payload(point.payload, "chunk_id") or _uuid_from_str(point_id)
             if chunk_id is None:
                 continue
+            score = _cosine_similarity(query_vector, point.vector)
+            if not _vector_score_meets_threshold(score, score_threshold):
+                continue
             hits.append(
                 VectorSearchHit(
                     chunk_id=chunk_id,
                     content_item_id=_uuid_from_payload(point.payload, "content_item_id"),
-                    score=_cosine_similarity(query_vector, point.vector),
+                    score=score,
                 )
             )
 
@@ -267,7 +284,9 @@ async def retrieve_evidence(
         filters=filters,
         limit=max(top_k * 10, 50),
     )
-    merged_hits = _merge_hits(vector_hits=vector_hits, keyword_hits=keyword_hits)
+    merged_hits = _sort_hits_by_score(
+        _merge_hits(vector_hits=vector_hits, keyword_hits=keyword_hits)
+    )
     evidence = await _hydrate_and_rank_evidence(
         session,
         hits=merged_hits,
@@ -315,8 +334,9 @@ async def _keyword_search(
         )
 
     candidate_limit = _keyword_candidate_limit(limit)
+    keyword_score_expr = _keyword_score_sql_expression(terms)
     stmt = (
-        select(ContentChunk, ContentItem)
+        select(ContentChunk, ContentItem, keyword_score_expr.label("keyword_score"))
         .join(ContentItem, ContentChunk.content_item_id == ContentItem.id)
         .where(
             _searchable_chunk_predicate(),
@@ -324,6 +344,7 @@ async def _keyword_search(
             or_(*term_clauses),
         )
         .order_by(
+            keyword_score_expr.desc(),
             ContentItem.created_at.desc(),
             ContentChunk.chunk_index.asc(),
             ContentChunk.id.asc(),
@@ -333,9 +354,9 @@ async def _keyword_search(
     rows = (await session.execute(stmt)).all()
 
     scored_hits: list[tuple[_SearchHit, float, int, str]] = []
-    for content_chunk, content_item in rows:
+    for content_chunk, content_item, _sql_keyword_score in rows:
         score = _normalize_keyword_score(_keyword_score(content_item, content_chunk, terms))
-        if score >= 0.20:
+        if score >= _KEYWORD_MINIMUM_MATCH_SCORE:
             scored_hits.append(
                 (
                     _SearchHit(
@@ -362,6 +383,8 @@ def _merge_hits(
     merged: dict[UUID, _SearchHit] = {}
 
     for vector_hit in vector_hits:
+        if not _vector_score_meets_threshold(vector_hit.score):
+            continue
         score = _normalize_vector_score(vector_hit.score)
         _merge_hit(
             merged,
@@ -377,6 +400,10 @@ def _merge_hits(
         _merge_hit(merged, keyword_hit)
 
     return list(merged.values())
+
+
+def _sort_hits_by_score(hits: list[_SearchHit]) -> list[_SearchHit]:
+    return sorted(hits, key=lambda hit: hit.score, reverse=True)
 
 
 def _merge_hit(merged: dict[UUID, _SearchHit], incoming: _SearchHit) -> None:
@@ -462,6 +489,13 @@ def _normalize_vector_score(score: float) -> float:
     return _clamp_unit_score(score)
 
 
+def _vector_score_meets_threshold(
+    score: float | None,
+    threshold: float = DEFAULT_VECTOR_SCORE_THRESHOLD,
+) -> bool:
+    return score is not None and not math.isnan(score) and score >= threshold
+
+
 def _normalize_keyword_score(score: float) -> float:
     return _clamp_unit_score(score)
 
@@ -491,6 +525,45 @@ def _keyword_candidate_limit(limit: int) -> int:
     return min(max(limit * 20, 500), 1000)
 
 
+def _keyword_score_sql_expression(terms: Sequence[str]) -> Any:
+    score_expr: Any = literal(0.0)
+    for term in terms:
+        pattern = _ilike_pattern(term)
+        score_expr = (
+            score_expr
+            + case(
+                (ContentItem.title.ilike(pattern, escape="\\"), 0.50),
+                else_=0.0,
+            )
+            + case(
+                (ContentItem.summary_text.ilike(pattern, escape="\\"), 0.30),
+                else_=0.0,
+            )
+            + case(
+                (
+                    or_(
+                        ContentChunk.display_text.ilike(pattern, escape="\\"),
+                        ContentChunk.embed_text.ilike(pattern, escape="\\"),
+                    ),
+                    0.20,
+                ),
+                else_=0.0,
+            )
+            + case(
+                (sql_cast(ContentItem.tags, String).ilike(pattern, escape="\\"), 0.10),
+                else_=0.0,
+            )
+        )
+
+    return case(
+        (
+            score_expr > 0.0,
+            func.least(func.greatest(score_expr, _KEYWORD_MINIMUM_MATCH_SCORE), 1.0),
+        ),
+        else_=0.0,
+    )
+
+
 def _datetime_sort_value(value: datetime) -> float:
     return _as_utc(value).timestamp()
 
@@ -513,6 +586,10 @@ async def _hydrate_and_rank_evidence(
     top_k: int,
     snippet_terms: Sequence[str],
 ) -> list[EvidenceObject]:
+    if not hits:
+        return []
+
+    hits = [hit for hit in hits if _hit_has_acceptable_evidence_score(hit)]
     if not hits:
         return []
 
@@ -600,8 +677,16 @@ def _keyword_score(
             score += 0.10
 
     if score > 0.0:
-        return max(score, 0.20)
+        return max(score, _KEYWORD_MINIMUM_MATCH_SCORE)
     return 0.0
+
+
+def _hit_has_acceptable_evidence_score(hit: _SearchHit) -> bool:
+    if hit.matched_by == "keyword":
+        return True
+    if hit.matched_by == "hybrid" and hit.keyword_score is not None:
+        return True
+    return _vector_score_meets_threshold(hit.vector_score)
 
 
 def _searchable_chunk_predicate() -> Any:
@@ -645,6 +730,13 @@ def _vector_filter_payload(filters: SearchFilters) -> dict[str, Any]:
     if filters.published_before is not None:
         payload["published_before"] = filters.published_before
     return payload
+
+
+def _qdrant_search_supports_score_threshold(search_method: Any) -> bool:
+    try:
+        return "score_threshold" in inspect.signature(search_method).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def _qdrant_filter(filters: dict[str, Any]) -> qdrant_models.Filter | None:

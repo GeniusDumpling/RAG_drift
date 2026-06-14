@@ -13,6 +13,8 @@ from app.db.base import utcnow
 from app.main import app
 from app.models.content import ContentChunk, ContentItem, RawPage
 from app.models.control import CrawlJob, CrawlRun, SourceSite
+from app.services.chunking import build_chunks
+from app.services.embeddings import DeterministicEmbeddingService
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, insert, select, text
 from sqlalchemy.orm import Session
@@ -105,6 +107,114 @@ def _fetch_db_rows(query: str, params: dict[str, object]) -> list[dict[str, obje
             return [dict(row) for row in rows]
     finally:
         engine.dispose()
+
+
+def _current_vector_metadata() -> dict[str, object]:
+    embedding = DeterministicEmbeddingService()
+    return {
+        "vector_collection": get_settings().qdrant_collection,
+        "embedding_model": embedding.model_name,
+        "embedding_dimension": embedding.dimension,
+    }
+
+
+async def _create_indexable_content_item(
+    session: Any,
+    *,
+    item_type: str,
+    cleaned_text: str,
+    title: str | None = None,
+    tags: list[str] | None = None,
+) -> tuple[uuid.UUID, uuid.UUID]:
+    unique = uuid.uuid4().hex
+    source_site = SourceSite(
+        name=f"Chunk Index Source {unique}",
+        site_type="docs",
+        base_url="https://example.com",
+        allowed_domains=["example.com"],
+        fetch_mode="manual",
+        default_language="en",
+        active=True,
+        config_json={},
+    )
+    session.add(source_site)
+    await session.flush()
+
+    crawl_job = CrawlJob(
+        source_site_id=source_site.id,
+        name=f"Chunk index job {unique}",
+        trigger_mode="manual",
+        cron_expr=None,
+        seed_config_json={"urls": [f"https://example.com/{unique}"]},
+        parser_profile="official_site",
+        max_pages=1,
+        enabled=True,
+        agent_policy_json={},
+    )
+    session.add(crawl_job)
+    await session.flush()
+
+    crawl_run = CrawlRun(
+        source_site_id=source_site.id,
+        crawl_job_id=crawl_job.id,
+        trigger_type="manual",
+        seed_url=f"https://example.com/{unique}",
+        status="running",
+        config_snapshot_json={},
+    )
+    session.add(crawl_run)
+    await session.flush()
+
+    raw_page = RawPage(
+        source_site_id=source_site.id,
+        crawl_run_id=crawl_run.id,
+        requested_url=f"https://example.com/{unique}",
+        final_url=f"https://example.com/{unique}",
+        http_status=200,
+        content_type="text/html",
+        response_headers_json={},
+        raw_html="<html></html>",
+        raw_text=cleaned_text,
+        raw_json={},
+        fetched_at=utcnow(),
+        fetch_error=None,
+        parser_profile="official_site",
+        extraction_method="extraction_agent",
+        extraction_confidence=0.9,
+        parse_status="parsed",
+        parse_error=None,
+        body_hash=f"body-hash-{unique}",
+    )
+    session.add(raw_page)
+    await session.flush()
+
+    content_item = ContentItem(
+        source_site_id=source_site.id,
+        raw_page_id=raw_page.id,
+        crawl_run_id=crawl_run.id,
+        author_id=None,
+        parent_item_id=None,
+        thread_root_id=None,
+        item_type=item_type,
+        title=title,
+        canonical_url=f"https://example.com/{unique}",
+        source_url=f"https://example.com/{unique}",
+        published_at=None,
+        language="en",
+        raw_text=cleaned_text,
+        cleaned_text=cleaned_text,
+        summary_text=None,
+        structured_by="extraction_agent",
+        extraction_confidence=0.9,
+        tags=[] if tags is None else tags,
+        metadata_json={},
+        content_hash=f"content-hash-{unique}",
+        dedup_key=f"dedup-key-{unique}",
+        search_tsv=None,
+    )
+    session.add(content_item)
+    await session.commit()
+    return crawl_run.id, content_item.id
 
 
 def test_run_worker_once_script_executes_directly_with_no_queued_runs() -> None:
@@ -316,6 +426,196 @@ def test_success_chunks_with_stale_vector_collection_are_reindexed(
         "deterministic-hash-v1"
     }
     assert {metadata["embedding_dimension"] for metadata in refreshed_chunk_metadata} == {384}
+
+
+async def test_success_chunks_with_stale_chunker_metadata_are_updated_and_reindexed() -> None:
+    cleaned_text = "I reproduced the issue on v1.2."
+    async with db_session_module.AsyncSessionLocal() as session:
+        run_id, content_item_id = await _create_indexable_content_item(
+            session,
+            item_type="comment",
+            cleaned_text=cleaned_text,
+            tags=["bug"],
+        )
+        content_item = await session.get(ContentItem, content_item_id)
+        assert content_item is not None
+        expected_chunk = build_chunks(
+            item_type=content_item.item_type,
+            title=content_item.title,
+            cleaned_text=content_item.cleaned_text,
+            summary_text=content_item.summary_text,
+            tags=content_item.tags,
+        )[0]
+        stale_chunk_id = uuid.uuid4()
+        session.add(
+            ContentChunk(
+                id=stale_chunk_id,
+                content_item_id=content_item_id,
+                chunk_index=expected_chunk.chunk_index,
+                char_start=0,
+                char_end=3,
+                display_text="old display",
+                embed_text="old embed text",
+                token_count=3,
+                chunk_metadata_json={
+                    **expected_chunk.chunk_metadata_json,
+                    **_current_vector_metadata(),
+                    "chunker_version": "old-version",
+                    "embed_text_hash": "0" * 64,
+                },
+                qdrant_point_id=None,
+                vector_backend="memory",
+                vector_point_id="stale-vector-point",
+                embedded_at=utcnow(),
+                embed_status="success",
+                embed_error=None,
+            )
+        )
+        await session.commit()
+
+        result = await chunk_indexer_module.chunk_and_index_content_items(
+            session=session,
+            run_id=run_id,
+            content_item_ids=[content_item_id],
+        )
+        await session.commit()
+
+        chunks = (
+            await session.scalars(
+                select(ContentChunk).order_by(ContentChunk.chunk_index.asc())
+            )
+        ).all()
+
+    assert result.chunked_count == 0
+    assert result.embedded_count == 1
+    assert result.failed_count == 0
+    assert len(chunks) == 1
+    refreshed_chunk = chunks[0]
+    assert refreshed_chunk.id == stale_chunk_id
+    assert refreshed_chunk.display_text == expected_chunk.display_text
+    assert refreshed_chunk.embed_text == expected_chunk.embed_text
+    assert refreshed_chunk.char_start == expected_chunk.start_char
+    assert refreshed_chunk.char_end == expected_chunk.end_char
+    assert refreshed_chunk.token_count == expected_chunk.token_count
+    assert refreshed_chunk.embed_status == "success"
+    assert refreshed_chunk.embed_error is None
+    assert refreshed_chunk.vector_backend == "memory"
+    assert refreshed_chunk.vector_point_id == str(stale_chunk_id)
+    assert refreshed_chunk.qdrant_point_id is None
+    assert refreshed_chunk.embedded_at is not None
+    assert (
+        refreshed_chunk.chunk_metadata_json["chunker_version"]
+        == expected_chunk.chunk_metadata_json["chunker_version"]
+    )
+    assert (
+        refreshed_chunk.chunk_metadata_json["embed_text_hash"]
+        == expected_chunk.chunk_metadata_json["embed_text_hash"]
+    )
+
+
+async def test_chunk_sync_creates_missing_chunks_and_obsoletes_extra_chunks() -> None:
+    cleaned_text = "x" * 1305
+    async with db_session_module.AsyncSessionLocal() as session:
+        run_id, content_item_id = await _create_indexable_content_item(
+            session,
+            item_type="comment",
+            cleaned_text=cleaned_text,
+        )
+        content_item = await session.get(ContentItem, content_item_id)
+        assert content_item is not None
+        expected_chunks = build_chunks(
+            item_type=content_item.item_type,
+            title=content_item.title,
+            cleaned_text=content_item.cleaned_text,
+            summary_text=content_item.summary_text,
+            tags=content_item.tags,
+        )
+        assert [chunk.chunk_index for chunk in expected_chunks] == [0, 1]
+        current_chunk_id = uuid.uuid4()
+        obsolete_chunk_id = uuid.uuid4()
+        session.add_all(
+            [
+                ContentChunk(
+                    id=current_chunk_id,
+                    content_item_id=content_item_id,
+                    chunk_index=0,
+                    char_start=expected_chunks[0].start_char,
+                    char_end=expected_chunks[0].end_char,
+                    display_text=expected_chunks[0].display_text,
+                    embed_text=expected_chunks[0].embed_text,
+                    token_count=expected_chunks[0].token_count,
+                    chunk_metadata_json={
+                        **expected_chunks[0].chunk_metadata_json,
+                        **_current_vector_metadata(),
+                    },
+                    qdrant_point_id=None,
+                    vector_backend="memory",
+                    vector_point_id="current-vector-point",
+                    embedded_at=utcnow(),
+                    embed_status="success",
+                    embed_error=None,
+                ),
+                ContentChunk(
+                    id=obsolete_chunk_id,
+                    content_item_id=content_item_id,
+                    chunk_index=2,
+                    char_start=9999,
+                    char_end=10009,
+                    display_text="obsolete display",
+                    embed_text="obsolete embed",
+                    token_count=2,
+                    chunk_metadata_json={
+                        "chunker_version": "obsolete-version",
+                        "embed_text_hash": "1" * 64,
+                        **_current_vector_metadata(),
+                    },
+                    qdrant_point_id=None,
+                    vector_backend="memory",
+                    vector_point_id="obsolete-vector-point",
+                    embedded_at=utcnow(),
+                    embed_status="success",
+                    embed_error=None,
+                ),
+            ]
+        )
+        await session.commit()
+
+        result = await chunk_indexer_module.chunk_and_index_content_items(
+            session=session,
+            run_id=run_id,
+            content_item_ids=[content_item_id],
+        )
+        await session.commit()
+
+        chunks = (
+            await session.scalars(
+                select(ContentChunk).order_by(ContentChunk.chunk_index.asc())
+            )
+        ).all()
+
+    chunks_by_index = {chunk.chunk_index: chunk for chunk in chunks}
+    assert result.chunked_count == 1
+    assert result.embedded_count == 1
+    assert result.failed_count == 0
+    assert set(chunks_by_index) == {0, 1, 2}
+    assert chunks_by_index[0].id == current_chunk_id
+    assert chunks_by_index[0].embed_status == "success"
+    assert chunks_by_index[0].vector_point_id == "current-vector-point"
+    assert chunks_by_index[1].display_text == expected_chunks[1].display_text
+    assert chunks_by_index[1].embed_text == expected_chunks[1].embed_text
+    assert chunks_by_index[1].embed_status == "success"
+    assert chunks_by_index[1].vector_backend == "memory"
+    assert chunks_by_index[1].vector_point_id == str(chunks_by_index[1].id)
+    assert chunks_by_index[1].chunk_metadata_json["embed_text_hash"] == expected_chunks[
+        1
+    ].chunk_metadata_json["embed_text_hash"]
+    assert chunks_by_index[2].id == obsolete_chunk_id
+    assert chunks_by_index[2].embed_status == "failed"
+    assert chunks_by_index[2].embed_error == "obsolete chunk"
+    assert chunks_by_index[2].vector_backend is None
+    assert chunks_by_index[2].vector_point_id is None
+    assert chunks_by_index[2].qdrant_point_id is None
+    assert chunks_by_index[2].embedded_at is None
 
 
 def test_vector_upsert_failure_marks_run_partial_and_failed_chunks_are_retried(

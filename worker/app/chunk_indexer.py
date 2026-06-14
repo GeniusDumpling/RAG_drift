@@ -6,7 +6,7 @@ from app.core.config import get_settings
 from app.db.base import utcnow
 from app.models.content import ContentChunk, ContentItem
 from app.models.control import CrawlRunEvent
-from app.services.chunking import build_chunks
+from app.services.chunking import BuiltChunk, build_chunks
 from app.services.embeddings import DeterministicEmbeddingService
 from app.services.retrieval import QdrantIndexer
 from sqlalchemy import select
@@ -46,17 +46,8 @@ async def chunk_and_index_content_items(
         if content_item is None:
             continue
 
-        existing_chunks = await _load_chunks_for_item(session, content_item_id)
-        if existing_chunks:
-            for existing_chunk in _chunks_requiring_indexing(
-                existing_chunks,
-                vector_target=vector_target,
-            ):
-                chunks_to_index.append((existing_chunk, content_item))
-            continue
-
         thread_title = await _thread_title_for_item(session, content_item)
-        chunks_for_indexing, created_chunk_count = await _create_chunks_or_reload_existing(
+        chunks_for_indexing, created_chunk_count = await _sync_chunks_for_item(
             session=session,
             content_item=content_item,
             thread_title=thread_title,
@@ -153,16 +144,138 @@ async def _load_chunks_for_item(
     return list(chunks.all())
 
 
-def _chunks_requiring_indexing(
-    chunks: list[ContentChunk],
+async def _sync_chunks_for_item(
     *,
+    session: AsyncSession,
+    content_item: ContentItem,
+    thread_title: str | None,
     vector_target: VectorIndexTarget,
-) -> list[ContentChunk]:
-    return [
-        chunk
-        for chunk in chunks
-        if _chunk_requires_indexing(chunk, vector_target=vector_target)
-    ]
+) -> tuple[list[ContentChunk], int]:
+    built_chunks = build_chunks(
+        item_type=content_item.item_type,
+        title=content_item.title,
+        cleaned_text=content_item.cleaned_text,
+        summary_text=content_item.summary_text,
+        tags=content_item.tags,
+        thread_title=thread_title,
+    )
+    existing_chunks = await _load_chunks_for_item(session, content_item.id)
+    return await _reconcile_chunks_for_item(
+        session=session,
+        content_item=content_item,
+        built_chunks=built_chunks,
+        existing_chunks=existing_chunks,
+        vector_target=vector_target,
+    )
+
+
+async def _reconcile_chunks_for_item(
+    *,
+    session: AsyncSession,
+    content_item: ContentItem,
+    built_chunks: list[BuiltChunk],
+    existing_chunks: list[ContentChunk],
+    vector_target: VectorIndexTarget,
+) -> tuple[list[ContentChunk], int]:
+    existing_by_index = {chunk.chunk_index: chunk for chunk in existing_chunks}
+    expected_indices = {built_chunk.chunk_index for built_chunk in built_chunks}
+    chunks_to_index: list[ContentChunk] = []
+    new_chunks: list[ContentChunk] = []
+
+    for built_chunk in built_chunks:
+        existing_chunk = existing_by_index.get(built_chunk.chunk_index)
+        if existing_chunk is None:
+            new_chunk = _new_content_chunk(content_item=content_item, built_chunk=built_chunk)
+            new_chunks.append(new_chunk)
+            chunks_to_index.append(new_chunk)
+            continue
+
+        if _chunk_definition_is_stale(existing_chunk, built_chunk):
+            _apply_built_chunk_to_existing(existing_chunk, built_chunk)
+            chunks_to_index.append(existing_chunk)
+            continue
+
+        if _chunk_requires_indexing(existing_chunk, vector_target=vector_target):
+            chunks_to_index.append(existing_chunk)
+
+    for existing_chunk in existing_chunks:
+        if existing_chunk.chunk_index not in expected_indices:
+            _mark_chunk_obsolete(existing_chunk)
+
+    if not new_chunks:
+        await session.flush()
+        return chunks_to_index, 0
+
+    try:
+        async with session.begin_nested():
+            for content_chunk in new_chunks:
+                session.add(content_chunk)
+            await session.flush()
+    except IntegrityError:
+        reloaded_chunks = await _load_chunks_for_item(session, content_item.id)
+        if not reloaded_chunks:
+            raise
+        return await _reconcile_chunks_for_item(
+            session=session,
+            content_item=content_item,
+            built_chunks=built_chunks,
+            existing_chunks=reloaded_chunks,
+            vector_target=vector_target,
+        )
+
+    return chunks_to_index, len(new_chunks)
+
+
+def _new_content_chunk(*, content_item: ContentItem, built_chunk: BuiltChunk) -> ContentChunk:
+    return ContentChunk(
+        content_item_id=content_item.id,
+        chunk_index=built_chunk.chunk_index,
+        char_start=built_chunk.start_char,
+        char_end=built_chunk.end_char,
+        display_text=built_chunk.display_text,
+        embed_text=built_chunk.embed_text,
+        token_count=built_chunk.token_count,
+        chunk_metadata_json=built_chunk.chunk_metadata_json,
+        qdrant_point_id=None,
+        vector_backend=None,
+        vector_point_id=None,
+        embedded_at=None,
+        embed_status="pending",
+        embed_error=None,
+    )
+
+
+def _chunk_definition_is_stale(chunk: ContentChunk, built_chunk: BuiltChunk) -> bool:
+    metadata = chunk.chunk_metadata_json
+    built_metadata = built_chunk.chunk_metadata_json
+    return (
+        metadata.get("chunker_version") != built_metadata.get("chunker_version")
+        or metadata.get("embed_text_hash") != built_metadata.get("embed_text_hash")
+    )
+
+
+def _apply_built_chunk_to_existing(chunk: ContentChunk, built_chunk: BuiltChunk) -> None:
+    chunk.char_start = built_chunk.start_char
+    chunk.char_end = built_chunk.end_char
+    chunk.display_text = built_chunk.display_text
+    chunk.embed_text = built_chunk.embed_text
+    chunk.token_count = built_chunk.token_count
+    chunk.chunk_metadata_json = built_chunk.chunk_metadata_json
+    chunk.qdrant_point_id = None
+    chunk.vector_backend = None
+    chunk.vector_point_id = None
+    chunk.embedded_at = None
+    chunk.embed_status = "pending"
+    chunk.embed_error = None
+
+
+def _mark_chunk_obsolete(chunk: ContentChunk) -> None:
+    chunk.embed_status = "failed"
+    chunk.embed_error = "obsolete chunk"
+    chunk.qdrant_point_id = None
+    chunk.vector_backend = None
+    chunk.vector_point_id = None
+    chunk.embedded_at = None
 
 
 def _chunk_requires_indexing(
@@ -181,58 +294,6 @@ def _chunk_requires_indexing(
     return any(
         metadata.get(key) != value for key, value in vector_target.metadata.items()
     )
-
-
-async def _create_chunks_or_reload_existing(
-    *,
-    session: AsyncSession,
-    content_item: ContentItem,
-    thread_title: str | None,
-    vector_target: VectorIndexTarget,
-) -> tuple[list[ContentChunk], int]:
-    built_chunks = build_chunks(
-        item_type=content_item.item_type,
-        title=content_item.title,
-        cleaned_text=content_item.cleaned_text,
-        summary_text=content_item.summary_text,
-        tags=content_item.tags,
-        thread_title=thread_title,
-    )
-    new_chunks = [
-        ContentChunk(
-            content_item_id=content_item.id,
-            chunk_index=built_chunk.chunk_index,
-            char_start=built_chunk.start_char,
-            char_end=built_chunk.end_char,
-            display_text=built_chunk.display_text,
-            embed_text=built_chunk.embed_text,
-            token_count=built_chunk.token_count,
-            chunk_metadata_json=built_chunk.chunk_metadata_json,
-            qdrant_point_id=None,
-            vector_backend=None,
-            vector_point_id=None,
-            embedded_at=None,
-            embed_status="pending",
-            embed_error=None,
-        )
-        for built_chunk in built_chunks
-    ]
-
-    try:
-        async with session.begin_nested():
-            for content_chunk in new_chunks:
-                session.add(content_chunk)
-            await session.flush()
-    except IntegrityError:
-        existing_chunks = await _load_chunks_for_item(session, content_item.id)
-        if not existing_chunks:
-            raise
-        return _chunks_requiring_indexing(
-            existing_chunks,
-            vector_target=vector_target,
-        ), 0
-
-    return new_chunks, len(new_chunks)
 
 
 async def _thread_title_for_item(

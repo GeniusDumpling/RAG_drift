@@ -82,7 +82,7 @@ class SearchQuery(Base, UuidPrimaryKeyMixin):
         JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
     )
     mode: Mapped[str] = mapped_column(
-        String(40), default="hybrid", server_default=text("'hybrid'"), nullable=False
+        String(40), default="search", server_default=text("'search'"), nullable=False
     )
     top_k: Mapped[int] = mapped_column(
         Integer, default=10, server_default=text("10"), nullable=False
@@ -90,7 +90,7 @@ class SearchQuery(Base, UuidPrimaryKeyMixin):
     used_agent: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"), nullable=False
     )
-    optimized_query: Mapped[str | None] = mapped_column(Text)
+    optimized_query_text: Mapped[str | None] = mapped_column(Text)
     keyword_terms_json: Mapped[list[str]] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
     )
@@ -101,6 +101,9 @@ class SearchQuery(Base, UuidPrimaryKeyMixin):
         JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
     )
     result_summary_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
+    query_trace_json: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
     )
     result_count: Mapped[int | None] = mapped_column(Integer)

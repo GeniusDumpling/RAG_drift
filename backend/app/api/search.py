@@ -1,0 +1,29 @@
+import uuid
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_session
+from app.repositories.search import SearchRepository
+from app.schemas.search import SearchQueryRead, SearchRequest, SearchResponse
+from app.services.search import SearchService
+
+router = APIRouter()
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+@router.post("/search", response_model=SearchResponse, status_code=status.HTTP_200_OK)
+async def search(payload: SearchRequest, session: SessionDep) -> SearchResponse:
+    return await SearchService(session).search(payload)
+
+
+@router.get("/search-queries/{search_query_id}", response_model=SearchQueryRead)
+async def get_search_query(search_query_id: uuid.UUID, session: SessionDep) -> SearchQueryRead:
+    search_query = await SearchRepository(session).get_search_query(search_query_id)
+    if search_query is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Search query not found",
+        )
+    return SearchQueryRead.model_validate(search_query)

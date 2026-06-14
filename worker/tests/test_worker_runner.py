@@ -10,7 +10,7 @@ import pytest
 from app.agents.contracts import ExtractionAgentRequest, ExtractionAgentResponse, ExtractionItem
 from app.db.base import utcnow
 from app.main import app
-from app.models.content import ContentItem, RawPage
+from app.models.content import ContentChunk, ContentItem, RawPage
 from app.models.control import CrawlJob, CrawlRun, SourceSite
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, insert, select, text
@@ -486,6 +486,175 @@ def test_qdrant_indexer_construction_failure_is_recoverable_vector_failure(
         {"run_id": run["id"]},
     )
     assert page_failed_events == []
+
+
+async def test_chunk_creation_race_reloads_existing_chunks_and_indexes_them() -> None:
+    async with db_session_module.AsyncSessionLocal() as session:
+        source_site = SourceSite(
+            name="Chunk Race Source",
+            site_type="docs",
+            base_url="https://example.com",
+            allowed_domains=["example.com"],
+            fetch_mode="manual",
+            default_language="en",
+            active=True,
+            config_json={},
+        )
+        session.add(source_site)
+        await session.flush()
+
+        crawl_job = CrawlJob(
+            source_site_id=source_site.id,
+            name="Chunk race job",
+            trigger_mode="manual",
+            cron_expr=None,
+            seed_config_json={"urls": ["https://example.com/chunk-race"]},
+            parser_profile="official_site",
+            max_pages=1,
+            enabled=True,
+            agent_policy_json={},
+        )
+        session.add(crawl_job)
+        await session.flush()
+
+        crawl_run = CrawlRun(
+            source_site_id=source_site.id,
+            crawl_job_id=crawl_job.id,
+            trigger_type="manual",
+            seed_url="https://example.com/chunk-race",
+            status="running",
+            config_snapshot_json={},
+        )
+        session.add(crawl_run)
+        await session.flush()
+
+        raw_page = RawPage(
+            source_site_id=source_site.id,
+            crawl_run_id=crawl_run.id,
+            requested_url="https://example.com/chunk-race",
+            final_url="https://example.com/chunk-race",
+            http_status=200,
+            content_type="text/html",
+            response_headers_json={},
+            raw_html="<html></html>",
+            raw_text="Chunk race body",
+            raw_json={},
+            fetched_at=utcnow(),
+            fetch_error=None,
+            parser_profile="official_site",
+            extraction_method="extraction_agent",
+            extraction_confidence=0.9,
+            parse_status="parsed",
+            parse_error=None,
+            body_hash="chunk-race-body-hash",
+        )
+        session.add(raw_page)
+        await session.flush()
+
+        content_item = ContentItem(
+            source_site_id=source_site.id,
+            raw_page_id=raw_page.id,
+            crawl_run_id=crawl_run.id,
+            author_id=None,
+            parent_item_id=None,
+            thread_root_id=None,
+            item_type="article",
+            title="Chunk race",
+            canonical_url="https://example.com/chunk-race",
+            source_url="https://example.com/chunk-race",
+            published_at=None,
+            language="en",
+            raw_text="Chunk race body",
+            cleaned_text="Chunk race body",
+            summary_text="Chunk race summary",
+            structured_by="extraction_agent",
+            extraction_confidence=0.9,
+            tags=["race"],
+            metadata_json={},
+            content_hash="chunk-race-content-hash",
+            dedup_key="chunk-race-dedup-key",
+            search_tsv=None,
+        )
+        session.add(content_item)
+        await session.commit()
+
+        run_id = crawl_run.id
+        content_item_id = content_item.id
+        winner_chunk_ids: list[uuid.UUID] = []
+        conflict_inserted = False
+
+        def insert_conflicting_chunks(sync_session: Session, *_args: object) -> None:
+            nonlocal conflict_inserted
+            if conflict_inserted:
+                return
+
+            pending_chunks = [
+                chunk for chunk in sync_session.new if isinstance(chunk, ContentChunk)
+            ]
+            if not pending_chunks:
+                return
+
+            conflict_inserted = True
+            engine = create_engine(os.environ["SYNC_DATABASE_URL"], pool_pre_ping=True)
+            try:
+                with engine.begin() as connection:
+                    for pending_chunk in pending_chunks:
+                        winner_chunk_id = uuid.uuid4()
+                        winner_chunk_ids.append(winner_chunk_id)
+                        connection.execute(
+                            insert(ContentChunk).values(
+                                id=winner_chunk_id,
+                                content_item_id=pending_chunk.content_item_id,
+                                chunk_index=pending_chunk.chunk_index,
+                                char_start=pending_chunk.char_start,
+                                char_end=pending_chunk.char_end,
+                                display_text=(
+                                    f"winner display {pending_chunk.chunk_index}"
+                                ),
+                                embed_text=f"winner embed {pending_chunk.chunk_index}",
+                                token_count=2,
+                                chunk_metadata_json={
+                                    "winner": True,
+                                    "chunk_index": pending_chunk.chunk_index,
+                                },
+                                qdrant_point_id=None,
+                                vector_backend=None,
+                                vector_point_id=None,
+                                embedded_at=None,
+                                embed_status="pending",
+                                embed_error=None,
+                            )
+                        )
+            finally:
+                engine.dispose()
+
+        event.listen(session.sync_session, "before_flush", insert_conflicting_chunks)
+        try:
+            result = await runner_module._chunk_and_index_content_items(
+                session=session,
+                run_id=run_id,
+                content_item_ids=[content_item_id],
+            )
+            await session.commit()
+        finally:
+            event.remove(session.sync_session, "before_flush", insert_conflicting_chunks)
+
+        chunks = (
+            await session.scalars(
+                select(ContentChunk).order_by(ContentChunk.chunk_index.asc())
+            )
+        ).all()
+
+    assert conflict_inserted is True
+    assert result.chunked_count == 0
+    assert result.embedded_count == len(winner_chunk_ids)
+    assert result.failed_count == 0
+    assert [chunk.id for chunk in chunks] == winner_chunk_ids
+    assert {chunk.embed_status for chunk in chunks} == {"success"}
+    assert {chunk.vector_backend for chunk in chunks} == {"memory"}
+    assert all(chunk.vector_point_id == str(chunk.id) for chunk in chunks)
+    assert all(chunk.qdrant_point_id == str(chunk.id) for chunk in chunks)
+    assert all(chunk.embedded_at is not None for chunk in chunks)
 
 
 def test_unsupported_parser_profile_marks_run_failed_without_raising() -> None:

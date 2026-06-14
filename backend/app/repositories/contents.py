@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.base import utcnow
 from app.models.content import Author, ContentChunk, ContentItem, RawPage
 from app.models.control import CrawlRun, SourceSite
+from app.services.chunking import build_chunks
 
 
 def stable_hash(text: str) -> str:
@@ -115,23 +116,35 @@ class ContentsRepository:
         self.session.add(content_item)
         await self.session.flush()
 
-        chunk = ContentChunk(
-            content_item_id=content_item.id,
-            chunk_index=0,
-            char_start=0,
-            char_end=len(cleaned_text),
-            display_text=cleaned_text,
-            embed_text=cleaned_text,
-            token_count=len(cleaned_text.split()),
-            chunk_metadata_json={"source": "test-ingest"},
-            qdrant_point_id=None,
-            embed_status="pending",
-            embed_error=None,
-        )
-        self.session.add(chunk)
+        chunks: list[ContentChunk] = []
+        for built_chunk in build_chunks(
+            item_type=item_type,
+            title=title,
+            cleaned_text=cleaned_text,
+            summary_text=summary_text,
+            tags=tags,
+        ):
+            chunk = ContentChunk(
+                content_item_id=content_item.id,
+                chunk_index=built_chunk.chunk_index,
+                char_start=built_chunk.start_char,
+                char_end=built_chunk.end_char,
+                display_text=built_chunk.display_text,
+                embed_text=built_chunk.embed_text,
+                token_count=built_chunk.token_count,
+                chunk_metadata_json=built_chunk.chunk_metadata_json,
+                qdrant_point_id=None,
+                vector_backend=None,
+                vector_point_id=None,
+                embedded_at=None,
+                embed_status="pending",
+                embed_error=None,
+            )
+            self.session.add(chunk)
+            chunks.append(chunk)
         await self.session.flush()
 
-        return CreatedContent(raw_page=raw_page, content_item=content_item, chunks=[chunk])
+        return CreatedContent(raw_page=raw_page, content_item=content_item, chunks=chunks)
 
     async def list_contents(
         self,

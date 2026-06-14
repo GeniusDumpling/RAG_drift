@@ -46,6 +46,12 @@ async def chunk_and_index_content_items(
     run_id: uuid.UUID,
     content_item_ids: list[uuid.UUID],
 ) -> ChunkIndexingResult:
+    """Build content chunks and index their vectors.
+
+    Transaction boundary: this helper commits source-of-truth chunk rows before any
+    vector writes, then commits final vector indexing statuses and failure events
+    before returning. Callers may still commit afterward; an extra commit is harmless.
+    """
     unique_item_ids = list(dict.fromkeys(content_item_ids))
     vector_target = _current_vector_index_target()
     chunks_to_index: list[tuple[ContentChunk, ContentItem]] = []
@@ -113,7 +119,7 @@ async def chunk_and_index_content_items(
                     cause=error_message,
                 ),
             )
-        await session.flush()
+        await session.commit()
         return ChunkIndexingResult(
             chunked_count=newly_created_chunk_count,
             embedded_count=0,
@@ -161,7 +167,7 @@ async def chunk_and_index_content_items(
             index_metadata=index_target.metadata,
         )
 
-    await session.flush()
+    await session.commit()
     return ChunkIndexingResult(
         chunked_count=newly_created_chunk_count,
         embedded_count=embedded_count,
@@ -228,7 +234,10 @@ async def _reconcile_chunks_for_item(
             continue
 
         if _chunk_definition_is_stale(existing_chunk, built_chunk):
+            obsolete_vector_point = _obsolete_vector_point_for_chunk(existing_chunk)
             _apply_built_chunk_to_existing(existing_chunk, built_chunk)
+            if obsolete_vector_point is not None:
+                obsolete_vector_points.append(obsolete_vector_point)
             chunks_to_index.append(existing_chunk)
             continue
 
@@ -309,13 +318,19 @@ def _apply_built_chunk_to_existing(chunk: ContentChunk, built_chunk: BuiltChunk)
 
 
 def _mark_chunk_obsolete(chunk: ContentChunk) -> ObsoleteVectorPoint | None:
+    obsolete_vector_point = _obsolete_vector_point_for_chunk(chunk)
+
+    chunk.embed_status = "obsolete"
+    chunk.embed_error = "obsolete chunk"
+
+    return obsolete_vector_point
+
+
+def _obsolete_vector_point_for_chunk(chunk: ContentChunk) -> ObsoleteVectorPoint | None:
     previous_backend = chunk.vector_backend
     previous_point_id = chunk.vector_point_id or chunk.qdrant_point_id
     previous_collection = _metadata_string(chunk.chunk_metadata_json, "vector_collection")
     previous_store_id = _metadata_string(chunk.chunk_metadata_json, "vector_store_id")
-
-    chunk.embed_status = "obsolete"
-    chunk.embed_error = "obsolete chunk"
 
     if previous_backend is None or previous_point_id is None:
         return None

@@ -6,7 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_session
 from app.repositories.search import SearchRepository
-from app.schemas.search import SearchQueryRead, SearchRequest, SearchResponse
+from app.schemas.search import (
+    AnswerRequest,
+    AnswerResponse,
+    SearchQueryRead,
+    SearchRequest,
+    SearchResponse,
+)
 from app.services.search import SearchService, UnsupportedSearchModeError
 
 router = APIRouter()
@@ -19,6 +25,11 @@ async def search(payload: SearchRequest, session: SessionDep) -> SearchResponse:
         return await SearchService(session).search(payload)
     except UnsupportedSearchModeError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/answer", response_model=AnswerResponse, status_code=status.HTTP_200_OK)
+async def answer(payload: AnswerRequest, session: SessionDep) -> AnswerResponse:
+    return await SearchService(session).answer(payload)
 
 
 @router.get("/search-queries/{search_query_id}", response_model=SearchQueryRead)

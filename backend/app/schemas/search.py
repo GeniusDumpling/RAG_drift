@@ -34,6 +34,22 @@ class SearchRequest(BaseModel):
         return value
 
 
+class AnswerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str
+    mode: Literal["answer"] = "answer"
+    filters: SearchFilters = Field(default_factory=SearchFilters)
+    top_k: int = Field(default=10, ge=1, le=50)
+
+    @field_validator("query")
+    @classmethod
+    def query_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("query must not be blank")
+        return value
+
+
 class SearchQueryRead(OrmBaseModel):
     id: uuid.UUID
     raw_query: str
@@ -73,3 +89,9 @@ class EvidenceObject(BaseModel):
 class SearchResponse(BaseModel):
     query: SearchQueryRead
     evidence: list[EvidenceObject]
+
+
+class AnswerResponse(BaseModel):
+    query: SearchQueryRead
+    answer: str
+    supporting_evidence: list[EvidenceObject]

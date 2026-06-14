@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { listJobs, listSources, triggerJob } from '../api/client';
 import type { CrawlJob, Page, SourceSite } from '../api/types';
+import { formatErrorMessage } from '../utils/errors';
 
 const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
 
@@ -9,17 +10,22 @@ export function SourcesPage() {
   const [sources, setSources] = useState<Page<SourceSite>>();
   const [jobs, setJobs] = useState<Page<CrawlJob>>();
   const [message, setMessage] = useState('');
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     let ignore = false;
-    Promise.all([listSources().catch(() => undefined), listJobs().catch(() => undefined)]).then(
-      ([sourcePage, jobPage]) => {
-        if (!ignore) {
-          setSources(sourcePage);
-          setJobs(jobPage);
-        }
-      },
-    );
+    setLoadError('');
+    Promise.allSettled([listSources(), listJobs()]).then(([sourceResult, jobResult]) => {
+      if (ignore) {
+        return;
+      }
+      const firstFailure = [sourceResult, jobResult].find(
+        (result): result is PromiseRejectedResult => result.status === 'rejected',
+      );
+      setSources(sourceResult.status === 'fulfilled' ? sourceResult.value : undefined);
+      setJobs(jobResult.status === 'fulfilled' ? jobResult.value : undefined);
+      setLoadError(firstFailure ? formatErrorMessage('Unable to load sources data', firstFailure.reason) : '');
+    });
     return () => {
       ignore = true;
     };
@@ -53,6 +59,11 @@ export function SourcesPage() {
       </div>
 
       {message ? <p className="card status-line">{message}</p> : null}
+      {loadError ? (
+        <p className="card error-text" role="alert">
+          {loadError}
+        </p>
+      ) : null}
 
       {sources?.items.length ? (
         <div className="grid two-column">
@@ -102,12 +113,16 @@ export function SourcesPage() {
                     ))}
                   </ul>
                 ) : (
-                  <p className="muted">{EMPTY_STATE_COPY}</p>
+                  <p className="muted">
+                    {jobs ? 'No crawl jobs configured for this source.' : 'Job data unavailable while the API request is failing.'}
+                  </p>
                 )}
               </article>
             );
           })}
         </div>
+      ) : loadError ? (
+        <p className="card muted">Source data unavailable while the API request is failing.</p>
       ) : (
         <p className="card empty-state">{EMPTY_STATE_COPY}</p>
       )}

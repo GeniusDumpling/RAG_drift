@@ -2,16 +2,21 @@ import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 
 import { getContent, listContents } from '../api/client';
 import type { ContentDetail, ContentListItem, Page } from '../api/types';
+import { formatErrorMessage } from '../utils/errors';
 
 const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
+const CONTENT_UNAVAILABLE_COPY = 'Content detail unavailable while the API request is failing.';
 
 export function ContentDetailPage() {
   const [contents, setContents] = useState<Page<ContentListItem>>();
   const [selectedContentId, setSelectedContentId] = useState('');
   const [detail, setDetail] = useState<ContentDetail>();
+  const [listError, setListError] = useState('');
+  const [detailError, setDetailError] = useState('');
 
   useEffect(() => {
     let ignore = false;
+    setListError('');
     listContents({ limit: 25 })
       .then((page) => {
         if (!ignore) {
@@ -19,9 +24,10 @@ export function ContentDetailPage() {
           setSelectedContentId((current) => current || page.items[0]?.id || '');
         }
       })
-      .catch(() => {
+      .catch((caught) => {
         if (!ignore) {
           setContents(undefined);
+          setListError(formatErrorMessage('Unable to load content list', caught));
         }
       });
     return () => {
@@ -30,6 +36,7 @@ export function ContentDetailPage() {
   }, []);
 
   useEffect(() => {
+    setDetailError('');
     if (!selectedContentId) {
       setDetail(undefined);
       return;
@@ -41,9 +48,10 @@ export function ContentDetailPage() {
           setDetail(content);
         }
       })
-      .catch(() => {
+      .catch((caught) => {
         if (!ignore) {
           setDetail(undefined);
+          setDetailError(formatErrorMessage('Unable to load content detail', caught));
         }
       });
     return () => {
@@ -66,6 +74,8 @@ export function ContentDetailPage() {
   function handleContentChange(event: ChangeEvent<HTMLSelectElement | HTMLInputElement>) {
     setSelectedContentId(event.target.value);
   }
+
+  const contentLoadFailed = Boolean(listError || detailError);
 
   return (
     <section>
@@ -94,6 +104,17 @@ export function ContentDetailPage() {
           />
         )}
       </div>
+
+      {listError ? (
+        <p className="card error-text" role="alert">
+          {listError}
+        </p>
+      ) : null}
+      {detailError ? (
+        <p className="card error-text" role="alert">
+          {detailError}
+        </p>
+      ) : null}
 
       {detail ? (
         <>
@@ -187,6 +208,8 @@ export function ContentDetailPage() {
             )}
           </section>
         </>
+      ) : contentLoadFailed ? (
+        <p className="card muted">{CONTENT_UNAVAILABLE_COPY}</p>
       ) : (
         <p className="card empty-state">{EMPTY_STATE_COPY}</p>
       )}

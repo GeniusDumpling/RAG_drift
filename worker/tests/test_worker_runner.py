@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, insert, select, text
 from sqlalchemy.orm import Session
 
+import worker.app.chunk_indexer as chunk_indexer_module
 import worker.app.runner as runner_module
 from worker.app.adapters import DiscoveredPage, FetchedPage, OfficialSiteAdapter
 from worker.app.normalizer import normalize_extraction_response
@@ -216,7 +217,7 @@ def test_worker_commits_source_of_truth_before_vector_writes(
             del embed_text, payload
             return str(chunk_id)
 
-    monkeypatch.setattr(runner_module, "_build_qdrant_indexer", CommitProbeIndexer)
+    monkeypatch.setattr(chunk_indexer_module, "_build_qdrant_indexer", CommitProbeIndexer)
     client = TestClient(app)
     run = _queue_worker_run(client, seed_url="https://example.com/commit-before-vector")
 
@@ -348,7 +349,7 @@ def test_vector_upsert_failure_marks_run_partial_and_failed_chunks_are_retried(
         indexer_build_count += 1
         return FlakyIndexer(fail_upserts=indexer_build_count == 1)
 
-    monkeypatch.setattr(runner_module, "_build_qdrant_indexer", build_flaky_indexer)
+    monkeypatch.setattr(chunk_indexer_module, "_build_qdrant_indexer", build_flaky_indexer)
     client = TestClient(app)
     seed_url = "https://example.com/vector-retry"
     job = _create_worker_job(client, urls=[seed_url], seed_url=seed_url)
@@ -465,7 +466,7 @@ def test_deduped_retry_vector_failure_events_use_active_run_id(
         indexer_build_count += 1
         return AlwaysFailingIndexer(build_number=indexer_build_count)
 
-    monkeypatch.setattr(runner_module, "_build_qdrant_indexer", build_failing_indexer)
+    monkeypatch.setattr(chunk_indexer_module, "_build_qdrant_indexer", build_failing_indexer)
     client = TestClient(app)
     seed_url = "https://example.com/vector-active-run"
     job = _create_worker_job(client, urls=[seed_url], seed_url=seed_url)
@@ -549,7 +550,7 @@ def test_qdrant_indexer_construction_failure_is_recoverable_vector_failure(
     def fail_build_indexer() -> object:
         raise RuntimeError("simulated qdrant construction outage")
 
-    monkeypatch.setattr(runner_module, "_build_qdrant_indexer", fail_build_indexer)
+    monkeypatch.setattr(chunk_indexer_module, "_build_qdrant_indexer", fail_build_indexer)
     client = TestClient(app)
     seed_url = "https://example.com/vector-construction"
     run = _queue_worker_run(client, urls=[seed_url], seed_url=seed_url)
@@ -777,7 +778,7 @@ async def test_chunk_creation_race_reloads_existing_chunks_and_indexes_them() ->
 
         event.listen(session.sync_session, "before_flush", insert_conflicting_chunks)
         try:
-            result = await runner_module._chunk_and_index_content_items(
+            result = await chunk_indexer_module.chunk_and_index_content_items(
                 session=session,
                 run_id=run_id,
                 content_item_ids=[content_item_id],

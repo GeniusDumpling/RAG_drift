@@ -33,29 +33,13 @@ def build_chunks(
     normalized_text = cleaned_text.strip()
     normalized_tags = [tag.strip() for tag in tags if tag.strip()]
     if item_type == "comment":
-        return [
-            _make_chunk(
-                chunk_index=0,
-                chunk_type="comment_contextual",
-                section_path=None,
-                display_text=normalized_text,
-                embed_text=_join_labeled_parts(
-                    [
-                        ("Thread", thread_title),
-                        ("Tags", _format_tags(normalized_tags)),
-                        ("Comment", normalized_text),
-                    ]
-                ),
-                start_char=0,
-                end_char=len(normalized_text),
-                metadata={
-                    "item_type": item_type,
-                    "chunk_type": "comment_contextual",
-                    "thread_title": thread_title,
-                    "tags": normalized_tags,
-                },
-            )
-        ]
+        return _build_contextual_comment_chunks(
+            item_type=item_type,
+            cleaned_text=normalized_text,
+            tags=normalized_tags,
+            thread_title=thread_title,
+            max_chars=max_chars,
+        )
 
     if item_type in _CONTEXTUAL_ARTICLE_TYPES:
         return _build_contextual_article_chunks(
@@ -75,6 +59,57 @@ def build_chunks(
         tags=normalized_tags,
         max_chars=max_chars,
     )
+
+
+def _build_contextual_comment_chunks(
+    *,
+    item_type: str,
+    cleaned_text: str,
+    tags: list[str],
+    thread_title: str | None,
+    max_chars: int,
+) -> list[BuiltChunk]:
+    chunks: list[BuiltChunk] = []
+    if not cleaned_text:
+        ranges = [(0, "")]
+    else:
+        ranges = [
+            (start, cleaned_text[start : start + max_chars])
+            for start in range(0, len(cleaned_text), max_chars)
+        ]
+
+    for chunk_index, (start, comment_text) in enumerate(ranges):
+        chunk_type = (
+            "comment_contextual"
+            if chunk_index == 0
+            else "comment_contextual_continued"
+        )
+        comment_label = "Comment" if chunk_index == 0 else "Comment continued"
+        chunks.append(
+            _make_chunk(
+                chunk_index=chunk_index,
+                chunk_type=chunk_type,
+                section_path=None,
+                display_text=comment_text,
+                embed_text=_join_labeled_parts(
+                    [
+                        ("Thread", thread_title),
+                        ("Tags", _format_tags(tags)),
+                        (comment_label, comment_text),
+                    ]
+                ),
+                start_char=start,
+                end_char=start + len(comment_text),
+                metadata={
+                    "item_type": item_type,
+                    "chunk_type": chunk_type,
+                    "thread_title": thread_title,
+                    "tags": tags,
+                },
+            )
+        )
+
+    return chunks
 
 
 def _build_contextual_article_chunks(

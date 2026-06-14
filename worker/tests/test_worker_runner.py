@@ -362,6 +362,155 @@ def test_replaying_same_deterministic_page_reuses_existing_content_item() -> Non
     assert [raw_page["parse_status"] for raw_page in raw_pages] == ["parsed", "parsed"]
 
 
+async def test_normalizer_does_not_mutate_reused_item_relationships_on_replay() -> None:
+    async with db_session_module.AsyncSessionLocal() as session:
+        source_site = SourceSite(
+            name="Replay Source",
+            site_type="forum",
+            base_url="https://example.com",
+            allowed_domains=["example.com"],
+            fetch_mode="manual",
+            default_language="en",
+            active=True,
+            config_json={},
+        )
+        session.add(source_site)
+        await session.flush()
+
+        crawl_job = CrawlJob(
+            source_site_id=source_site.id,
+            name="Replay job",
+            trigger_mode="manual",
+            cron_expr=None,
+            seed_config_json={"urls": ["https://example.com/replay-thread"]},
+            parser_profile="forum_thread",
+            max_pages=1,
+            enabled=True,
+            agent_policy_json={},
+        )
+        session.add(crawl_job)
+        await session.flush()
+
+        crawl_run = CrawlRun(
+            source_site_id=source_site.id,
+            crawl_job_id=crawl_job.id,
+            trigger_type="manual",
+            seed_url="https://example.com/replay-thread",
+            status="running",
+            config_snapshot_json={},
+        )
+        session.add(crawl_run)
+        await session.flush()
+
+        raw_page = RawPage(
+            source_site_id=source_site.id,
+            crawl_run_id=crawl_run.id,
+            requested_url="https://example.com/replay-thread",
+            final_url="https://example.com/replay-thread",
+            http_status=200,
+            content_type="text/html",
+            response_headers_json={},
+            raw_html="<html></html>",
+            raw_text="stable replay body",
+            raw_json={},
+            fetched_at=utcnow(),
+            fetch_error=None,
+            parser_profile="forum_thread",
+            extraction_method=None,
+            extraction_confidence=None,
+            parse_status="pending",
+            parse_error=None,
+            body_hash="stable-replay-body-hash",
+        )
+        session.add(raw_page)
+        await session.flush()
+
+        first_response = ExtractionAgentResponse(
+            page_kind="forum_thread",
+            items=[
+                ExtractionItem(
+                    item_type="comment",
+                    external_item_id="stable-comment",
+                    title=None,
+                    author=None,
+                    published_at=None,
+                    body_text="stable replay body",
+                    summary_text=None,
+                    tags=[],
+                    parent_ref=None,
+                    thread_root_ref=None,
+                    metadata_json={},
+                )
+            ],
+            extraction_confidence=0.8,
+            warnings=[],
+            trace_summary_json={"provider": "test"},
+        )
+        first_normalization = await normalize_extraction_response(
+            session,
+            source_site=source_site,
+            raw_page=raw_page,
+            response=first_response,
+        )
+        await session.flush()
+
+        reused_item_id = first_normalization.content_item_ids[0]
+        reused_item = await session.get(ContentItem, reused_item_id)
+        assert reused_item is not None
+        original_parent_item_id = reused_item.parent_item_id
+        original_thread_root_id = reused_item.thread_root_id
+        assert original_parent_item_id is None
+        assert original_thread_root_id is None
+
+        second_response = ExtractionAgentResponse(
+            page_kind="forum_thread",
+            items=[
+                ExtractionItem(
+                    item_type="thread",
+                    external_item_id="conflicting-thread",
+                    title="Conflicting thread",
+                    author=None,
+                    published_at=None,
+                    body_text="new conflicting root body",
+                    summary_text=None,
+                    tags=[],
+                    parent_ref=None,
+                    thread_root_ref=None,
+                    metadata_json={},
+                ),
+                ExtractionItem(
+                    item_type="comment",
+                    external_item_id="stable-comment",
+                    title=None,
+                    author=None,
+                    published_at=None,
+                    body_text="stable replay body",
+                    summary_text=None,
+                    tags=[],
+                    parent_ref="conflicting-thread",
+                    thread_root_ref="conflicting-thread",
+                    metadata_json={},
+                ),
+            ],
+            extraction_confidence=0.8,
+            warnings=[],
+            trace_summary_json={"provider": "test"},
+        )
+        second_normalization = await normalize_extraction_response(
+            session,
+            source_site=source_site,
+            raw_page=raw_page,
+            response=second_response,
+        )
+        await session.flush()
+        await session.refresh(reused_item)
+
+    assert second_normalization.reused_item_ids == [reused_item_id]
+    assert second_normalization.deduped_count == 1
+    assert reused_item.parent_item_id == original_parent_item_id
+    assert reused_item.thread_root_id == original_thread_root_id
+
+
 async def test_normalizer_recovers_when_dedup_insert_loses_race() -> None:
     async with db_session_module.AsyncSessionLocal() as session:
         source_site = SourceSite(

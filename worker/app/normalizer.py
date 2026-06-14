@@ -42,6 +42,7 @@ async def normalize_extraction_response(
 
     inserted_items: list[ContentItem] = []
     created_item_ids: list[uuid.UUID] = []
+    created_item_id_set: set[uuid.UUID] = set()
     reused_item_ids: list[uuid.UUID] = []
     item_by_ref: dict[str, ContentItem] = {}
     canonical_url = raw_page.final_url or raw_page.requested_url
@@ -100,6 +101,7 @@ async def normalize_extraction_response(
             )
             if created:
                 created_item_ids.append(content_item.id)
+                created_item_id_set.add(content_item.id)
             else:
                 reused_item_ids.append(content_item.id)
         else:
@@ -111,6 +113,9 @@ async def normalize_extraction_response(
 
     first_thread = next((item for item in inserted_items if item.item_type == "thread"), None)
     for source_item, content_item in zip(response.items, inserted_items, strict=True):
+        if content_item.id not in created_item_id_set:
+            continue
+
         if source_item.parent_ref is not None:
             parent = item_by_ref.get(source_item.parent_ref)
             if parent is not None:

@@ -807,6 +807,66 @@ def test_search_endpoint_drops_vector_hit_with_wrong_content_item_payload(
     assert trace["hydrated_evidence_count"] == 0
 
 
+def test_search_endpoint_prefers_keyword_content_item_id_for_same_chunk_hybrid_hit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _use_memory_vector_backend(monkeypatch)
+    client = TestClient(app)
+    ids = _create_source_job_run(client)
+    keyword = "authoritativekeyword"
+    first = _ingest_content(
+        client,
+        source_id=ids["source_id"],
+        run_id=ids["run_id"],
+        url_path="hybrid-wrong-vector-payload-a",
+        item_type="doc_page",
+        title="Authoritative keyword bulletin",
+        cleaned_text=f"This authoritative chunk contains {keyword} for SQL evidence.",
+        summary_text=None,
+        tags=[],
+    )
+    second = _ingest_content(
+        client,
+        source_id=ids["source_id"],
+        run_id=ids["run_id"],
+        url_path="hybrid-wrong-vector-payload-b",
+        item_type="doc_page",
+        title="Unrelated ordinary bulletin",
+        cleaned_text="Unrelated ordinary bulletin without the target token.",
+        summary_text=None,
+        tags=[],
+    )
+    _index_memory_chunk(
+        settings=settings,
+        chunk_id=_first_chunk_id(first),
+        embed_text=keyword,
+        source_id=ids["source_id"],
+        item_type="doc_page",
+        content_item_id=second["content_item_id"],
+    )
+
+    response = client.post(
+        "/search",
+        json={
+            "query": keyword,
+            "mode": "search",
+            "filters": {"source_site_id": ids["source_id"], "item_type": "doc_page"},
+            "top_k": 3,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    evidence = payload["evidence"]
+    assert len(evidence) == 1
+    assert evidence[0]["content_item_id"] == first["content_item_id"]
+    assert evidence[0]["matched_by"] in {"hybrid", "keyword"}
+    trace = payload["query"]["query_trace_json"]["retrieval"]
+    assert trace["vector"]["hit_count"] == 1
+    assert trace["keyword"]["hit_count"] >= 1
+    assert trace["hydrated_evidence_count"] == 1
+
+
 def test_search_endpoint_reapplies_filters_to_authoritative_postgres_rows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

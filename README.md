@@ -15,6 +15,43 @@ python scripts/seed_demo.py
 uvicorn app.main:app --app-dir backend --reload
 ```
 
+## 演示冒烟路径
+
+启动基础设施并执行迁移：
+
+```bash
+cp .env.example .env
+docker compose up -d postgres qdrant
+alembic upgrade head
+```
+
+写入演示数据并处理一次抓取运行：
+
+```bash
+python3 scripts/seed_demo.py
+python3 scripts/run_worker_once.py
+```
+
+启动 API：
+
+```bash
+uvicorn app.main:app --app-dir backend --reload
+```
+
+在另一个终端验证搜索与回答：
+
+```bash
+bash scripts/smoke_demo.sh
+```
+
+启动前端：
+
+```bash
+cd frontend
+npm install
+npm run dev -- --host 0.0.0.0
+```
+
 Migration policy for this unmerged prototype branch: the initial migration may be edited
 in place. If you have already applied it to a local dev/test database, reset that
 database before rerunning migrations.

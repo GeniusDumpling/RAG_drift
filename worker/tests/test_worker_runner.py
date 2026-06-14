@@ -12,9 +12,10 @@ from app.core.config import get_settings
 from app.db.base import utcnow
 from app.main import app
 from app.models.content import ContentChunk, ContentItem, RawPage
-from app.models.control import CrawlJob, CrawlRun, SourceSite
+from app.models.control import CrawlJob, CrawlRun, CrawlRunEvent, SourceSite
 from app.services.chunking import build_chunks
 from app.services.embeddings import DeterministicEmbeddingService
+from app.services.retrieval import _MEMORY_COLLECTIONS, QdrantIndexer
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, insert, select, text
 from sqlalchemy.orm import Session
@@ -514,6 +515,7 @@ async def test_success_chunks_with_stale_chunker_metadata_are_updated_and_reinde
 
 
 async def test_chunk_sync_creates_missing_chunks_and_obsoletes_extra_chunks() -> None:
+    _MEMORY_COLLECTIONS.clear()
     cleaned_text = "x" * 1305
     async with db_session_module.AsyncSessionLocal() as session:
         run_id, content_item_id = await _create_indexable_content_item(
@@ -533,6 +535,22 @@ async def test_chunk_sync_creates_missing_chunks_and_obsoletes_extra_chunks() ->
         assert [chunk.chunk_index for chunk in expected_chunks] == [0, 1]
         current_chunk_id = uuid.uuid4()
         obsolete_chunk_id = uuid.uuid4()
+        obsolete_point_id = str(obsolete_chunk_id)
+        memory_indexer = QdrantIndexer(
+            url=get_settings().qdrant_url,
+            collection=get_settings().qdrant_collection,
+            embedding=DeterministicEmbeddingService(),
+        )
+        memory_indexer.ensure_collection()
+        assert memory_indexer.upsert_chunk(
+            chunk_id=obsolete_chunk_id,
+            embed_text="obsolete embed",
+            payload={"content_item_id": str(content_item_id)},
+        ) == obsolete_point_id
+        memory_collection = _MEMORY_COLLECTIONS[
+            (memory_indexer.url, memory_indexer.collection)
+        ]
+        assert obsolete_point_id in memory_collection.points
         session.add_all(
             [
                 ContentChunk(
@@ -571,7 +589,7 @@ async def test_chunk_sync_creates_missing_chunks_and_obsoletes_extra_chunks() ->
                     },
                     qdrant_point_id=None,
                     vector_backend="memory",
-                    vector_point_id="obsolete-vector-point",
+                    vector_point_id=obsolete_point_id,
                     embedded_at=utcnow(),
                     embed_status="success",
                     embed_error=None,
@@ -610,12 +628,137 @@ async def test_chunk_sync_creates_missing_chunks_and_obsoletes_extra_chunks() ->
         1
     ].chunk_metadata_json["embed_text_hash"]
     assert chunks_by_index[2].id == obsolete_chunk_id
-    assert chunks_by_index[2].embed_status == "failed"
+    assert chunks_by_index[2].embed_status == "obsolete"
     assert chunks_by_index[2].embed_error == "obsolete chunk"
+    assert obsolete_point_id not in memory_collection.points
     assert chunks_by_index[2].vector_backend is None
     assert chunks_by_index[2].vector_point_id is None
     assert chunks_by_index[2].qdrant_point_id is None
     assert chunks_by_index[2].embedded_at is None
+
+
+async def test_obsolete_vector_delete_failure_records_event_and_counts_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DeleteFailingIndexer:
+        backend_name = "memory"
+        url = "memory://worker-tests"
+        collection = "content_chunks_worker_tests"
+        embedding = DeterministicEmbeddingService()
+
+        def ensure_collection(self) -> None:
+            return None
+
+        def delete_chunk(self, *, point_id: str) -> None:
+            del point_id
+            raise RuntimeError("simulated vector delete outage")
+
+        def upsert_chunk(
+            self,
+            *,
+            chunk_id: uuid.UUID,
+            embed_text: str,
+            payload: dict[str, Any],
+        ) -> str:
+            del chunk_id, embed_text, payload
+            raise AssertionError("obsolete chunks must not be reindexed")
+
+    monkeypatch.setattr(chunk_indexer_module, "_build_qdrant_indexer", DeleteFailingIndexer)
+
+    cleaned_text = "short body for a single chunk"
+    async with db_session_module.AsyncSessionLocal() as session:
+        run_id, content_item_id = await _create_indexable_content_item(
+            session,
+            item_type="article",
+            cleaned_text=cleaned_text,
+            title="Single chunk",
+        )
+        content_item = await session.get(ContentItem, content_item_id)
+        assert content_item is not None
+        expected_chunk = build_chunks(
+            item_type=content_item.item_type,
+            title=content_item.title,
+            cleaned_text=content_item.cleaned_text,
+            summary_text=content_item.summary_text,
+            tags=content_item.tags,
+        )[0]
+        current_chunk_id = uuid.uuid4()
+        obsolete_chunk_id = uuid.uuid4()
+        session.add_all(
+            [
+                ContentChunk(
+                    id=current_chunk_id,
+                    content_item_id=content_item_id,
+                    chunk_index=0,
+                    char_start=expected_chunk.start_char,
+                    char_end=expected_chunk.end_char,
+                    display_text=expected_chunk.display_text,
+                    embed_text=expected_chunk.embed_text,
+                    token_count=expected_chunk.token_count,
+                    chunk_metadata_json={
+                        **expected_chunk.chunk_metadata_json,
+                        **_current_vector_metadata(),
+                    },
+                    qdrant_point_id=None,
+                    vector_backend="memory",
+                    vector_point_id="current-vector-point",
+                    embedded_at=utcnow(),
+                    embed_status="success",
+                    embed_error=None,
+                ),
+                ContentChunk(
+                    id=obsolete_chunk_id,
+                    content_item_id=content_item_id,
+                    chunk_index=1,
+                    char_start=9999,
+                    char_end=10009,
+                    display_text="obsolete display",
+                    embed_text="obsolete embed",
+                    token_count=2,
+                    chunk_metadata_json={
+                        "chunker_version": "obsolete-version",
+                        "embed_text_hash": "1" * 64,
+                        **_current_vector_metadata(),
+                    },
+                    qdrant_point_id=None,
+                    vector_backend="memory",
+                    vector_point_id=str(obsolete_chunk_id),
+                    embedded_at=utcnow(),
+                    embed_status="success",
+                    embed_error=None,
+                ),
+            ]
+        )
+        await session.commit()
+
+        result = await chunk_indexer_module.chunk_and_index_content_items(
+            session=session,
+            run_id=run_id,
+            content_item_ids=[content_item_id],
+        )
+        await session.commit()
+
+        obsolete_chunk = await session.get(ContentChunk, obsolete_chunk_id)
+        events = (
+            await session.scalars(
+                select(CrawlRunEvent).where(
+                    CrawlRunEvent.crawl_run_id == run_id,
+                    CrawlRunEvent.event_type == "vector_delete_failed",
+                )
+            )
+        ).all()
+
+    assert result.chunked_count == 0
+    assert result.embedded_count == 0
+    assert result.failed_count == 1
+    assert obsolete_chunk is not None
+    assert obsolete_chunk.embed_status == "obsolete"
+    assert obsolete_chunk.embed_error == "obsolete chunk"
+    assert obsolete_chunk.vector_backend is None
+    assert obsolete_chunk.vector_point_id is None
+    assert len(events) == 1
+    assert "simulated vector delete outage" in events[0].message
+    assert events[0].related_content_item_id == content_item_id
 
 
 def test_vector_upsert_failure_marks_run_partial_and_failed_chunks_are_retried(

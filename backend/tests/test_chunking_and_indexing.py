@@ -3,7 +3,7 @@ import uuid
 import app.services.chunking as chunking_service
 from app.services.chunking import build_chunks
 from app.services.embeddings import DeterministicEmbeddingService
-from app.services.retrieval import QdrantIndexer
+from app.services.retrieval import _MEMORY_COLLECTIONS, QdrantIndexer
 
 
 def test_article_chunking_produces_stable_embed_text() -> None:
@@ -150,3 +150,27 @@ def test_memory_indexer_returns_deterministic_point_id() -> None:
 
     assert indexer.backend_name == "memory"
     assert point_id == str(chunk_id)
+
+
+def test_memory_indexer_delete_chunk_removes_existing_point_and_ignores_missing() -> None:
+    _MEMORY_COLLECTIONS.clear()
+    chunk_id = uuid.uuid4()
+    indexer = QdrantIndexer(
+        url="memory://unit-test-delete",
+        collection="content_chunks_delete_test",
+        embedding=DeterministicEmbeddingService(dimension=16),
+    )
+
+    indexer.ensure_collection()
+    point_id = indexer.upsert_chunk(
+        chunk_id=chunk_id,
+        embed_text="obsolete telemetry settings",
+        payload={"content_item_id": str(uuid.uuid4())},
+    )
+    memory_collection = _MEMORY_COLLECTIONS[(indexer.url, indexer.collection)]
+    assert point_id in memory_collection.points
+
+    indexer.delete_chunk(point_id=point_id)
+    indexer.delete_chunk(point_id=point_id)
+
+    assert point_id not in memory_collection.points

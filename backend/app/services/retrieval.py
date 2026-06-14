@@ -98,6 +98,19 @@ class QdrantIndexer:
         )
         return point_id
 
+    def delete_chunk(self, *, point_id: str) -> None:
+        if self.backend_name == "memory":
+            collection = _MEMORY_COLLECTIONS.get((self.url, self.collection))
+            if collection is not None:
+                collection.points.pop(point_id, None)
+            return
+
+        self._require_client().delete(
+            collection_name=self.collection,
+            points_selector=qdrant_models.PointIdsList(points=[point_id]),
+            wait=True,
+        )
+
     def _require_client(self) -> QdrantClient:
         if self._client is None:
             raise RuntimeError("Qdrant client is not available for the memory backend")

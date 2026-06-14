@@ -362,12 +362,17 @@ async def _chunk_and_index_content_items(
         if content_item is None:
             continue
 
-        existing_chunk = await session.scalar(
-            select(ContentChunk.id)
-            .where(ContentChunk.content_item_id == content_item_id)
-            .limit(1)
-        )
-        if existing_chunk is not None:
+        existing_chunks = (
+            await session.scalars(
+                select(ContentChunk)
+                .where(ContentChunk.content_item_id == content_item_id)
+                .order_by(ContentChunk.chunk_index.asc())
+            )
+        ).all()
+        if existing_chunks:
+            for existing_chunk in existing_chunks:
+                if existing_chunk.embed_status in {"pending", "failed"}:
+                    chunks_to_index.append((existing_chunk, content_item))
             continue
 
         thread_title = await _thread_title_for_item(session, content_item)

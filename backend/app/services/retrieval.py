@@ -24,6 +24,14 @@ _MEMORY_COLLECTIONS: dict[tuple[str, str], _MemoryCollection] = {}
 
 
 class QdrantIndexer:
+    """Index content chunks into Qdrant or an explicit in-memory dev/test backend.
+
+    The ``memory://``/``:memory:`` backend is opt-in for local development and tests only.
+    Real Qdrant connection or HTTP failures intentionally propagate to callers; they are
+    not automatically downgraded to memory mode so ingestion can mark affected chunks
+    failed and finish the crawl run as partial instead of silently losing vector writes.
+    """
+
     def __init__(self, url: str, collection: str, embedding: EmbeddingService) -> None:
         self.url = url
         self.collection = collection

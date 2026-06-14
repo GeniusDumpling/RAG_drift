@@ -3,6 +3,7 @@ import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import { getContent, listContents } from '../api/client';
 import type { ContentDetail, ContentListItem, Page } from '../api/types';
 import { formatErrorMessage } from '../utils/errors';
+import { safeExternalHref } from '../utils/links';
 
 const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
 const CONTENT_UNAVAILABLE_COPY = 'Content detail unavailable while the API request is failing.';
@@ -70,6 +71,8 @@ export function ContentDetailPage() {
       ''
     );
   }, [detail]);
+  const rawPageUrl = detail?.raw_page.final_url || detail?.raw_page.requested_url || '';
+  const rawPageHref = safeExternalHref(rawPageUrl);
 
   function handleContentChange(event: ChangeEvent<HTMLSelectElement | HTMLInputElement>) {
     setSelectedContentId(event.target.value);
@@ -157,9 +160,15 @@ export function ContentDetailPage() {
             </div>
             <p>{detail.summary_text || 'No summary available.'}</p>
             <div className="button-row link-row">
-              <a href={detail.raw_page.final_url || detail.raw_page.requested_url} target="_blank" rel="noreferrer">
-                Raw page link
-              </a>
+              {rawPageHref ? (
+                <a href={rawPageHref} target="_blank" rel="noreferrer">
+                  Raw page link
+                </a>
+              ) : (
+                <span className="muted" aria-disabled="true">
+                  Raw page link unavailable: {rawPageUrl || 'n/a'}
+                </span>
+              )}
               <a href={`#run-${detail.crawl_run.id}`}>Run link</a>
             </div>
           </section>

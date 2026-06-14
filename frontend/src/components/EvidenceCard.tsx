@@ -1,4 +1,5 @@
 import type { EvidenceObject } from '../api/types';
+import { safeExternalHref } from '../utils/links';
 
 function formatScore(score: number | null | undefined): string {
   if (score === null || score === undefined || Number.isNaN(score)) {
@@ -12,6 +13,8 @@ type EvidenceCardProps = {
 };
 
 export function EvidenceCard({ evidence }: EvidenceCardProps) {
+  const canonicalHref = safeExternalHref(evidence.canonical_url);
+
   return (
     <article className="card evidence-card">
       <div className="card-header">
@@ -55,9 +58,13 @@ export function EvidenceCard({ evidence }: EvidenceCardProps) {
           <dd>{evidence.chunk_id}</dd>
         </div>
       </dl>
-      <a href={evidence.canonical_url} target="_blank" rel="noreferrer">
-        {evidence.canonical_url}
-      </a>
+      {canonicalHref ? (
+        <a href={canonicalHref} target="_blank" rel="noreferrer">
+          {evidence.canonical_url}
+        </a>
+      ) : (
+        <span className="muted">{evidence.canonical_url}</span>
+      )}
     </article>
   );
 }

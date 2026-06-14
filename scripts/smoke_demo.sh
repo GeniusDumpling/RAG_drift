@@ -4,8 +4,22 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-PYTHON="${PYTHON:-python3}"
-ALEMBIC="${ALEMBIC:-alembic}"
+prefer_command() {
+  local configured="$1"
+  local venv_path="$2"
+  local fallback="$3"
+
+  if [[ -n "$configured" ]]; then
+    printf '%s\n' "$configured"
+  elif [[ -x "$venv_path" ]]; then
+    printf '%s\n' "$venv_path"
+  else
+    printf '%s\n' "$fallback"
+  fi
+}
+
+PYTHON="$(prefer_command "${PYTHON:-}" "$ROOT/.venv/bin/python" "python3")"
+ALEMBIC="$(prefer_command "${ALEMBIC:-}" "$ROOT/.venv/bin/alembic" "alembic")"
 API_BASE="${API_BASE:-http://localhost:8000}"
 export API_BASE
 SEARCH_JSON="$(mktemp)"
@@ -40,7 +54,7 @@ def is_local_api_base(value: str) -> bool:
     if host is None:
         return False
     normalized = host.lower()
-    return normalized == "localhost" or normalized == "::1" or normalized.startswith("127.")
+    return normalized in {"localhost", "127.0.0.1", "::1"}
 
 
 api_base = os.environ.get("API_BASE", "http://localhost:8000")
@@ -107,7 +121,7 @@ def is_local_database_url(value: str) -> bool:
     if host is None:
         return True
     normalized = host.lower()
-    return normalized == "localhost" or normalized == "::1" or normalized.startswith("127.")
+    return normalized in {"localhost", "127.0.0.1", "::1"}
 
 
 env_file = dotenv_values(Path(".env"))
@@ -214,6 +228,13 @@ assert_answer_response() {
 import json
 import sys
 from pathlib import Path
+from typing import Any
+
+
+def evidence_text(item: dict[str, Any]) -> str:
+    fields = ("title", "snippet", "canonical_url", "url", "source_url")
+    return " ".join(str(item.get(field) or "") for field in fields).casefold()
+
 
 with Path(sys.argv[1]).open() as handle:
     payload = json.load(handle)
@@ -224,6 +245,15 @@ if not isinstance(supporting_evidence, list) or not supporting_evidence:
 answer = payload.get("answer")
 if not isinstance(answer, str) or "[1]" not in answer:
     raise SystemExit('/answer did not include citation "[1]"')
+answer_text = answer.casefold()
+if "telemetry" not in answer_text or "settings" not in answer_text:
+    raise SystemExit("/answer text did not reference demo telemetry/settings content")
+if not any(
+    "telemetry" in evidence_text(item) and "settings" in evidence_text(item)
+    for item in supporting_evidence
+    if isinstance(item, dict)
+):
+    raise SystemExit("/answer supporting_evidence did not reference demo telemetry/settings")
 PY
 }
 

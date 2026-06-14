@@ -7,7 +7,7 @@ import sys
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, parse_qsl, urlparse
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,20 +60,46 @@ def _copied_values(values: dict[str, Any]) -> dict[str, Any]:
     return {key: deepcopy(value) for key, value in values.items()}
 
 
+LOCAL_DATABASE_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def _query_host_values(parsed: ParseResult) -> list[str]:
+    return [
+        value
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.lower() == "host"
+    ]
+
+
+def _is_local_database_host(value: str) -> bool:
+    return value.lower() in LOCAL_DATABASE_HOSTS
+
+
+def _safe_query_host(value: str) -> str:
+    return (value or "<empty>").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _safe_query_string(parsed: ParseResult) -> str:
+    query_host_values = _query_host_values(parsed)
+    return "&".join(f"host={_safe_query_host(host)}" for host in query_host_values)
+
+
 def _safe_url(value: str) -> str:
     parsed = urlparse(value)
     scheme = parsed.scheme or "database"
+    safe_query = _safe_query_string(parsed)
     if parsed.hostname is None:
         if scheme.lower().startswith("sqlite") or value in {":memory:", ""}:
             return f"{scheme}:<local>"
-        return f"{scheme}://<local-or-unparseable>"
+        result = f"{scheme}://<missing-host>"
+        return f"{result}?{safe_query}" if safe_query else result
 
     host = parsed.hostname
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
     if parsed.port is not None:
         host = f"{host}:{parsed.port}"
-    return parsed._replace(netloc=host, params="", query="", fragment="").geturl()
+    return parsed._replace(netloc=host, params="", query=safe_query, fragment="").geturl()
 
 
 def _is_local_database_url(value: str) -> bool:
@@ -85,12 +111,16 @@ def _is_local_database_url(value: str) -> bool:
     if scheme.startswith("sqlite") or value == ":memory:":
         return True
 
+    query_host_values = _query_host_values(parsed)
+    if any(not _is_local_database_host(host) for host in query_host_values):
+        return False
+
     host = parsed.hostname
     if host is None:
-        return True
+        # A hostless non-sqlite database URL is not clearly local; require an override.
+        return False
 
-    normalized = host.lower()
-    return normalized in {"localhost", "127.0.0.1", "::1"}
+    return _is_local_database_host(host)
 
 
 def _configured_database_urls() -> tuple[tuple[str, str], tuple[str, str]]:

@@ -1,10 +1,23 @@
+import importlib.util
 import stat
 import subprocess
 from pathlib import Path
+from types import ModuleType
 
 
 def _is_executable(path: Path) -> bool:
     return bool(path.stat().st_mode & stat.S_IXUSR)
+
+
+def _load_seed_demo_module() -> ModuleType:
+    root = Path(__file__).resolve().parents[2]
+    seed = root / "scripts" / "seed_demo.py"
+    spec = importlib.util.spec_from_file_location("seed_demo_contract", seed)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_demo_scripts_exist_and_are_executable() -> None:
@@ -29,6 +42,9 @@ def test_seed_demo_has_local_db_guard_and_reconciles_demo_config() -> None:
     assert "DATABASE_URL" in seed_text
     assert "SYNC_DATABASE_URL" in seed_text
     assert "safe_url" in seed_text
+    assert "parse_qsl" in seed_text
+    assert "query_host_values" in seed_text
+    assert "hostless non-sqlite database URL" in seed_text
     assert "DEMO_SOURCE_VALUES" in seed_text
     assert "DEMO_JOB_VALUES" in seed_text
     assert "config_json" in seed_text
@@ -46,16 +62,43 @@ def test_seed_demo_has_local_db_guard_and_reconciles_demo_config() -> None:
     assert "agent_policy_json" in seed_text
 
 
-def test_readme_manual_demo_path_targets_seeded_run() -> None:
+def test_seed_demo_local_db_guard_rejects_hostless_postgres_and_query_host() -> None:
+    seed_demo = _load_seed_demo_module()
+
+    assert seed_demo._is_local_database_url(  # noqa: SLF001
+        "postgresql+psycopg://intelligence:intelligence@localhost:54329/intelligence_rag"
+    )
+    assert seed_demo._is_local_database_url(  # noqa: SLF001
+        "postgresql+psycopg://intelligence:intelligence@127.0.0.1:54329/intelligence_rag"
+        "?host=localhost"
+    )
+    assert seed_demo._is_local_database_url(  # noqa: SLF001
+        "sqlite+aiosqlite:///tmp/demo.db"
+    )
+    assert not seed_demo._is_local_database_url(  # noqa: SLF001
+        "postgresql+psycopg:///intelligence_rag"
+    )
+    assert not seed_demo._is_local_database_url(  # noqa: SLF001
+        "postgresql+psycopg://intelligence:intelligence@localhost:54329/intelligence_rag"
+        "?host=prod-db.example.com"
+    )
+    assert not seed_demo._is_local_database_url("mysql:///intelligence_rag")  # noqa: SLF001
+
+
+def test_readme_demo_paths_are_split_and_target_seeded_run() -> None:
     root = Path(__file__).resolve().parents[2]
     readme = root / "README.md"
 
     readme_text = readme.read_text()
 
+    assert "One-command smoke path" in readme_text
+    assert "Manual demo path" in readme_text
+    assert "SKIP_DOCKER=1" in readme_text
+    assert "may create `.env` from `.env.example`" in readme_text
     assert "SEED_JSON" in readme_text
     assert "RUN_ID" in readme_text
     assert "run_id" in readme_text
-    assert 'scripts/run_worker_once.py --run-id "$RUN_ID"' in readme_text
+    assert 'scripts/run_worker_once.py --json --require-success --run-id "$RUN_ID"' in readme_text
 
 
 def test_demo_smoke_contract_targets_seeded_run_and_asserts_semantics() -> None:
@@ -78,6 +121,11 @@ def test_demo_smoke_contract_targets_seeded_run_and_asserts_semantics() -> None:
     assert "ALLOW_NONLOCAL_SMOKE_API" in smoke_text
     assert "Refusing to run smoke demo against a non-local API_BASE" in smoke_text
     assert "require_local_api_base" in smoke_text
+    assert "parse_qsl" in smoke_text
+    assert "query_host_values" in smoke_text
+    assert "hostless non-sqlite database URL" in smoke_text
+    assert "ALLOW_NONLOCAL_DEMO_SEED=1" in smoke_text
+    assert "Created .env from .env.example" in smoke_text
     assert "POST /search" in smoke_text
     assert "POST /answer" in smoke_text
     assert "json.load" in smoke_text

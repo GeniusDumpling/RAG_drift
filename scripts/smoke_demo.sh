@@ -80,7 +80,7 @@ require_local_smoke_db() {
 import os
 import sys
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 
 def dotenv_values(path: Path) -> dict[str, str]:
@@ -104,26 +104,60 @@ def configured_value(name: str) -> str:
     return os.environ.get(name) or env_file.get(name) or env_example.get(name) or ""
 
 
+LOCAL_DATABASE_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def query_host_values(parsed):
+    return [
+        value
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.lower() == "host"
+    ]
+
+
+def is_local_database_host(value: str) -> bool:
+    return value.lower() in LOCAL_DATABASE_HOSTS
+
+
+def safe_query_host(value: str) -> str:
+    return (value or "<empty>").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def safe_query_string(parsed) -> str:
+    return "&".join(f"host={safe_query_host(host)}" for host in query_host_values(parsed))
+
+
 def safe_url(value: str) -> str:
     parsed = urlparse(value)
+    safe_query = safe_query_string(parsed)
     if parsed.hostname is None:
-        return value
+        scheme = parsed.scheme or "database"
+        if scheme.lower().startswith("sqlite") or value in {":memory:", ""}:
+            return f"{scheme}:<local>"
+        result = f"{scheme}://<missing-host>"
+        return f"{result}?{safe_query}" if safe_query else result
     netloc = parsed.hostname
     if ":" in netloc and not netloc.startswith("["):
         netloc = f"[{netloc}]"
     if parsed.port is not None:
         netloc = f"{netloc}:{parsed.port}"
-    return parsed._replace(netloc=netloc, params="", query="", fragment="").geturl()
+    return parsed._replace(netloc=netloc, params="", query=safe_query, fragment="").geturl()
 
 
 def is_local_database_url(value: str) -> bool:
     if not value:
         return True
-    host = urlparse(value).hostname
-    if host is None:
+    parsed = urlparse(value)
+    scheme = parsed.scheme.lower()
+    if scheme.startswith("sqlite") or value == ":memory:":
         return True
-    normalized = host.lower()
-    return normalized in {"localhost", "127.0.0.1", "::1"}
+    if any(not is_local_database_host(host) for host in query_host_values(parsed)):
+        return False
+    host = parsed.hostname
+    if host is None:
+        # A hostless non-sqlite database URL is not clearly local; require an override.
+        return False
+    return is_local_database_host(host)
 
 
 env_file = dotenv_values(Path(".env"))
@@ -299,8 +333,16 @@ if not any(
 PY
 }
 
-cp -n .env.example .env || true
+if [[ ! -f .env && -f .env.example ]]; then
+  cp .env.example .env
+  printf 'Created .env from .env.example for smoke demo defaults.\n'
+fi
 require_local_smoke_db
+if [[ "${ALLOW_NONLOCAL_SMOKE_DB:-0}" == "1" ]]; then
+  # The smoke DB override covers both Alembic and seed_demo.py so it does not fail halfway.
+  export ALLOW_NONLOCAL_DEMO_SEED=1
+  printf 'ALLOW_NONLOCAL_SMOKE_DB=1; exporting ALLOW_NONLOCAL_DEMO_SEED=1 for seed_demo.py.\n'
+fi
 require_local_api_base
 
 if [[ "${SKIP_DOCKER:-0}" != "1" ]]; then

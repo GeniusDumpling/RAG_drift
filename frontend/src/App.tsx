@@ -13,10 +13,16 @@ const NAV_ITEMS: View[] = ['Dashboard', 'Sources', 'Runs', 'Search', 'Content'];
 export function App() {
   const [activeView, setActiveView] = useState<View>('Dashboard');
   const [searchSeed, setSearchSeed] = useState('');
+  const [selectedRunId, setSelectedRunId] = useState('');
 
   function openSearch(query: string) {
     setSearchSeed(query);
     setActiveView('Search');
+  }
+
+  function openRun(runId: string) {
+    setSelectedRunId(runId);
+    setActiveView('Runs');
   }
 
   return (
@@ -43,9 +49,9 @@ export function App() {
       <main className="main">
         {activeView === 'Dashboard' ? <DashboardPage onSearch={openSearch} /> : null}
         {activeView === 'Sources' ? <SourcesPage /> : null}
-        {activeView === 'Runs' ? <RunDetailPage /> : null}
+        {activeView === 'Runs' ? <RunDetailPage selectedRunId={selectedRunId} /> : null}
         {activeView === 'Search' ? <SearchPage initialQuery={searchSeed} /> : null}
-        {activeView === 'Content' ? <ContentDetailPage /> : null}
+        {activeView === 'Content' ? <ContentDetailPage onOpenRun={openRun} /> : null}
       </main>
     </div>
   );

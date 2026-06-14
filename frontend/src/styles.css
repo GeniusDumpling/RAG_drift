@@ -3,6 +3,22 @@ body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #0f172a
 button, input, select { font: inherit; }
 a { color: #93c5fd; }
 
+.link-button {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+.link-button:hover:not(:disabled) {
+  border-color: transparent;
+  background: transparent;
+  color: #bfdbfe;
+  transform: none;
+}
+
 button,
 input,
 select {
@@ -161,6 +177,10 @@ pre {
 .inline-form button,
 .button-row button {
   padding: 10px 14px;
+}
+
+.button-row .link-button {
+  padding: 0;
 }
 
 .form-grid {

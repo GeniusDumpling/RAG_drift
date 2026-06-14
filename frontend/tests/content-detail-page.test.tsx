@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ContentChunk, ContentDetail, ContentListItem, CrawlRun, Page, RawPage, SourceSite } from '../src/api/types';
@@ -90,7 +90,6 @@ const chunk: ContentChunk = {
 const contentItem: ContentListItem = {
   id: 'content-1',
   source_site_id: 'source-1',
-  raw_page_id: 'raw-1',
   item_type: 'doc_page',
   canonical_url: 'https://example.test/docs/setup',
   title: 'Setup Guide',
@@ -104,7 +103,6 @@ const contentItem: ContentListItem = {
 
 const detail: ContentDetail = {
   ...contentItem,
-  cleaned_text: 'Cleaned setup guide text.',
   raw_page: rawPage,
   source,
   crawl_run: run,
@@ -143,24 +141,30 @@ afterEach(() => {
 });
 
 describe('ContentDetailPage', () => {
-  it('renders content detail with source, raw page, run, and chunk lineage', async () => {
+  it('renders backend-shaped content detail with source, raw page, run callback, and chunk lineage', async () => {
+    const onOpenRun = vi.fn();
     stubContentFetch();
 
-    render(<ContentDetailPage />);
+    render(<ContentDetailPage onOpenRun={onOpenRun} />);
 
     expect(await screen.findByRole('heading', { name: 'Setup Guide' })).toBeInTheDocument();
     expect(screen.getByText('Example Docs')).toBeInTheDocument();
     expect(screen.getByText('Ops Writer')).toBeInTheDocument();
     expect(screen.getByText('parsed')).toBeInTheDocument();
     expect(screen.getByText('A concise setup guide.')).toBeInTheDocument();
-    expect(screen.getByText('Cleaned setup guide text.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Indexed Text Preview' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Cleaned Text' })).not.toBeInTheDocument();
+    expect(screen.getByText('Install the package and disable telemetry.', { selector: 'pre' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Raw page link' })).toHaveAttribute(
       'href',
       'https://example.test/docs/setup?canonical=1',
     );
-    expect(screen.getByRole('link', { name: 'Run link' })).toHaveAttribute('href', '#run-run-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Run link' }));
+    expect(onOpenRun).toHaveBeenCalledTimes(1);
+    expect(onOpenRun).toHaveBeenCalledWith('run-1');
+    expect(screen.queryByRole('link', { name: 'Run link' })).not.toBeInTheDocument();
     expect(screen.getByText('Chunk 0')).toBeInTheDocument();
-    expect(screen.getByText('Install the package and disable telemetry.')).toBeInTheDocument();
+    expect(screen.getByText('Install the package and disable telemetry.', { selector: 'p' })).toBeInTheDocument();
     expect(screen.getByText('qdrant')).toBeInTheDocument();
     expect(screen.getByText('point-1')).toBeInTheDocument();
     expect(screen.queryByText(EMPTY_STATE_COPY)).not.toBeInTheDocument();

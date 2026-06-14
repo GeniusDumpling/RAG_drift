@@ -8,6 +8,7 @@ from typing import Any, cast
 import app.db.session as db_session_module
 import pytest
 from app.agents.contracts import ExtractionAgentRequest, ExtractionAgentResponse, ExtractionItem
+from app.core.config import get_settings
 from app.db.base import utcnow
 from app.main import app
 from app.models.content import ContentChunk, ContentItem, RawPage
@@ -149,7 +150,8 @@ def test_worker_persists_raw_page_before_extraction_and_marks_success() -> None:
 
     chunks = _fetch_db_rows(
         """
-        select embed_status, vector_backend, vector_point_id, embedded_at, token_count
+        select embed_status, vector_backend, vector_point_id, qdrant_point_id,
+               embedded_at, token_count
         from content_chunks
         order by chunk_index asc
         """,
@@ -159,6 +161,7 @@ def test_worker_persists_raw_page_before_extraction_and_marks_success() -> None:
     assert {chunk["embed_status"] for chunk in chunks} == {"success"}
     assert {chunk["vector_backend"] for chunk in chunks} == {"memory"}
     assert all(chunk["vector_point_id"] for chunk in chunks)
+    assert all(chunk["qdrant_point_id"] is None for chunk in chunks)
     assert all(chunk["embedded_at"] is not None for chunk in chunks)
     assert all(
         isinstance(chunk["token_count"], int) and chunk["token_count"] >= 1
@@ -168,6 +171,150 @@ def test_worker_persists_raw_page_before_extraction_and_marks_success() -> None:
     detail_after_indexing = client.get(f"/runs/{run['id']}").json()
     assert detail_after_indexing["chunked_count"] == len(chunks)
     assert detail_after_indexing["embedded_count"] == len(chunks)
+
+
+def test_worker_commits_source_of_truth_before_vector_writes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_committed_rows: list[dict[str, object]] = []
+
+    class FakeEmbedding:
+        model_name = "commit-probe-model"
+        dimension = 8
+
+    class CommitProbeIndexer:
+        backend_name = "qdrant"
+        collection = "commit_probe_collection"
+        embedding = FakeEmbedding()
+
+        def ensure_collection(self) -> None:
+            observed_committed_rows.extend(
+                _fetch_db_rows(
+                    """
+                    select rp.parse_status,
+                           rp.extraction_method,
+                           rp.extraction_confidence,
+                           count(distinct ci.id) as content_item_count,
+                           count(cc.id) as chunk_count
+                    from raw_pages rp
+                    left join content_items ci on ci.raw_page_id = rp.id
+                    left join content_chunks cc on cc.content_item_id = ci.id
+                    where rp.crawl_run_id = CAST(:run_id AS uuid)
+                    group by rp.parse_status, rp.extraction_method, rp.extraction_confidence
+                    """,
+                    {"run_id": run["id"]},
+                )
+            )
+
+        def upsert_chunk(
+            self,
+            *,
+            chunk_id: uuid.UUID,
+            embed_text: str,
+            payload: dict[str, Any],
+        ) -> str:
+            del embed_text, payload
+            return str(chunk_id)
+
+    monkeypatch.setattr(runner_module, "_build_qdrant_indexer", CommitProbeIndexer)
+    client = TestClient(app)
+    run = _queue_worker_run(client, seed_url="https://example.com/commit-before-vector")
+
+    result = run_once(run_limit=1)
+
+    assert result.claimed == 1
+    assert result.succeeded == 1
+    assert len(observed_committed_rows) == 1
+    committed_row = observed_committed_rows[0]
+    assert committed_row["parse_status"] == "parsed"
+    assert committed_row["extraction_method"] == "extraction_agent"
+    assert committed_row["extraction_confidence"] is not None
+    assert committed_row["content_item_count"] == 1
+    assert isinstance(committed_row["chunk_count"], int)
+    assert committed_row["chunk_count"] >= 1
+
+
+def test_success_chunks_with_stale_vector_collection_are_reindexed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_collection = "content_chunks_collection_a"
+    second_collection = "content_chunks_collection_b"
+    monkeypatch.setenv("QDRANT_COLLECTION", first_collection)
+    get_settings.cache_clear()
+
+    client = TestClient(app)
+    seed_url = "https://example.com/reindex-stale-collection"
+    job = _create_worker_job(client, urls=[seed_url], seed_url=seed_url)
+    first_run = _trigger_worker_job(client, job, seed_url=seed_url)
+
+    first_result = run_once(run_limit=1)
+    assert first_result.claimed == 1
+    assert first_result.succeeded == 1
+
+    first_detail = client.get(f"/runs/{first_run['id']}").json()
+    first_chunks = _fetch_db_rows(
+        """
+        select id, vector_backend, vector_point_id, qdrant_point_id, chunk_metadata_json
+        from content_chunks
+        order by chunk_index asc
+        """,
+        {},
+    )
+    assert first_detail["embedded_count"] == len(first_chunks)
+    assert len(first_chunks) >= 1
+    assert {chunk["vector_backend"] for chunk in first_chunks} == {"memory"}
+    assert all(chunk["vector_point_id"] == str(chunk["id"]) for chunk in first_chunks)
+    assert all(chunk["qdrant_point_id"] is None for chunk in first_chunks)
+    first_chunk_metadata = [
+        cast(dict[str, object], chunk["chunk_metadata_json"]) for chunk in first_chunks
+    ]
+    assert {metadata["vector_collection"] for metadata in first_chunk_metadata} == {
+        first_collection
+    }
+    assert {metadata["embedding_model"] for metadata in first_chunk_metadata} == {
+        "deterministic-hash-v1"
+    }
+    assert {metadata["embedding_dimension"] for metadata in first_chunk_metadata} == {384}
+
+    monkeypatch.setenv("QDRANT_COLLECTION", second_collection)
+    get_settings.cache_clear()
+    second_run = _trigger_worker_job(client, job, seed_url=seed_url)
+
+    second_result = run_once(run_limit=1)
+
+    assert second_result.claimed == 1
+    assert second_result.succeeded == 1
+    second_detail = client.get(f"/runs/{second_run['id']}").json()
+    assert second_detail["status"] == "success"
+    assert second_detail["deduped_count"] == 1
+    assert second_detail["chunked_count"] == 0
+    assert second_detail["embedded_count"] == len(first_chunks)
+
+    refreshed_chunks = _fetch_db_rows(
+        """
+        select id, vector_backend, vector_point_id, qdrant_point_id, chunk_metadata_json
+        from content_chunks
+        order by chunk_index asc
+        """,
+        {},
+    )
+    assert [chunk["id"] for chunk in refreshed_chunks] == [
+        chunk["id"] for chunk in first_chunks
+    ]
+    assert {chunk["vector_backend"] for chunk in refreshed_chunks} == {"memory"}
+    assert all(chunk["vector_point_id"] == str(chunk["id"]) for chunk in refreshed_chunks)
+    assert all(chunk["qdrant_point_id"] is None for chunk in refreshed_chunks)
+    refreshed_chunk_metadata = [
+        cast(dict[str, object], chunk["chunk_metadata_json"])
+        for chunk in refreshed_chunks
+    ]
+    assert {metadata["vector_collection"] for metadata in refreshed_chunk_metadata} == {
+        second_collection
+    }
+    assert {metadata["embedding_model"] for metadata in refreshed_chunk_metadata} == {
+        "deterministic-hash-v1"
+    }
+    assert {metadata["embedding_dimension"] for metadata in refreshed_chunk_metadata} == {384}
 
 
 def test_vector_upsert_failure_marks_run_partial_and_failed_chunks_are_retried(
@@ -653,7 +800,7 @@ async def test_chunk_creation_race_reloads_existing_chunks_and_indexes_them() ->
     assert {chunk.embed_status for chunk in chunks} == {"success"}
     assert {chunk.vector_backend for chunk in chunks} == {"memory"}
     assert all(chunk.vector_point_id == str(chunk.id) for chunk in chunks)
-    assert all(chunk.qdrant_point_id == str(chunk.id) for chunk in chunks)
+    assert all(chunk.qdrant_point_id is None for chunk in chunks)
     assert all(chunk.embedded_at is not None for chunk in chunks)
 
 

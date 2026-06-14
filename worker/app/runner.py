@@ -31,23 +31,26 @@ class WorkerRunResult:
     failed: int
 
 
-def run_once(run_limit: int = 1) -> WorkerRunResult:
-    if run_limit < 1:
+def run_once(run_limit: int = 1, run_id: uuid.UUID | None = None) -> WorkerRunResult:
+    if run_id is None and run_limit < 1:
         return WorkerRunResult(claimed=0, succeeded=0, partial=0, failed=0)
-    return asyncio.run(_run_once_async(run_limit=run_limit))
+    return asyncio.run(_run_once_async(run_limit=run_limit, run_id=run_id))
 
 
-async def _run_once_async(*, run_limit: int) -> WorkerRunResult:
-    claimed_run_ids = await _claim_queued_runs(run_limit=run_limit)
+async def _run_once_async(*, run_limit: int, run_id: uuid.UUID | None) -> WorkerRunResult:
+    if run_id is not None:
+        claimed_run_ids = await _claim_queued_run_by_id(run_id)
+    else:
+        claimed_run_ids = await _claim_queued_runs(run_limit=run_limit)
     succeeded = 0
     partial = 0
     failed = 0
 
-    for run_id in claimed_run_ids:
+    for claimed_run_id in claimed_run_ids:
         try:
-            outcome = await _process_run(run_id)
+            outcome = await _process_run(claimed_run_id)
         except Exception as exc:
-            await _mark_unexpected_run_failure(run_id, exc)
+            await _mark_unexpected_run_failure(claimed_run_id, exc)
             failed += 1
             continue
 
@@ -79,6 +82,23 @@ async def _claim_queued_runs(*, run_limit: int) -> list[uuid.UUID]:
             run.started_at = started_at
         await session.commit()
         return [run.id for run in runs]
+
+
+async def _claim_queued_run_by_id(run_id: uuid.UUID) -> list[uuid.UUID]:
+    async with db_session_module.AsyncSessionLocal() as session:
+        run = await session.scalar(
+            select(CrawlRun)
+            .where(CrawlRun.id == run_id, CrawlRun.status == "queued")
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        if run is None:
+            return []
+
+        run.status = "running"
+        run.started_at = utcnow()
+        await session.commit()
+        return [run.id]
 
 
 async def _mark_unexpected_run_failure(run_id: uuid.UUID, exc: Exception) -> None:

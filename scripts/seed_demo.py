@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import asyncio
 import json
 import sys
@@ -15,7 +16,7 @@ for import_path in (PROJECT_ROOT, BACKEND_DIR):
         sys.path.insert(0, import_path_str)
 
 import app.db.session as db_session_module  # noqa: E402
-from app.models.control import CrawlJob, SourceSite  # noqa: E402
+from app.models.control import CrawlJob, CrawlRun, SourceSite  # noqa: E402
 from app.repositories.sources import SourcesRepository  # noqa: E402
 
 DEMO_SOURCE_NAME = "Demo Docs"
@@ -23,7 +24,7 @@ DEMO_JOB_NAME = "Demo manual crawl"
 DEMO_SEED_URL = "https://example.com/docs/telemetry-settings"
 
 
-async def seed_demo() -> dict[str, str]:
+async def seed_demo(*, new_run: bool = False) -> dict[str, object]:
     async with db_session_module.AsyncSessionLocal() as session:
         repo = SourcesRepository(session)
 
@@ -73,12 +74,28 @@ async def seed_demo() -> dict[str, str]:
             )
             await session.flush()
 
-        run = await repo.create_run_with_queued_event(
-            job,
-            trigger_type="manual",
-            status="queued",
-            seed_url=DEMO_SEED_URL,
-        )
+        run = None
+        reused_run = False
+        if not new_run:
+            run = await session.scalar(
+                select(CrawlRun)
+                .where(
+                    CrawlRun.crawl_job_id == job.id,
+                    CrawlRun.status == "queued",
+                    CrawlRun.seed_url == DEMO_SEED_URL,
+                )
+                .order_by(CrawlRun.created_at.asc())
+                .limit(1)
+            )
+            reused_run = run is not None
+
+        if run is None:
+            run = await repo.create_run_with_queued_event(
+                job,
+                trigger_type="manual",
+                status="queued",
+                seed_url=DEMO_SEED_URL,
+            )
         await session.commit()
         await session.refresh(source)
         await session.refresh(job)
@@ -88,11 +105,23 @@ async def seed_demo() -> dict[str, str]:
             "source_id": str(source.id),
             "job_id": str(job.id),
             "run_id": str(run.id),
+            "reused_run": reused_run,
         }
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Seed the deterministic demo crawl job.")
+    parser.add_argument(
+        "--new-run",
+        action="store_true",
+        help="Create a fresh queued demo run even when one is already queued.",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
-    print(json.dumps(asyncio.run(seed_demo()), sort_keys=True))
+    args = parse_args()
+    print(json.dumps(asyncio.run(seed_demo(new_run=args.new_run)), sort_keys=True))
 
 
 if __name__ == "__main__":

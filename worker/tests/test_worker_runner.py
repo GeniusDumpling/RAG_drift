@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -237,6 +238,86 @@ def test_run_worker_once_script_executes_directly_with_no_queued_runs() -> None:
 
     assert completed.returncode == 0, completed.stderr
     assert "WorkerRunResult(claimed=0, succeeded=0, partial=0, failed=0)" in completed.stdout
+
+
+def test_seed_demo_reuses_existing_queued_run_unless_new_run_is_requested() -> None:
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+
+    first = subprocess.run(
+        [sys.executable, "scripts/seed_demo.py"],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    second = subprocess.run(
+        [sys.executable, "scripts/seed_demo.py"],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    third = subprocess.run(
+        [sys.executable, "scripts/seed_demo.py", "--new-run"],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, second.stderr
+    assert third.returncode == 0, third.stderr
+    first_seed = json.loads(first.stdout)
+    second_seed = json.loads(second.stdout)
+    third_seed = json.loads(third.stdout)
+    assert first_seed["source_id"] == second_seed["source_id"] == third_seed["source_id"]
+    assert first_seed["job_id"] == second_seed["job_id"] == third_seed["job_id"]
+    assert first_seed["run_id"] == second_seed["run_id"]
+    assert second_seed["reused_run"] is True
+    assert third_seed["run_id"] != first_seed["run_id"]
+    assert third_seed["reused_run"] is False
+
+
+def test_run_worker_once_script_with_run_id_processes_only_that_queued_run() -> None:
+    client = TestClient(app)
+    older_run = _queue_worker_run(client, seed_url="https://example.com/older-run")
+    target_run = _queue_worker_run(client, seed_url="https://example.com/target-run")
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+
+    completed = subprocess.run(
+        [sys.executable, "scripts/run_worker_once.py", "--run-id", str(target_run["id"])],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "WorkerRunResult(claimed=1, succeeded=1, partial=0, failed=0)" in completed.stdout
+    assert client.get(f"/runs/{older_run['id']}").json()["status"] == "queued"
+    assert client.get(f"/runs/{target_run['id']}").json()["status"] == "success"
+
+
+def test_run_once_with_run_id_claims_only_requested_queued_run() -> None:
+    client = TestClient(app)
+    older_run = _queue_worker_run(client, seed_url="https://example.com/oldest")
+    target_run = _queue_worker_run(client, seed_url="https://example.com/requested")
+
+    result = run_once(run_id=uuid.UUID(str(target_run["id"])))
+
+    assert result.claimed == 1
+    assert result.succeeded == 1
+    assert result.partial == 0
+    assert result.failed == 0
+    assert client.get(f"/runs/{older_run['id']}").json()["status"] == "queued"
+    assert client.get(f"/runs/{target_run['id']}").json()["status"] == "success"
 
 
 def test_worker_persists_raw_page_before_extraction_and_marks_success() -> None:

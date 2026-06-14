@@ -6,6 +6,8 @@ import { EvidenceCard } from '../components/EvidenceCard';
 import { formatErrorMessage } from '../utils/errors';
 
 const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
+const SEARCH_LOADING_COPY = 'Searching...';
+const ANSWER_LOADING_COPY = 'Generating answer...';
 
 type SearchPageProps = {
   initialQuery?: string;
@@ -21,6 +23,7 @@ export function SearchPage({ initialQuery = '' }: SearchPageProps) {
   const [answerText, setAnswerText] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('');
 
   useEffect(() => {
     setQuery(initialQuery);
@@ -60,9 +63,10 @@ export function SearchPage({ initialQuery = '' }: SearchPageProps) {
     if (!request) {
       return;
     }
+    clearResults();
     setLoading(true);
+    setLoadingMessage(SEARCH_LOADING_COPY);
     setError('');
-    setAnswerText('');
     try {
       const response = await search(request);
       setEvidence(response.evidence);
@@ -73,6 +77,7 @@ export function SearchPage({ initialQuery = '' }: SearchPageProps) {
       setError(formatErrorMessage('Search failed', caught));
     } finally {
       setLoading(false);
+      setLoadingMessage('');
     }
   }
 
@@ -81,7 +86,9 @@ export function SearchPage({ initialQuery = '' }: SearchPageProps) {
     if (!request) {
       return;
     }
+    clearResults();
     setLoading(true);
+    setLoadingMessage(ANSWER_LOADING_COPY);
     setError('');
     try {
       const response = await answer(request);
@@ -95,6 +102,7 @@ export function SearchPage({ initialQuery = '' }: SearchPageProps) {
       setError(formatErrorMessage('Answer failed', caught));
     } finally {
       setLoading(false);
+      setLoadingMessage('');
     }
   }
 
@@ -172,6 +180,12 @@ export function SearchPage({ initialQuery = '' }: SearchPageProps) {
         ) : null}
       </section>
 
+      {loading ? (
+        <p className="card" role="status">
+          {loadingMessage}
+        </p>
+      ) : null}
+
       {queryRecord ? (
         <section className="card">
           <h2>Query Trace</h2>
@@ -208,7 +222,7 @@ export function SearchPage({ initialQuery = '' }: SearchPageProps) {
         <h2>Evidence</h2>
         {evidence.length ? (
           evidence.map((item) => <EvidenceCard evidence={item} key={item.chunk_id} />)
-        ) : error ? null : (
+        ) : loading || error ? null : (
           <p className="card empty-state">{EMPTY_STATE_COPY}</p>
         )}
       </section>

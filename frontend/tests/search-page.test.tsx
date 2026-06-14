@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SearchPage } from '../src/pages/SearchPage';
@@ -42,6 +42,33 @@ const evidence: EvidenceObject = {
   matched_by: 'hybrid',
   thread_summary: null,
 };
+
+const updatedEvidence: EvidenceObject = {
+  ...evidence,
+  chunk_id: 'chunk-2',
+  content_item_id: 'content-2',
+  raw_page_id: 'raw-2',
+  source_site_id: 'source-2',
+  title: 'Fleet telemetry policy',
+  snippet: 'Fleet devices apply telemetry policy changes after synchronization.',
+  canonical_url: 'https://example.test/docs/fleet-telemetry',
+};
+
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+};
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -88,6 +115,39 @@ describe('SearchPage', () => {
       mode: 'search',
       top_k: 10,
     });
+  });
+
+  it('clears stale search results and shows loading status during a pending second search', async () => {
+    const pendingSearch = deferred<Response>();
+    const firstResponse: SearchResponse = { query: queryRecord, evidence: [evidence] };
+    const secondResponse: SearchResponse = {
+      query: { ...queryRecord, id: 'query-2', raw_query: 'fleet telemetry', result_count: 1 },
+      evidence: [updatedEvidence],
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(firstResponse)).mockReturnValueOnce(pendingSearch.promise);
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SearchPage initialQuery="telemetry disable" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    expect(await screen.findByText('Disable telemetry guide')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Query'), { target: { value: 'fleet telemetry' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Searching...');
+    expect(screen.queryByText('Disable telemetry guide')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Query Trace' })).not.toBeInTheDocument();
+    expect(screen.queryByText(EMPTY_STATE_COPY)).not.toBeInTheDocument();
+
+    await act(async () => {
+      pendingSearch.resolve(jsonResponse(secondResponse));
+      await pendingSearch.promise;
+    });
+
+    expect(await screen.findByText('Fleet telemetry policy')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText('Disable telemetry guide')).not.toBeInTheDocument();
   });
 
   it('renders answer draft and supporting evidence after a successful answer request', async () => {

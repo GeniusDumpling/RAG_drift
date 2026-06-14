@@ -26,14 +26,22 @@ export function SearchPage({ initialQuery = '' }: SearchPageProps) {
     setQuery(initialQuery);
   }, [initialQuery]);
 
+  function clearResults() {
+    setEvidence([]);
+    setQueryRecord(undefined);
+    setAnswerText('');
+  }
+
   function buildRequest(): SearchRequest | null {
     const trimmed = query.trim();
     if (!trimmed) {
+      clearResults();
       setError('Query is required.');
       return null;
     }
     const parsedTopK = Number(topKInput);
     if (!Number.isInteger(parsedTopK) || parsedTopK < 1 || parsedTopK > 50) {
+      clearResults();
       setError('Top K must be between 1 and 50.');
       return null;
     }

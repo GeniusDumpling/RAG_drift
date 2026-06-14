@@ -137,4 +137,58 @@ describe('SearchPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Top K must be between 1 and 50.');
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('clears stale answer state when submitting a blank query after a successful answer', async () => {
+    const response: AnswerResponse = {
+      query: { ...queryRecord, mode: 'answer' },
+      answer: 'Telemetry can be disabled from the device settings privacy panel.',
+      supporting_evidence: [evidence],
+    };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(response));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SearchPage initialQuery="telemetry disable" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Answer' }));
+
+    expect(await screen.findByRole('heading', { name: 'Answer Draft' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Query Trace' })).toBeInTheDocument();
+    expect(screen.getByText('Disable telemetry guide')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Query'), { target: { value: '   ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Query is required.');
+    expect(screen.queryByRole('heading', { name: 'Answer Draft' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Query Trace' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Disable telemetry guide')).not.toBeInTheDocument();
+    expect(screen.queryByText('Telemetry can be disabled from the device settings privacy panel.')).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears stale answer state when submitting a blank Top K after a successful answer', async () => {
+    const response: AnswerResponse = {
+      query: { ...queryRecord, mode: 'answer' },
+      answer: 'Telemetry can be disabled from the device settings privacy panel.',
+      supporting_evidence: [evidence],
+    };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(response));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SearchPage initialQuery="telemetry disable" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Answer' }));
+
+    expect(await screen.findByRole('heading', { name: 'Answer Draft' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Query Trace' })).toBeInTheDocument();
+    expect(screen.getByText('Disable telemetry guide')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Top K'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Answer' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Top K must be between 1 and 50.');
+    expect(screen.queryByRole('heading', { name: 'Answer Draft' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Query Trace' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Disable telemetry guide')).not.toBeInTheDocument();
+    expect(screen.queryByText('Telemetry can be disabled from the device settings privacy panel.')).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

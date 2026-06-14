@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../src/App';
@@ -26,7 +26,7 @@ const run: CrawlRun = {
   trigger_type: 'manual',
   execution_mode: 'foreground',
   seed_url: 'https://example.test/docs/start',
-  status: 'completed',
+  status: 'success',
   started_at: '2026-01-01T00:00:00Z',
   finished_at: '2026-01-01T00:05:00Z',
   discovered_count: 3,
@@ -124,6 +124,40 @@ afterEach(() => {
 });
 
 describe('App run navigation', () => {
+  it('exposes primary navigation semantics and the current page', () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/sources?limit=50&offset=0')) {
+        return Promise.resolve(jsonResponse(page<SourceSite>([])));
+      }
+      if (url.endsWith('/jobs?limit=50&offset=0')) {
+        return Promise.resolve(jsonResponse(page([])));
+      }
+      if (url.endsWith('/runs?limit=50&offset=0')) {
+        return Promise.resolve(jsonResponse(page<CrawlRun>([])));
+      }
+      if (url.endsWith('/contents?limit=10&offset=0')) {
+        return Promise.resolve(jsonResponse(page<ContentListItem>([], 10)));
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    const primaryNav = screen.getByRole('navigation', { name: 'Primary' });
+    const dashboardButton = within(primaryNav).getByRole('button', { name: 'Dashboard' });
+    const searchButton = within(primaryNav).getByRole('button', { name: 'Search' });
+
+    expect(dashboardButton).toHaveAttribute('aria-current', 'page');
+    expect(searchButton).not.toHaveAttribute('aria-current');
+
+    fireEvent.click(searchButton);
+
+    expect(searchButton).toHaveAttribute('aria-current', 'page');
+    expect(dashboardButton).not.toHaveAttribute('aria-current');
+  });
+
   it('opens the selected run detail from the content detail run link', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);

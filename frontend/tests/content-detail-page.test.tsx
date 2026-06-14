@@ -28,7 +28,7 @@ const run: CrawlRun = {
   trigger_type: 'manual',
   execution_mode: 'foreground',
   seed_url: 'https://example.test/docs/start',
-  status: 'completed',
+  status: 'success',
   started_at: '2026-01-01T00:00:00Z',
   finished_at: '2026-01-01T00:05:00Z',
   discovered_count: 3,

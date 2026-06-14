@@ -35,16 +35,19 @@ export function App() {
             <p className="muted compact">observable OSINT prototype</p>
           </div>
         </div>
-        {NAV_ITEMS.map((item) => (
-          <button
-            className={activeView === item ? 'active' : ''}
-            key={item}
-            type="button"
-            onClick={() => setActiveView(item)}
-          >
-            {item}
-          </button>
-        ))}
+        <nav aria-label="Primary">
+          {NAV_ITEMS.map((item) => (
+            <button
+              aria-current={activeView === item ? 'page' : undefined}
+              className={activeView === item ? 'active' : ''}
+              key={item}
+              type="button"
+              onClick={() => setActiveView(item)}
+            >
+              {item}
+            </button>
+          ))}
+        </nav>
       </aside>
       <main className="main">
         {activeView === 'Dashboard' ? <DashboardPage onSearch={openSearch} /> : null}

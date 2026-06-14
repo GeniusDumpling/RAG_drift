@@ -30,6 +30,14 @@ class VectorIndexTarget:
     metadata: VectorIndexMetadata
 
 
+@dataclass(frozen=True)
+class ObsoleteVectorPoint:
+    content_chunk: ContentChunk
+    backend_name: str
+    point_id: str
+    collection: str | None
+
+
 async def chunk_and_index_content_items(
     *,
     session: AsyncSession,
@@ -39,6 +47,7 @@ async def chunk_and_index_content_items(
     unique_item_ids = list(dict.fromkeys(content_item_ids))
     vector_target = _current_vector_index_target()
     chunks_to_index: list[tuple[ContentChunk, ContentItem]] = []
+    obsolete_vector_points: list[ObsoleteVectorPoint] = []
     newly_created_chunk_count = 0
 
     for content_item_id in unique_item_ids:
@@ -47,7 +56,11 @@ async def chunk_and_index_content_items(
             continue
 
         thread_title = await _thread_title_for_item(session, content_item)
-        chunks_for_indexing, created_chunk_count = await _sync_chunks_for_item(
+        (
+            chunks_for_indexing,
+            created_chunk_count,
+            item_obsolete_vector_points,
+        ) = await _sync_chunks_for_item(
             session=session,
             content_item=content_item,
             thread_title=thread_title,
@@ -55,9 +68,10 @@ async def chunk_and_index_content_items(
         )
         for content_chunk in chunks_for_indexing:
             chunks_to_index.append((content_chunk, content_item))
+        obsolete_vector_points.extend(item_obsolete_vector_points)
         newly_created_chunk_count += created_chunk_count
 
-    if not chunks_to_index:
+    if not chunks_to_index and not obsolete_vector_points:
         return ChunkIndexingResult(chunked_count=0, embedded_count=0, failed_count=0)
 
     await session.commit()
@@ -82,15 +96,35 @@ async def chunk_and_index_content_items(
                 content_chunk=content_chunk,
                 error_message=error_message,
             )
+        blocked_obsolete_vector_points = [
+            obsolete_vector_point
+            for obsolete_vector_point in obsolete_vector_points
+            if obsolete_vector_point.backend_name == vector_target.backend_name
+        ]
+        for obsolete_vector_point in blocked_obsolete_vector_points:
+            await _record_vector_delete_failure_event(
+                session=session,
+                run_id=run_id,
+                content_chunk=obsolete_vector_point.content_chunk,
+                error_message=_vector_delete_error_message(
+                    point_id=obsolete_vector_point.point_id,
+                    cause=error_message,
+                ),
+            )
         await session.flush()
         return ChunkIndexingResult(
             chunked_count=newly_created_chunk_count,
             embedded_count=0,
-            failed_count=len(chunks_to_index),
+            failed_count=len(chunks_to_index) + len(blocked_obsolete_vector_points),
         )
 
     embedded_count = 0
-    failed_count = 0
+    failed_count = await _delete_obsolete_vector_points(
+        session=session,
+        run_id=run_id,
+        indexer=indexer,
+        obsolete_vector_points=obsolete_vector_points,
+    )
     for content_chunk, content_item in chunks_to_index:
         try:
             point_id = indexer.upsert_chunk(
@@ -150,7 +184,7 @@ async def _sync_chunks_for_item(
     content_item: ContentItem,
     thread_title: str | None,
     vector_target: VectorIndexTarget,
-) -> tuple[list[ContentChunk], int]:
+) -> tuple[list[ContentChunk], int, list[ObsoleteVectorPoint]]:
     built_chunks = build_chunks(
         item_type=content_item.item_type,
         title=content_item.title,
@@ -176,11 +210,12 @@ async def _reconcile_chunks_for_item(
     built_chunks: list[BuiltChunk],
     existing_chunks: list[ContentChunk],
     vector_target: VectorIndexTarget,
-) -> tuple[list[ContentChunk], int]:
+) -> tuple[list[ContentChunk], int, list[ObsoleteVectorPoint]]:
     existing_by_index = {chunk.chunk_index: chunk for chunk in existing_chunks}
     expected_indices = {built_chunk.chunk_index for built_chunk in built_chunks}
     chunks_to_index: list[ContentChunk] = []
     new_chunks: list[ContentChunk] = []
+    obsolete_vector_points: list[ObsoleteVectorPoint] = []
 
     for built_chunk in built_chunks:
         existing_chunk = existing_by_index.get(built_chunk.chunk_index)
@@ -200,11 +235,13 @@ async def _reconcile_chunks_for_item(
 
     for existing_chunk in existing_chunks:
         if existing_chunk.chunk_index not in expected_indices:
-            _mark_chunk_obsolete(existing_chunk)
+            obsolete_vector_point = _mark_chunk_obsolete(existing_chunk)
+            if obsolete_vector_point is not None:
+                obsolete_vector_points.append(obsolete_vector_point)
 
     if not new_chunks:
         await session.flush()
-        return chunks_to_index, 0
+        return chunks_to_index, 0, obsolete_vector_points
 
     try:
         async with session.begin_nested():
@@ -223,7 +260,7 @@ async def _reconcile_chunks_for_item(
             vector_target=vector_target,
         )
 
-    return chunks_to_index, len(new_chunks)
+    return chunks_to_index, len(new_chunks), obsolete_vector_points
 
 
 def _new_content_chunk(*, content_item: ContentItem, built_chunk: BuiltChunk) -> ContentChunk:
@@ -269,13 +306,26 @@ def _apply_built_chunk_to_existing(chunk: ContentChunk, built_chunk: BuiltChunk)
     chunk.embed_error = None
 
 
-def _mark_chunk_obsolete(chunk: ContentChunk) -> None:
-    chunk.embed_status = "failed"
+def _mark_chunk_obsolete(chunk: ContentChunk) -> ObsoleteVectorPoint | None:
+    previous_backend = chunk.vector_backend
+    previous_point_id = chunk.vector_point_id or chunk.qdrant_point_id
+    previous_collection = _metadata_string(chunk.chunk_metadata_json, "vector_collection")
+
+    chunk.embed_status = "obsolete"
     chunk.embed_error = "obsolete chunk"
     chunk.qdrant_point_id = None
     chunk.vector_backend = None
     chunk.vector_point_id = None
     chunk.embedded_at = None
+
+    if previous_backend is None or previous_point_id is None:
+        return None
+    return ObsoleteVectorPoint(
+        content_chunk=chunk,
+        backend_name=previous_backend,
+        point_id=previous_point_id,
+        collection=previous_collection,
+    )
 
 
 def _chunk_requires_indexing(
@@ -283,6 +333,8 @@ def _chunk_requires_indexing(
     *,
     vector_target: VectorIndexTarget,
 ) -> bool:
+    if chunk.embed_status == "obsolete":
+        return False
     if chunk.embed_status in {"pending", "failed"}:
         return True
     if chunk.embed_status != "success":
@@ -293,6 +345,56 @@ def _chunk_requires_indexing(
     metadata = chunk.chunk_metadata_json
     return any(
         metadata.get(key) != value for key, value in vector_target.metadata.items()
+    )
+
+
+async def _delete_obsolete_vector_points(
+    *,
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    indexer: QdrantIndexer,
+    obsolete_vector_points: list[ObsoleteVectorPoint],
+) -> int:
+    failed_count = 0
+    for obsolete_vector_point in obsolete_vector_points:
+        try:
+            deletion_indexer = _deletion_indexer_for_obsolete_vector_point(
+                active_indexer=indexer,
+                obsolete_vector_point=obsolete_vector_point,
+            )
+            if deletion_indexer is None:
+                continue
+            deletion_indexer.delete_chunk(point_id=obsolete_vector_point.point_id)
+        except Exception as exc:
+            failed_count += 1
+            await _record_vector_delete_failure_event(
+                session=session,
+                run_id=run_id,
+                content_chunk=obsolete_vector_point.content_chunk,
+                error_message=_vector_delete_error_message(
+                    point_id=obsolete_vector_point.point_id,
+                    cause=_error_message(exc),
+                ),
+            )
+    return failed_count
+
+
+def _deletion_indexer_for_obsolete_vector_point(
+    *,
+    active_indexer: QdrantIndexer,
+    obsolete_vector_point: ObsoleteVectorPoint,
+) -> QdrantIndexer | None:
+    if obsolete_vector_point.backend_name != active_indexer.backend_name:
+        return None
+    if (
+        obsolete_vector_point.collection is None
+        or obsolete_vector_point.collection == active_indexer.collection
+    ):
+        return active_indexer
+    return QdrantIndexer(
+        url=active_indexer.url,
+        collection=obsolete_vector_point.collection,
+        embedding=active_indexer.embedding,
     )
 
 
@@ -459,6 +561,39 @@ async def _record_vector_index_failure_event(
     content_chunk: ContentChunk,
     error_message: str,
 ) -> None:
+    await _record_vector_failure_event(
+        session=session,
+        run_id=run_id,
+        content_chunk=content_chunk,
+        error_message=error_message,
+        event_type="vector_index_failed",
+    )
+
+
+async def _record_vector_delete_failure_event(
+    *,
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    content_chunk: ContentChunk,
+    error_message: str,
+) -> None:
+    await _record_vector_failure_event(
+        session=session,
+        run_id=run_id,
+        content_chunk=content_chunk,
+        error_message=error_message,
+        event_type="vector_delete_failed",
+    )
+
+
+async def _record_vector_failure_event(
+    *,
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    content_chunk: ContentChunk,
+    error_message: str,
+    event_type: str,
+) -> None:
     content_item = await session.get(ContentItem, content_chunk.content_item_id)
     if content_item is None:
         return
@@ -467,7 +602,7 @@ async def _record_vector_index_failure_event(
             crawl_run_id=run_id,
             stage="index",
             level="error",
-            event_type="vector_index_failed",
+            event_type=event_type,
             message=error_message,
             related_url=content_item.canonical_url,
             related_raw_page_id=content_item.raw_page_id,
@@ -481,3 +616,7 @@ async def _record_vector_index_failure_event(
 def _error_message(exc: Exception) -> str:
     message = str(exc) or exc.__class__.__name__
     return f"{exc.__class__.__name__}: {message}"[:2000]
+
+
+def _vector_delete_error_message(*, point_id: str, cause: str) -> str:
+    return f"Failed to delete obsolete vector point {point_id}: {cause}"[:2000]

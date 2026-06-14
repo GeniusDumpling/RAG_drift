@@ -4,6 +4,7 @@ from typing import Any
 
 from app.main import app
 from app.models.content import ContentItem
+from app.services.chunking import build_chunks
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -87,7 +88,15 @@ async def test_content_list_and_detail_hydrate_source_raw_run_chunks_and_hashes(
 
         ingest_response = await client.post("/contents/test-ingest", json=payload)
         assert ingest_response.status_code == 201
-        content_id = ingest_response.json()["content_item_id"]
+        ingest_result = ingest_response.json()
+        content_id = ingest_result["content_item_id"]
+        expected_chunks = build_chunks(
+            item_type=payload["item_type"],
+            title=payload["title"],
+            cleaned_text=payload["cleaned_text"],
+            summary_text=payload["summary_text"],
+            tags=payload["tags"],
+        )
 
         list_response = await client.get("/contents?item_type=thread")
         assert list_response.status_code == 200
@@ -100,8 +109,19 @@ async def test_content_list_and_detail_hydrate_source_raw_run_chunks_and_hashes(
         assert detail["raw_page"]["body_hash"] == expected_body_hash
         assert "content_hash" not in detail["raw_page"]
         assert detail["source"]["name"] == "Forum Demo"
-        assert detail["chunks"] != []
+        assert len(detail["chunks"]) == len(expected_chunks)
+        assert ingest_result["chunk_ids"] == [chunk["id"] for chunk in detail["chunks"]]
         chunk = detail["chunks"][0]
+        expected_chunk = expected_chunks[0]
+        assert chunk["chunk_index"] == expected_chunk.chunk_index
+        assert chunk["char_start"] == expected_chunk.start_char
+        assert chunk["char_end"] == expected_chunk.end_char
+        assert chunk["display_text"] == expected_chunk.display_text
+        assert chunk["embed_text"] == expected_chunk.embed_text
+        assert chunk["token_count"] == expected_chunk.token_count
+        assert chunk["chunk_metadata_json"] == expected_chunk.chunk_metadata_json
+        assert chunk["embed_status"] == "pending"
+        assert chunk["embed_error"] is None
         assert "vector_backend" in chunk
         assert "vector_point_id" in chunk
         assert "embedded_at" in chunk

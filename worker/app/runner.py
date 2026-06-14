@@ -17,6 +17,7 @@ from app.services.chunking import build_chunks
 from app.services.embeddings import DeterministicEmbeddingService
 from app.services.retrieval import QdrantIndexer
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from worker.app.adapters import DiscoveredPage, FetchedPage, get_adapter
@@ -365,53 +366,25 @@ async def _chunk_and_index_content_items(
         if content_item is None:
             continue
 
-        existing_chunks = (
-            await session.scalars(
-                select(ContentChunk)
-                .where(ContentChunk.content_item_id == content_item_id)
-                .order_by(ContentChunk.chunk_index.asc())
-            )
-        ).all()
+        existing_chunks = await _load_chunks_for_item(session, content_item_id)
         if existing_chunks:
-            for existing_chunk in existing_chunks:
-                if existing_chunk.embed_status in {"pending", "failed"}:
-                    chunks_to_index.append((existing_chunk, content_item))
+            for existing_chunk in _pending_or_failed_chunks(existing_chunks):
+                chunks_to_index.append((existing_chunk, content_item))
             continue
 
         thread_title = await _thread_title_for_item(session, content_item)
-        built_chunks = build_chunks(
-            item_type=content_item.item_type,
-            title=content_item.title,
-            cleaned_text=content_item.cleaned_text,
-            summary_text=content_item.summary_text,
-            tags=content_item.tags,
+        chunks_for_indexing, created_chunk_count = await _create_chunks_or_reload_existing(
+            session=session,
+            content_item=content_item,
             thread_title=thread_title,
         )
-        for built_chunk in built_chunks:
-            content_chunk = ContentChunk(
-                content_item_id=content_item.id,
-                chunk_index=built_chunk.chunk_index,
-                char_start=built_chunk.start_char,
-                char_end=built_chunk.end_char,
-                display_text=built_chunk.display_text,
-                embed_text=built_chunk.embed_text,
-                token_count=built_chunk.token_count,
-                chunk_metadata_json=built_chunk.chunk_metadata_json,
-                qdrant_point_id=None,
-                vector_backend=None,
-                vector_point_id=None,
-                embedded_at=None,
-                embed_status="pending",
-                embed_error=None,
-            )
-            session.add(content_chunk)
+        for content_chunk in chunks_for_indexing:
             chunks_to_index.append((content_chunk, content_item))
-            newly_created_chunk_count += 1
+        newly_created_chunk_count += created_chunk_count
 
     if not chunks_to_index:
         return ChunkIndexingResult(chunked_count=0, embedded_count=0, failed_count=0)
 
-    await session.flush()
     backend_name = "qdrant"
     try:
         indexer = _build_qdrant_indexer()
@@ -480,6 +453,69 @@ async def _chunk_and_index_content_items(
         embedded_count=embedded_count,
         failed_count=failed_count,
     )
+
+
+async def _load_chunks_for_item(
+    session: AsyncSession, content_item_id: uuid.UUID
+) -> list[ContentChunk]:
+    chunks = await session.scalars(
+        select(ContentChunk)
+        .where(ContentChunk.content_item_id == content_item_id)
+        .order_by(ContentChunk.chunk_index.asc())
+    )
+    return list(chunks.all())
+
+
+def _pending_or_failed_chunks(chunks: list[ContentChunk]) -> list[ContentChunk]:
+    return [chunk for chunk in chunks if chunk.embed_status in {"pending", "failed"}]
+
+
+async def _create_chunks_or_reload_existing(
+    *,
+    session: AsyncSession,
+    content_item: ContentItem,
+    thread_title: str | None,
+) -> tuple[list[ContentChunk], int]:
+    built_chunks = build_chunks(
+        item_type=content_item.item_type,
+        title=content_item.title,
+        cleaned_text=content_item.cleaned_text,
+        summary_text=content_item.summary_text,
+        tags=content_item.tags,
+        thread_title=thread_title,
+    )
+    new_chunks = [
+        ContentChunk(
+            content_item_id=content_item.id,
+            chunk_index=built_chunk.chunk_index,
+            char_start=built_chunk.start_char,
+            char_end=built_chunk.end_char,
+            display_text=built_chunk.display_text,
+            embed_text=built_chunk.embed_text,
+            token_count=built_chunk.token_count,
+            chunk_metadata_json=built_chunk.chunk_metadata_json,
+            qdrant_point_id=None,
+            vector_backend=None,
+            vector_point_id=None,
+            embedded_at=None,
+            embed_status="pending",
+            embed_error=None,
+        )
+        for built_chunk in built_chunks
+    ]
+
+    try:
+        async with session.begin_nested():
+            for content_chunk in new_chunks:
+                session.add(content_chunk)
+            await session.flush()
+    except IntegrityError:
+        existing_chunks = await _load_chunks_for_item(session, content_item.id)
+        if not existing_chunks:
+            raise
+        return _pending_or_failed_chunks(existing_chunks), 0
+
+    return new_chunks, len(new_chunks)
 
 
 async def _thread_title_for_item(

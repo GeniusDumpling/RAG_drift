@@ -258,6 +258,7 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
                 )
                 indexing_result = await _chunk_and_index_content_items(
                     session=session,
+                    run_id=run_id,
                     content_item_ids=normalization_result.content_item_ids,
                 )
                 raw_page.parse_status = "parsed"
@@ -352,10 +353,12 @@ async def _process_run(run_id: uuid.UUID) -> RunOutcome:
 async def _chunk_and_index_content_items(
     *,
     session: AsyncSession,
+    run_id: uuid.UUID,
     content_item_ids: list[uuid.UUID],
 ) -> ChunkIndexingResult:
     unique_item_ids = list(dict.fromkeys(content_item_ids))
     chunks_to_index: list[tuple[ContentChunk, ContentItem]] = []
+    newly_created_chunk_count = 0
 
     for content_item_id in unique_item_ids:
         content_item = await session.get(ContentItem, content_item_id)
@@ -403,30 +406,34 @@ async def _chunk_and_index_content_items(
             )
             session.add(content_chunk)
             chunks_to_index.append((content_chunk, content_item))
+            newly_created_chunk_count += 1
 
     if not chunks_to_index:
         return ChunkIndexingResult(chunked_count=0, embedded_count=0, failed_count=0)
 
     await session.flush()
-    indexer = _build_qdrant_indexer()
+    backend_name = "qdrant"
     try:
+        indexer = _build_qdrant_indexer()
+        backend_name = indexer.backend_name
         indexer.ensure_collection()
     except Exception as exc:
         error_message = _error_message(exc)
         for content_chunk, _content_item in chunks_to_index:
             _mark_chunk_failed(
                 content_chunk=content_chunk,
-                backend_name=indexer.backend_name,
+                backend_name=backend_name,
                 error_message=error_message,
             )
             await _record_vector_index_failure_event(
                 session=session,
+                run_id=run_id,
                 content_chunk=content_chunk,
                 error_message=error_message,
             )
         await session.flush()
         return ChunkIndexingResult(
-            chunked_count=len(chunks_to_index),
+            chunked_count=newly_created_chunk_count,
             embedded_count=0,
             failed_count=len(chunks_to_index),
         )
@@ -453,6 +460,7 @@ async def _chunk_and_index_content_items(
             )
             await _record_vector_index_failure_event(
                 session=session,
+                run_id=run_id,
                 content_chunk=content_chunk,
                 error_message=error_message,
             )
@@ -468,7 +476,7 @@ async def _chunk_and_index_content_items(
 
     await session.flush()
     return ChunkIndexingResult(
-        chunked_count=len(chunks_to_index),
+        chunked_count=newly_created_chunk_count,
         embedded_count=embedded_count,
         failed_count=failed_count,
     )
@@ -553,6 +561,7 @@ def _mark_chunk_failed(
 async def _record_vector_index_failure_event(
     *,
     session: AsyncSession,
+    run_id: uuid.UUID,
     content_chunk: ContentChunk,
     error_message: str,
 ) -> None:
@@ -561,7 +570,7 @@ async def _record_vector_index_failure_event(
         return
     session.add(
         CrawlRunEvent(
-            crawl_run_id=content_item.crawl_run_id,
+            crawl_run_id=run_id,
             stage="index",
             level="error",
             event_type="vector_index_failed",

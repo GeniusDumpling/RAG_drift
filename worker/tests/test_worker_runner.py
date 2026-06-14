@@ -268,6 +268,7 @@ def test_vector_upsert_failure_marks_run_partial_and_failed_chunks_are_retried(
     second_detail = client.get(f"/runs/{second_run['id']}").json()
     assert second_detail["status"] == "success"
     assert second_detail["deduped_count"] == 1
+    assert second_detail["chunked_count"] == 0
     assert second_detail["embedded_count"] == len(failed_chunks)
 
     retried_chunks = _fetch_db_rows(
@@ -286,6 +287,205 @@ def test_vector_upsert_failure_marks_run_partial_and_failed_chunks_are_retried(
     assert {chunk["vector_backend"] for chunk in retried_chunks} == {"qdrant"}
     assert all(chunk["vector_point_id"] == str(chunk["id"]) for chunk in retried_chunks)
     assert all(chunk["embedded_at"] is not None for chunk in retried_chunks)
+
+
+def test_deduped_retry_vector_failure_events_use_active_run_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class AlwaysFailingIndexer:
+        backend_name = "qdrant"
+
+        def __init__(self, *, build_number: int) -> None:
+            self.build_number = build_number
+
+        def ensure_collection(self) -> None:
+            return None
+
+        def upsert_chunk(
+            self,
+            *,
+            chunk_id: uuid.UUID,
+            embed_text: str,
+            payload: dict[str, Any],
+        ) -> str:
+            del chunk_id, embed_text, payload
+            raise RuntimeError(f"simulated qdrant outage build {self.build_number}")
+
+    indexer_build_count = 0
+
+    def build_failing_indexer() -> AlwaysFailingIndexer:
+        nonlocal indexer_build_count
+        indexer_build_count += 1
+        return AlwaysFailingIndexer(build_number=indexer_build_count)
+
+    monkeypatch.setattr(runner_module, "_build_qdrant_indexer", build_failing_indexer)
+    client = TestClient(app)
+    seed_url = "https://example.com/vector-active-run"
+    job = _create_worker_job(client, urls=[seed_url], seed_url=seed_url)
+    first_run = _trigger_worker_job(client, job, seed_url=seed_url)
+
+    first_result = run_once(run_limit=1)
+    assert first_result.claimed == 1
+    assert first_result.partial == 1
+
+    failed_chunks = _fetch_db_rows(
+        """
+        select id, embed_status
+        from content_chunks
+        order by chunk_index asc
+        """,
+        {},
+    )
+    assert len(failed_chunks) >= 1
+    assert {chunk["embed_status"] for chunk in failed_chunks} == {"failed"}
+
+    first_failure_events = _fetch_db_rows(
+        """
+        select id, message
+        from crawl_run_events
+        where crawl_run_id = CAST(:run_id AS uuid)
+          and event_type = 'vector_index_failed'
+        order by created_at asc
+        """,
+        {"run_id": first_run["id"]},
+    )
+    assert len(first_failure_events) == len(failed_chunks)
+    assert all(
+        "simulated qdrant outage build 1" in str(event["message"])
+        for event in first_failure_events
+    )
+
+    second_run = _trigger_worker_job(client, job, seed_url=seed_url)
+    second_result = run_once(run_limit=1)
+    assert second_result.claimed == 1
+    assert second_result.partial == 1
+
+    second_detail = client.get(f"/runs/{second_run['id']}").json()
+    assert second_detail["status"] == "partial"
+    assert second_detail["deduped_count"] == 1
+    assert second_detail["chunked_count"] == 0
+    assert second_detail["embedded_count"] == 0
+    assert second_detail["error_count"] == len(failed_chunks)
+
+    second_failure_events = _fetch_db_rows(
+        """
+        select id, message
+        from crawl_run_events
+        where crawl_run_id = CAST(:run_id AS uuid)
+          and event_type = 'vector_index_failed'
+        order by created_at asc
+        """,
+        {"run_id": second_run["id"]},
+    )
+    assert len(second_failure_events) == len(failed_chunks)
+    assert all(
+        "simulated qdrant outage build 2" in str(event["message"])
+        for event in second_failure_events
+    )
+
+    misattributed_second_run_events = _fetch_db_rows(
+        """
+        select id
+        from crawl_run_events
+        where crawl_run_id = CAST(:run_id AS uuid)
+          and event_type = 'vector_index_failed'
+          and message like '%simulated qdrant outage build 2%'
+        """,
+        {"run_id": first_run["id"]},
+    )
+    assert misattributed_second_run_events == []
+
+
+def test_qdrant_indexer_construction_failure_is_recoverable_vector_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_build_indexer() -> object:
+        raise RuntimeError("simulated qdrant construction outage")
+
+    monkeypatch.setattr(runner_module, "_build_qdrant_indexer", fail_build_indexer)
+    client = TestClient(app)
+    seed_url = "https://example.com/vector-construction"
+    run = _queue_worker_run(client, urls=[seed_url], seed_url=seed_url)
+
+    result = run_once(run_limit=1)
+    assert result.claimed == 1
+    assert result.succeeded == 0
+    assert result.partial == 1
+    assert result.failed == 0
+
+    detail = client.get(f"/runs/{run['id']}").json()
+    assert detail["status"] == "partial"
+    assert detail["fetched_count"] == 1
+    assert detail["parsed_count"] == 1
+    assert detail["extracted_count"] == 1
+    assert detail["embedded_count"] == 0
+    assert "chunk(s) failed during vector indexing" in detail["error_message"]
+
+    raw_pages = _fetch_db_rows(
+        """
+        select parse_status, parse_error
+        from raw_pages
+        where crawl_run_id = CAST(:run_id AS uuid)
+        """,
+        {"run_id": run["id"]},
+    )
+    assert raw_pages == [{"parse_status": "parsed", "parse_error": None}]
+
+    content_items = _fetch_db_rows(
+        """
+        select id
+        from content_items
+        where crawl_run_id = CAST(:run_id AS uuid)
+        """,
+        {"run_id": run["id"]},
+    )
+    assert len(content_items) == 1
+
+    failed_chunks = _fetch_db_rows(
+        """
+        select embed_status, embed_error, vector_backend, vector_point_id, embedded_at
+        from content_chunks
+        order by chunk_index asc
+        """,
+        {},
+    )
+    assert len(failed_chunks) >= 1
+    assert detail["chunked_count"] == len(failed_chunks)
+    assert detail["error_count"] == len(failed_chunks)
+    assert {chunk["embed_status"] for chunk in failed_chunks} == {"failed"}
+    assert all(
+        "simulated qdrant construction outage" in str(chunk["embed_error"])
+        for chunk in failed_chunks
+    )
+    assert {chunk["vector_backend"] for chunk in failed_chunks} == {"qdrant"}
+    assert all(chunk["vector_point_id"] is None for chunk in failed_chunks)
+    assert all(chunk["embedded_at"] is None for chunk in failed_chunks)
+
+    failure_events = _fetch_db_rows(
+        """
+        select event_type, message
+        from crawl_run_events
+        where crawl_run_id = CAST(:run_id AS uuid)
+          and event_type = 'vector_index_failed'
+        """,
+        {"run_id": run["id"]},
+    )
+    assert len(failure_events) == len(failed_chunks)
+    assert all(
+        "simulated qdrant construction outage" in str(event["message"])
+        for event in failure_events
+    )
+
+    page_failed_events = _fetch_db_rows(
+        """
+        select id
+        from crawl_run_events
+        where crawl_run_id = CAST(:run_id AS uuid)
+          and event_type = 'page_failed'
+        """,
+        {"run_id": run["id"]},
+    )
+    assert page_failed_events == []
 
 
 def test_unsupported_parser_profile_marks_run_failed_without_raising() -> None:

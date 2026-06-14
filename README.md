@@ -28,8 +28,10 @@ alembic upgrade head
 写入演示数据并处理一次抓取运行：
 
 ```bash
-python3 scripts/seed_demo.py
-python3 scripts/run_worker_once.py
+SEED_JSON="$(python3 scripts/seed_demo.py)"
+printf '%s\n' "$SEED_JSON"
+RUN_ID="$(printf '%s' "$SEED_JSON" | python3 -c 'import json, sys; print(json.load(sys.stdin)["run_id"])')"
+python3 scripts/run_worker_once.py --run-id "$RUN_ID"
 ```
 
 启动 API：

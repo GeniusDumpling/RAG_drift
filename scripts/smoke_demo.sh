@@ -7,9 +7,53 @@ cd "$ROOT"
 PYTHON="${PYTHON:-python3}"
 ALEMBIC="${ALEMBIC:-alembic}"
 API_BASE="${API_BASE:-http://localhost:8000}"
+export API_BASE
 SEARCH_JSON="$(mktemp)"
 ANSWER_JSON="$(mktemp)"
 trap 'rm -f "$SEARCH_JSON" "$ANSWER_JSON"' EXIT
+
+require_local_api_base() {
+  if [[ "${ALLOW_NONLOCAL_SMOKE_API:-0}" == "1" ]]; then
+    return 0
+  fi
+
+  "$PYTHON" - <<'PY'
+import os
+import sys
+from urllib.parse import urlparse
+
+
+def safe_url(value: str) -> str:
+    parsed = urlparse(value)
+    if parsed.hostname is None:
+        return "<invalid-or-local-api-base>"
+    host = parsed.hostname
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    if parsed.port is not None:
+        host = f"{host}:{parsed.port}"
+    return parsed._replace(netloc=host, params="", query="", fragment="").geturl()
+
+
+def is_local_api_base(value: str) -> bool:
+    host = urlparse(value).hostname
+    if host is None:
+        return False
+    normalized = host.lower()
+    return normalized == "localhost" or normalized == "::1" or normalized.startswith("127.")
+
+
+api_base = os.environ.get("API_BASE", "http://localhost:8000")
+if not is_local_api_base(api_base):
+    print(
+        "Refusing to run smoke demo against a non-local API_BASE. "
+        "Set ALLOW_NONLOCAL_SMOKE_API=1 to override. Offending setting: "
+        f"API_BASE={safe_url(api_base)}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+PY
+}
 
 require_local_smoke_db() {
   if [[ "${ALLOW_NONLOCAL_SMOKE_DB:-0}" == "1" ]]; then
@@ -49,9 +93,11 @@ def safe_url(value: str) -> str:
     if parsed.hostname is None:
         return value
     netloc = parsed.hostname
+    if ":" in netloc and not netloc.startswith("["):
+        netloc = f"[{netloc}]"
     if parsed.port is not None:
         netloc = f"{netloc}:{parsed.port}"
-    return parsed._replace(netloc=netloc).geturl()
+    return parsed._replace(netloc=netloc, params="", query="", fragment="").geturl()
 
 
 def is_local_database_url(value: str) -> bool:
@@ -183,6 +229,7 @@ PY
 
 cp -n .env.example .env || true
 require_local_smoke_db
+require_local_api_base
 
 if [[ "${SKIP_DOCKER:-0}" != "1" ]]; then
   if docker compose up --help 2>&1 | grep -q -- '--wait'; then

@@ -1,4 +1,7 @@
+import tomllib
 from pathlib import Path
+
+from setuptools.discovery import PackageFinder  # type: ignore[import-untyped]
 
 
 def _make_target_body(makefile: str, target: str) -> str:
@@ -25,6 +28,23 @@ def test_required_root_files_exist() -> None:
     ]
     missing = [name for name in expected if not (root / name).exists()]
     assert missing == []
+
+
+def test_setuptools_package_discovery_includes_backend_and_worker_packages() -> None:
+    root = Path(__file__).resolve().parents[2]
+    find_config = tomllib.loads((root / "pyproject.toml").read_text())["tool"]["setuptools"][
+        "packages"
+    ]["find"]
+
+    include = find_config.get("include", ["*"])
+    exclude = find_config.get("exclude", [])
+    discovered_packages: set[str] = set()
+    for where in find_config.get("where", ["."]):
+        discovered_packages.update(
+            PackageFinder.find(str(root / where), include=include, exclude=exclude)
+        )
+
+    assert {"app", "worker", "worker.app"}.issubset(discovered_packages)
 
 
 def test_makefile_targets_prefer_installed_virtualenv_tools() -> None:

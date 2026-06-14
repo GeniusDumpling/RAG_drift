@@ -5,7 +5,7 @@ A modular monolith prototype for observable open-source intelligence RAG.
 ## Local setup
 
 ```bash
-cp .env.example .env
+test -f .env || cp .env.example .env
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
@@ -13,11 +13,11 @@ python -m pip install -e ".[dev]"
 
 ## Demo paths
 
-Use either the smoke path or the manual path. Do not manually seed/process a run and then
+Use either the smoke-script path or the manual path. Do not manually seed/process a run and then
 run the smoke script expecting it to verify that same run: the smoke script seeds and
 processes its own targeted run.
 
-### One-command smoke path
+### Smoke-script path (API already running)
 
 Start the API in one terminal:
 
@@ -68,17 +68,18 @@ round trip. Use the default Docker/Qdrant path when you need the true vector smo
 Start infrastructure and run migrations:
 
 ```bash
-cp .env.example .env
+test -f .env || cp .env.example .env
 docker compose up -d postgres qdrant
 alembic upgrade head
 ```
 
-Seed demo data, extract the seeded run id, and process exactly that run:
+Seed demo data, extract the seeded run and source ids, and process exactly that run:
 
 ```bash
 SEED_JSON="$(python3 scripts/seed_demo.py)"
 printf '%s\n' "$SEED_JSON"
 RUN_ID="$(printf '%s' "$SEED_JSON" | python3 -c 'import json, sys; print(json.load(sys.stdin)["run_id"])')"
+SOURCE_ID="$(printf '%s' "$SEED_JSON" | python3 -c 'import json, sys; print(json.load(sys.stdin)["source_id"])')"
 python3 scripts/run_worker_once.py --json --require-success --run-id "$RUN_ID"
 ```
 
@@ -93,11 +94,11 @@ Query search and answer from another terminal:
 ```bash
 curl -fsS -X POST http://localhost:8000/search \
   -H 'Content-Type: application/json' \
-  -d '{"query":"telemetry settings","mode":"search","filters":{},"top_k":5}'
+  -d "{\"query\":\"telemetry settings\",\"mode\":\"search\",\"filters\":{\"source_site_id\":\"$SOURCE_ID\"},\"top_k\":5}"
 
 curl -fsS -X POST http://localhost:8000/answer \
   -H 'Content-Type: application/json' \
-  -d '{"query":"How is telemetry configured?","mode":"answer","filters":{},"top_k":5}'
+  -d "{\"query\":\"How is telemetry configured?\",\"mode\":\"answer\",\"filters\":{\"source_site_id\":\"$SOURCE_ID\"},\"top_k\":5}"
 ```
 
 ### Frontend

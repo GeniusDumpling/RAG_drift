@@ -254,7 +254,7 @@ wait_for_http() {
   local label="$2"
 
   for _attempt in {1..30}; do
-    if curl -fsS "$url" >/dev/null 2>&1; then
+    if curl -fsS --max-time 2 "$url" >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -266,7 +266,7 @@ wait_for_http() {
 
 wait_for_api() {
   for _attempt in {1..30}; do
-    if curl -fsS "$API_BASE/health" >/dev/null 2>&1; then
+    if curl -fsS --max-time 2 "$API_BASE/health" >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -501,23 +501,23 @@ assert_worker_result "$WORKER_JSON"
 wait_for_api
 
 printf '\nGET /runs/$RUN_ID (%s)\n' "$RUN_ID"
-curl -fsS "$API_BASE/runs/$RUN_ID" | tee "$RUN_JSON"
+curl -fsS --max-time 15 "$API_BASE/runs/$RUN_ID" | tee "$RUN_JSON"
 printf '\n'
 assert_run_status_success "$RUN_JSON" "$RUN_ID"
 
 printf '\nGET /health\n'
-curl -fsS "$API_BASE/health"
+curl -fsS --max-time 2 "$API_BASE/health"
 printf '\n'
 
 printf '\nPOST /search\n'
-curl -fsS -X POST "$API_BASE/search" \
+curl -fsS --max-time 15 -X POST "$API_BASE/search" \
   -H 'Content-Type: application/json' \
   -d "{\"query\":\"telemetry settings\",\"mode\":\"search\",\"filters\":{\"source_site_id\":\"$SOURCE_ID\"},\"top_k\":5}" | tee "$SEARCH_JSON"
 printf '\n'
 assert_search_response "$SEARCH_JSON" "$SOURCE_ID"
 
 printf '\nPOST /answer\n'
-curl -fsS -X POST "$API_BASE/answer" \
+curl -fsS --max-time 15 -X POST "$API_BASE/answer" \
   -H 'Content-Type: application/json' \
   -d "{\"query\":\"How is telemetry configured?\",\"mode\":\"answer\",\"filters\":{\"source_site_id\":\"$SOURCE_ID\"},\"top_k\":5}" | tee "$ANSWER_JSON"
 printf '\n'

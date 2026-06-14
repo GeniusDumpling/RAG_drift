@@ -91,14 +91,21 @@ def test_readme_demo_paths_are_split_and_target_seeded_run() -> None:
 
     readme_text = readme.read_text()
 
-    assert "One-command smoke path" in readme_text
+    assert "Smoke-script path (API already running)" in readme_text
+    assert "One-command smoke path" not in readme_text
     assert "Manual demo path" in readme_text
     assert "SKIP_DOCKER=1" in readme_text
     assert "may create `.env` from `.env.example`" in readme_text
+    assert "test -f .env || cp .env.example .env" in readme_text
+    assert "\ncp .env.example .env\n" not in readme_text
     assert "SEED_JSON" in readme_text
     assert "RUN_ID" in readme_text
+    assert "SOURCE_ID" in readme_text
     assert "run_id" in readme_text
+    assert "source_id" in readme_text
     assert 'scripts/run_worker_once.py --json --require-success --run-id "$RUN_ID"' in readme_text
+    assert readme_text.count('\\"filters\\":{\\"source_site_id\\":\\"$SOURCE_ID\\"}') == 2
+    assert '"filters":{}' not in readme_text
 
 
 def test_demo_smoke_contract_targets_seeded_run_and_asserts_semantics() -> None:
@@ -136,6 +143,12 @@ def test_demo_smoke_contract_targets_seeded_run_and_asserts_semantics() -> None:
     assert "Created .env from .env.example" in smoke_text
     assert "POST /search" in smoke_text
     assert "POST /answer" in smoke_text
+    assert 'curl -fsS --max-time 2 "$url" >/dev/null 2>&1' in smoke_text
+    assert 'curl -fsS --max-time 2 "$API_BASE/health" >/dev/null 2>&1' in smoke_text
+    assert 'curl -fsS --max-time 15 "$API_BASE/runs/$RUN_ID"' in smoke_text
+    assert 'curl -fsS --max-time 2 "$API_BASE/health"' in smoke_text
+    assert 'curl -fsS --max-time 15 -X POST "$API_BASE/search"' in smoke_text
+    assert 'curl -fsS --max-time 15 -X POST "$API_BASE/answer"' in smoke_text
     assert "json.load" in smoke_text
     assert ".venv/bin/python" in smoke_text
     assert ".venv/bin/alembic" in smoke_text

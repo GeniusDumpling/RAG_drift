@@ -2,11 +2,15 @@ import uuid
 from typing import cast
 
 import pytest
+from app.core.config import Settings
 from app.main import app
 from app.models.search import SearchQuery
 from app.schemas.search import SearchFilters, SearchRequest
 from app.services import search as search_service_module
+from app.services.embeddings import DeterministicEmbeddingService
 from app.services.retrieval import (
+    _MEMORY_COLLECTIONS,
+    QdrantIndexer,
     VectorSearchHit,
     _memory_payload_matches,
     _merge_hits,
@@ -83,6 +87,49 @@ def _ingest_content(
             },
         ).json(),
     )
+
+
+def _use_memory_vector_backend(monkeypatch: pytest.MonkeyPatch) -> Settings:
+    _MEMORY_COLLECTIONS.clear()
+    settings = Settings(
+        QDRANT_URL=f"memory://search-pipeline-{uuid.uuid4()}",
+        QDRANT_COLLECTION=f"content_chunks_{uuid.uuid4().hex}",
+    )
+    monkeypatch.setattr("app.services.search.get_settings", lambda: settings)
+    return settings
+
+
+def _first_chunk_id(ingest: dict[str, object]) -> uuid.UUID:
+    chunk_ids = ingest["chunk_ids"]
+    assert isinstance(chunk_ids, list)
+    assert chunk_ids != []
+    return uuid.UUID(str(chunk_ids[0]))
+
+
+def _index_memory_chunk(
+    *,
+    settings: Settings,
+    chunk_id: uuid.UUID,
+    embed_text: str,
+    source_id: str,
+    item_type: str,
+    content_item_id: object | None,
+    tags: list[str] | None = None,
+) -> None:
+    indexer = QdrantIndexer(
+        url=settings.qdrant_url,
+        collection=settings.qdrant_collection,
+        embedding=DeterministicEmbeddingService(),
+    )
+    indexer.ensure_collection()
+    payload = {
+        "source_site_id": source_id,
+        "item_type": item_type,
+        "tags": tags or [],
+    }
+    if content_item_id is not None:
+        payload["content_item_id"] = str(content_item_id)
+    indexer.upsert_chunk(chunk_id=chunk_id, embed_text=embed_text, payload=payload)
 
 
 def test_search_records_raw_and_optimized_query_and_returns_evidence(
@@ -201,6 +248,264 @@ def test_keyword_fallback_returns_later_matching_chunk(monkeypatch: pytest.Monke
     assert evidence[0]["chunk_id"] != chunk_ids[0]
     assert evidence[0]["chunk_id"] in chunk_ids[1:]
     assert later_only_term in evidence[0]["snippet"].casefold()
+
+
+def test_keyword_fallback_scores_candidates_before_truncating_recent_matches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.retrieval.QdrantIndexer.search_chunks",
+        lambda self, *, query_text, filters, top_k: [],
+    )
+    client = TestClient(app)
+    ids = _create_source_job_run(client)
+    exact_ingest = _ingest_content(
+        client,
+        source_id=ids["source_id"],
+        run_id=ids["run_id"],
+        url_path="older-exact-alpha-beta",
+        item_type="doc_page",
+        title="Alpha beta canonical field report",
+        cleaned_text="Alpha beta appears together in the older authoritative report.",
+        summary_text="Alpha beta exact source of truth.",
+        tags=["alpha", "beta"],
+    )
+    for index in range(55):
+        _ingest_content(
+            client,
+            source_id=ids["source_id"],
+            run_id=ids["run_id"],
+            url_path=f"recent-weak-alpha-{index}",
+            item_type="doc_page",
+            title=f"Recent alpha status {index}",
+            cleaned_text="Alpha appears in this recent weaker note without the second term.",
+            summary_text=None,
+            tags=[],
+        )
+
+    response = client.post(
+        "/search",
+        json={
+            "query": "alpha beta",
+            "mode": "search",
+            "filters": {"source_site_id": ids["source_id"], "item_type": "doc_page"},
+            "top_k": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    evidence = response.json()["evidence"]
+    assert evidence != []
+    assert evidence[0]["content_item_id"] == exact_ingest["content_item_id"]
+    assert evidence[0]["matched_by"] == "keyword"
+
+
+def test_search_endpoint_returns_vector_only_evidence_from_memory_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _use_memory_vector_backend(monkeypatch)
+    client = TestClient(app)
+    ids = _create_source_job_run(client)
+    ingest = _ingest_content(
+        client,
+        source_id=ids["source_id"],
+        run_id=ids["run_id"],
+        url_path="vector-only",
+        item_type="doc_page",
+        title="Ordinary maintenance bulletin",
+        cleaned_text="This archived bulletin discusses ordinary maintenance procedures.",
+        summary_text="Maintenance procedures.",
+        tags=["maintenance"],
+    )
+    vector_query = "latent-vector-only-signal"
+    _index_memory_chunk(
+        settings=settings,
+        chunk_id=_first_chunk_id(ingest),
+        embed_text=vector_query,
+        source_id=ids["source_id"],
+        item_type="doc_page",
+        content_item_id=ingest["content_item_id"],
+        tags=["maintenance"],
+    )
+
+    response = client.post(
+        "/search",
+        json={
+            "query": vector_query,
+            "mode": "search",
+            "filters": {"source_site_id": ids["source_id"], "item_type": "doc_page"},
+            "top_k": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    evidence = payload["evidence"]
+    assert len(evidence) == 1
+    assert evidence[0]["matched_by"] == "vector"
+    assert evidence[0]["content_item_id"] == ingest["content_item_id"]
+    assert evidence[0]["raw_page_id"] == ingest["raw_page_id"]
+    assert evidence[0]["source_site_id"] == ids["source_id"]
+    assert evidence[0]["vector_score"] == pytest.approx(1.0)
+    assert evidence[0]["keyword_score"] is None
+    trace = payload["query"]["query_trace_json"]["retrieval"]
+    assert trace["vector"]["hit_count"] == 1
+    assert trace["keyword"]["hit_count"] == 0
+    assert trace["component_scores"][0]["vector_score"] == pytest.approx(1.0)
+
+
+def test_search_endpoint_marks_hybrid_when_vector_and_keyword_hit_same_chunk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _use_memory_vector_backend(monkeypatch)
+    client = TestClient(app)
+    ids = _create_source_job_run(client)
+    query = "hybridneedle fusion"
+    ingest = _ingest_content(
+        client,
+        source_id=ids["source_id"],
+        run_id=ids["run_id"],
+        url_path="hybrid",
+        item_type="doc_page",
+        title="Hybridneedle fusion notes",
+        cleaned_text="Hybridneedle fusion appears in both lexical and semantic evidence.",
+        summary_text="Hybridneedle fusion summary.",
+        tags=["hybridneedle"],
+    )
+    _index_memory_chunk(
+        settings=settings,
+        chunk_id=_first_chunk_id(ingest),
+        embed_text=query,
+        source_id=ids["source_id"],
+        item_type="doc_page",
+        content_item_id=ingest["content_item_id"],
+        tags=["hybridneedle"],
+    )
+
+    response = client.post(
+        "/search",
+        json={
+            "query": query,
+            "mode": "search",
+            "filters": {"source_site_id": ids["source_id"], "item_type": "doc_page"},
+            "top_k": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    evidence = payload["evidence"]
+    assert len(evidence) == 1
+    assert evidence[0]["matched_by"] == "hybrid"
+    assert evidence[0]["score"] <= 1.0
+    assert evidence[0]["vector_score"] == pytest.approx(1.0)
+    assert evidence[0]["keyword_score"] is not None
+    assert evidence[0]["keyword_score"] > 0.0
+    trace = payload["query"]["query_trace_json"]["retrieval"]
+    assert trace["component_scores"][0]["matched_by"] == "hybrid"
+    assert trace["component_scores"][0]["keyword_score"] is not None
+
+
+def test_search_endpoint_drops_vector_hit_with_wrong_content_item_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _use_memory_vector_backend(monkeypatch)
+    client = TestClient(app)
+    ids = _create_source_job_run(client)
+    first = _ingest_content(
+        client,
+        source_id=ids["source_id"],
+        run_id=ids["run_id"],
+        url_path="wrong-vector-payload-a",
+        item_type="doc_page",
+        title="First ordinary bulletin",
+        cleaned_text="First ordinary bulletin without the semantic-only token.",
+        summary_text=None,
+        tags=[],
+    )
+    second = _ingest_content(
+        client,
+        source_id=ids["source_id"],
+        run_id=ids["run_id"],
+        url_path="wrong-vector-payload-b",
+        item_type="doc_page",
+        title="Second ordinary bulletin",
+        cleaned_text="Second ordinary bulletin without the semantic-only token.",
+        summary_text=None,
+        tags=[],
+    )
+    vector_query = "wrong-content-item-vector-signal"
+    _index_memory_chunk(
+        settings=settings,
+        chunk_id=_first_chunk_id(first),
+        embed_text=vector_query,
+        source_id=ids["source_id"],
+        item_type="doc_page",
+        content_item_id=second["content_item_id"],
+    )
+
+    response = client.post(
+        "/search",
+        json={
+            "query": vector_query,
+            "mode": "search",
+            "filters": {"source_site_id": ids["source_id"], "item_type": "doc_page"},
+            "top_k": 3,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["evidence"] == []
+    trace = payload["query"]["query_trace_json"]["retrieval"]
+    assert trace["vector"]["hit_count"] == 1
+    assert trace["hydrated_evidence_count"] == 0
+
+
+def test_search_endpoint_reapplies_filters_to_authoritative_postgres_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _use_memory_vector_backend(monkeypatch)
+    client = TestClient(app)
+    allowed_ids = _create_source_job_run(client)
+    other_ids = _create_source_job_run(client)
+    other_ingest = _ingest_content(
+        client,
+        source_id=other_ids["source_id"],
+        run_id=other_ids["run_id"],
+        url_path="filter-reapply-other-source",
+        item_type="doc_page",
+        title="Other source bulletin",
+        cleaned_text="Other source bulletin without the semantic-only token.",
+        summary_text=None,
+        tags=[],
+    )
+    vector_query = "spoofed-filter-vector-signal"
+    _index_memory_chunk(
+        settings=settings,
+        chunk_id=_first_chunk_id(other_ingest),
+        embed_text=vector_query,
+        source_id=allowed_ids["source_id"],
+        item_type="doc_page",
+        content_item_id=other_ingest["content_item_id"],
+    )
+
+    response = client.post(
+        "/search",
+        json={
+            "query": vector_query,
+            "mode": "search",
+            "filters": {"source_site_id": allowed_ids["source_id"], "item_type": "doc_page"},
+            "top_k": 3,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["evidence"] == []
+    trace = payload["query"]["query_trace_json"]["retrieval"]
+    assert trace["vector"]["hit_count"] == 1
+    assert trace["hydrated_evidence_count"] == 0
 
 
 def test_retrieval_trace_persists_vector_failure(monkeypatch: pytest.MonkeyPatch) -> None:

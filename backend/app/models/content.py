@@ -167,6 +167,9 @@ class ContentChunk(Base, UuidPrimaryKeyMixin, TimestampMixin):
         JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
     )
     qdrant_point_id: Mapped[str | None] = mapped_column(String(255))
+    vector_backend: Mapped[str | None] = mapped_column(String(40))
+    vector_point_id: Mapped[str | None] = mapped_column(String(255))
+    embedded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     embed_status: Mapped[str] = mapped_column(
         String(40), default="pending", server_default=text("'pending'"), nullable=False
     )

@@ -147,6 +147,28 @@ def test_worker_persists_raw_page_before_extraction_and_marks_success() -> None:
     )
     assert [agent_call["status"] for agent_call in agent_calls] == ["success"]
 
+    chunks = _fetch_db_rows(
+        """
+        select embed_status, vector_backend, vector_point_id, embedded_at, token_count
+        from content_chunks
+        order by chunk_index asc
+        """,
+        {},
+    )
+    assert len(chunks) >= 1
+    assert {chunk["embed_status"] for chunk in chunks} == {"success"}
+    assert {chunk["vector_backend"] for chunk in chunks} == {"memory"}
+    assert all(chunk["vector_point_id"] for chunk in chunks)
+    assert all(chunk["embedded_at"] is not None for chunk in chunks)
+    assert all(
+        isinstance(chunk["token_count"], int) and chunk["token_count"] >= 1
+        for chunk in chunks
+    )
+
+    detail_after_indexing = client.get(f"/runs/{run['id']}").json()
+    assert detail_after_indexing["chunked_count"] == len(chunks)
+    assert detail_after_indexing["embedded_count"] == len(chunks)
+
 
 def test_unsupported_parser_profile_marks_run_failed_without_raising() -> None:
     client = TestClient(app)

@@ -31,15 +31,24 @@ Run the smoke script in another terminal:
 bash scripts/smoke_demo.sh
 ```
 
-By default, the smoke script uses the Docker Compose PostgreSQL and Qdrant services. It
-may create `.env` from `.env.example` when `.env` is missing, runs Alembic migrations,
-seeds demo data, processes one targeted seeded run, and verifies `/runs`, `/search`, and
-`/answer` against the API. If `ALLOW_NONLOCAL_SMOKE_DB=1` is set, the script also
-exports `ALLOW_NONLOCAL_DEMO_SEED=1` so the Alembic and seed steps share one explicit DB
-override.
+By default, the smoke script uses the Docker Compose PostgreSQL and Qdrant services.
+This Docker/Qdrant mode is the full cross-process vector smoke path: the worker writes
+vectors to Qdrant and the API reads them back from the same vector store. The script has
+local side effects: it may create `.env` from `.env.example` when `.env` is missing,
+starts Docker services unless skipped, runs Alembic migrations, seeds demo data,
+processes one targeted seeded run, writes demo vectors to the configured local vector
+backend, and verifies `/runs`, `/search`, and `/answer` against the API.
+
+Safety guards refuse non-local API, database, and `QDRANT_URL` settings by default. If
+`ALLOW_NONLOCAL_SMOKE_DB=1` is set, the script also exports
+`ALLOW_NONLOCAL_DEMO_SEED=1` so the Alembic and seed steps share one explicit DB
+override. Set `ALLOW_NONLOCAL_SMOKE_VECTOR=1` only when you intentionally want the smoke
+script to use a non-local `QDRANT_URL`; guard error messages print sanitized URLs without
+credentials.
 
 If PostgreSQL is already available and you want to skip Docker Compose services, use the
-local-memory-vector path and start the API with the same vector setting:
+local-memory-vector path as a convenience mode and start the API with the same vector
+setting:
 
 ```bash
 # Terminal 1
@@ -48,6 +57,11 @@ QDRANT_URL=memory://smoke-demo uvicorn app.main:app --app-dir backend --reload
 # Terminal 2
 SKIP_DOCKER=1 QDRANT_URL=memory://smoke-demo bash scripts/smoke_demo.sh
 ```
+
+Because `memory://...` and `:memory:` vector stores are process-local, separate API and
+worker processes do not share in-memory vectors. In that convenience mode, `/search` and
+`/answer` may succeed through SQL keyword fallback rather than a cross-process vector
+round trip. Use the default Docker/Qdrant path when you need the true vector smoke.
 
 ### Manual demo path
 
@@ -101,10 +115,12 @@ database before rerunning migrations.
 ### Vector backend configuration
 
 `QDRANT_URL=memory://...` and `QDRANT_URL=:memory:` select an explicit in-memory
-vector backend for local development and tests. They are not automatic fallbacks
-for real Qdrant outages. If a real Qdrant URL is configured and Qdrant connection
-or HTTP calls fail, ingestion records failed/partial chunk indexing status instead
-of silently switching to memory storage.
+vector backend for local development and tests. They are process-local convenience modes,
+not a cross-process vector smoke and not automatic fallbacks for real Qdrant outages. If
+a real Qdrant URL is configured and Qdrant connection or HTTP calls fail, ingestion
+records failed/partial chunk indexing status instead of silently switching to memory
+storage. The smoke script accepts only memory vectors or local Qdrant hosts
+(`localhost`, `127.0.0.1`, or `::1`) unless `ALLOW_NONLOCAL_SMOKE_VECTOR=1` is set.
 
 If `python3 -m venv` reports that `ensurepip` is unavailable on Debian/Ubuntu,
 install `python3.12-venv` or `python3-venv` and retry. Alternatively, `make install`

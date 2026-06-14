@@ -121,6 +121,10 @@ def test_demo_smoke_contract_targets_seeded_run_and_asserts_semantics() -> None:
     assert "ALLOW_NONLOCAL_SMOKE_API" in smoke_text
     assert "Refusing to run smoke demo against a non-local API_BASE" in smoke_text
     assert "require_local_api_base" in smoke_text
+    assert "ALLOW_NONLOCAL_SMOKE_VECTOR" in smoke_text
+    assert "Refusing to run smoke demo against a non-local QDRANT_URL" in smoke_text
+    assert "require_local_smoke_vector" in smoke_text
+    assert 'wait_for_http "$QDRANT_URL" "Qdrant"' in smoke_text
     assert "parse_qsl" in smoke_text
     assert "query_host_values" in smoke_text
     assert "hostless non-sqlite database URL" in smoke_text

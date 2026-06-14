@@ -7,6 +7,8 @@ import { safeExternalHref } from '../utils/links';
 
 const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
 const CONTENT_UNAVAILABLE_COPY = 'Content detail unavailable while the API request is failing.';
+const LOADING_CONTENT_COPY = 'Loading content data...';
+const LOADING_CONTENT_DETAIL_COPY = 'Loading content detail...';
 
 type ContentDetailPageProps = {
   onOpenRun?: (runId: string) => void;
@@ -18,10 +20,13 @@ export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
   const [detail, setDetail] = useState<ContentDetail>();
   const [listError, setListError] = useState('');
   const [detailError, setDetailError] = useState('');
+  const [listLoading, setListLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     let ignore = false;
     setListError('');
+    setListLoading(true);
     listContents({ limit: 25 })
       .then((page) => {
         if (!ignore) {
@@ -34,6 +39,11 @@ export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
           setContents(undefined);
           setListError(formatErrorMessage('Unable to load content list', caught));
         }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setListLoading(false);
+        }
       });
     return () => {
       ignore = true;
@@ -44,9 +54,12 @@ export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
     setDetailError('');
     if (!selectedContentId) {
       setDetail(undefined);
+      setDetailLoading(false);
       return;
     }
     let ignore = false;
+    setDetail(undefined);
+    setDetailLoading(true);
     getContent(selectedContentId)
       .then((content) => {
         if (!ignore) {
@@ -58,19 +71,25 @@ export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
           setDetail(undefined);
           setDetailError(formatErrorMessage('Unable to load content detail', caught));
         }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setDetailLoading(false);
+        }
       });
     return () => {
       ignore = true;
     };
   }, [selectedContentId]);
 
+  const displayedDetail = detail?.id === selectedContentId ? detail : undefined;
   const indexedTextPreview = useMemo(() => {
-    if (!detail) {
+    if (!displayedDetail) {
       return '';
     }
-    return detail.chunks.map((chunk) => chunk.display_text).join('\n\n') || detail.raw_page.raw_text || '';
-  }, [detail]);
-  const rawPageUrl = detail?.raw_page.final_url || detail?.raw_page.requested_url || '';
+    return displayedDetail.chunks.map((chunk) => chunk.display_text).join('\n\n') || displayedDetail.raw_page.raw_text || '';
+  }, [displayedDetail]);
+  const rawPageUrl = displayedDetail?.raw_page.final_url || displayedDetail?.raw_page.requested_url || '';
   const rawPageHref = safeExternalHref(rawPageUrl);
 
   function handleContentChange(event: ChangeEvent<HTMLSelectElement | HTMLInputElement>) {
@@ -78,6 +97,9 @@ export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
   }
 
   const contentLoadFailed = Boolean(listError || detailError);
+  const detailSelectionPending = Boolean(selectedContentId && !displayedDetail && !detailError);
+  const loading = listLoading || detailLoading || detailSelectionPending;
+  const loadingCopy = detailLoading || detailSelectionPending ? LOADING_CONTENT_DETAIL_COPY : LOADING_CONTENT_COPY;
 
   return (
     <section>
@@ -117,47 +139,54 @@ export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
           {detailError}
         </p>
       ) : null}
+      {loading ? (
+        <p className="card status-line" role="status" aria-live="polite">
+          {loadingCopy}
+        </p>
+      ) : null}
 
-      {detail ? (
+      {displayedDetail ? (
         <>
           <section className="card">
             <div className="card-header">
               <div>
-                <h2>{detail.title || 'Untitled content item'}</h2>
-                <p className="muted compact">{detail.canonical_url}</p>
+                <h2>{displayedDetail.title || 'Untitled content item'}</h2>
+                <p className="muted compact">{displayedDetail.canonical_url}</p>
               </div>
-              <span className="badge">{detail.item_type}</span>
+              <span className="badge">{displayedDetail.item_type}</span>
             </div>
             <dl className="kv-grid">
               <div>
                 <dt>Source</dt>
-                <dd>{detail.source.name}</dd>
+                <dd>{displayedDetail.source.name}</dd>
               </div>
               <div>
                 <dt>Author</dt>
-                <dd>{detail.author_name || 'unknown'}</dd>
+                <dd>{displayedDetail.author_name || 'unknown'}</dd>
               </div>
               <div>
                 <dt>Fetched</dt>
-                <dd>{new Date(detail.fetched_at).toLocaleString()}</dd>
+                <dd>{new Date(displayedDetail.fetched_at).toLocaleString()}</dd>
               </div>
               <div>
                 <dt>Published</dt>
-                <dd>{detail.published_at ? new Date(detail.published_at).toLocaleString() : 'n/a'}</dd>
+                <dd>{displayedDetail.published_at ? new Date(displayedDetail.published_at).toLocaleString() : 'n/a'}</dd>
               </div>
               <div>
                 <dt>Extraction confidence</dt>
-                <dd>{detail.extraction_confidence ?? detail.raw_page.extraction_confidence ?? 'n/a'}</dd>
+                <dd>{displayedDetail.extraction_confidence ?? displayedDetail.raw_page.extraction_confidence ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt>Parse status</dt>
-                <dd>{detail.raw_page.parse_status}</dd>
+                <dd>{displayedDetail.raw_page.parse_status}</dd>
               </div>
             </dl>
             <div className="tag-row">
-              {detail.tags.length ? detail.tags.map((tag) => <span className="badge" key={tag}>{tag}</span>) : 'No tags'}
+              {displayedDetail.tags.length
+                ? displayedDetail.tags.map((tag) => <span className="badge" key={tag}>{tag}</span>)
+                : 'No tags'}
             </div>
-            <p>{detail.summary_text || 'No summary available.'}</p>
+            <p>{displayedDetail.summary_text || 'No summary available.'}</p>
             <div className="button-row link-row">
               {rawPageHref ? (
                 <a href={rawPageHref} target="_blank" rel="noreferrer">
@@ -169,7 +198,7 @@ export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
                 </span>
               )}
               {onOpenRun ? (
-                <button className="link-button" type="button" onClick={() => onOpenRun(detail.crawl_run.id)}>
+                <button className="link-button" type="button" onClick={() => onOpenRun(displayedDetail.crawl_run.id)}>
                   Run link
                 </button>
               ) : (
@@ -187,9 +216,9 @@ export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
 
           <section className="card">
             <h2>Chunks</h2>
-            {detail.chunks.length ? (
+            {displayedDetail.chunks.length ? (
               <ol className="chunk-list">
-                {detail.chunks.map((chunk) => (
+                {displayedDetail.chunks.map((chunk) => (
                   <li key={chunk.id}>
                     <div className="card-header compact-header">
                       <strong>Chunk {chunk.chunk_index}</strong>
@@ -224,7 +253,7 @@ export function ContentDetailPage({ onOpenRun }: ContentDetailPageProps = {}) {
             )}
           </section>
         </>
-      ) : contentLoadFailed ? (
+      ) : loading ? null : contentLoadFailed ? (
         <p className="card muted">{CONTENT_UNAVAILABLE_COPY}</p>
       ) : (
         <p className="card empty-state">{EMPTY_STATE_COPY}</p>

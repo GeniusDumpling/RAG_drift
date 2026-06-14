@@ -1,9 +1,14 @@
 import uuid
 
 import app.services.chunking as chunking_service
+import pytest
 from app.services.chunking import build_chunks
 from app.services.embeddings import DeterministicEmbeddingService
-from app.services.retrieval import _MEMORY_COLLECTIONS, QdrantIndexer
+from app.services.retrieval import (
+    _MEMORY_COLLECTIONS,
+    DEFAULT_VECTOR_SCORE_THRESHOLD,
+    QdrantIndexer,
+)
 
 
 def test_article_chunking_produces_stable_embed_text() -> None:
@@ -204,6 +209,55 @@ def test_memory_indexer_returns_deterministic_point_id() -> None:
 
     assert indexer.backend_name == "memory"
     assert point_id == str(chunk_id)
+
+
+def test_qdrant_indexer_passes_score_threshold_to_supported_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_search_kwargs: dict[str, object] = {}
+
+    class FakeQdrantClient:
+        def __init__(self, url: str) -> None:
+            self.url = url
+
+        def search(
+            self,
+            *,
+            collection_name: str,
+            query_vector: list[float],
+            query_filter: object,
+            limit: int,
+            with_payload: bool,
+            with_vectors: bool,
+            timeout: int,
+            score_threshold: float | None = None,
+        ) -> list[object]:
+            captured_search_kwargs.update(
+                {
+                    "collection_name": collection_name,
+                    "query_vector": query_vector,
+                    "query_filter": query_filter,
+                    "limit": limit,
+                    "with_payload": with_payload,
+                    "with_vectors": with_vectors,
+                    "timeout": timeout,
+                    "score_threshold": score_threshold,
+                }
+            )
+            return []
+
+    monkeypatch.setattr("app.services.retrieval.QdrantClient", FakeQdrantClient)
+    indexer = QdrantIndexer(
+        url="http://qdrant.example.test:6333",
+        collection="content_chunks_threshold_test",
+        embedding=DeterministicEmbeddingService(dimension=16),
+    )
+
+    hits = indexer.search_chunks(query_text="telemetry settings", filters={}, top_k=3)
+
+    assert hits == []
+    assert captured_search_kwargs["limit"] == 3
+    assert captured_search_kwargs["score_threshold"] == DEFAULT_VECTOR_SCORE_THRESHOLD
 
 
 def test_memory_indexer_delete_chunk_removes_existing_point_and_ignores_missing() -> None:

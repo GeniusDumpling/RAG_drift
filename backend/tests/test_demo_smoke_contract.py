@@ -67,7 +67,14 @@ def test_demo_smoke_contract_targets_seeded_run_and_asserts_semantics() -> None:
     smoke_text = smoke.read_text()
 
     assert "--run-id" in worker_once_text
-    assert "scripts/run_worker_once.py --run-id" in smoke_text
+    assert "--json" in worker_once_text
+    assert "--require-success" in worker_once_text
+    assert "json.dumps" in worker_once_text
+    assert "scripts/run_worker_once.py --json --require-success --run-id" in smoke_text
+    assert "assert_worker_result" in smoke_text
+    assert 'payload != {"claimed": 1, "succeeded": 1, "partial": 0, "failed": 0}' in smoke_text
+    assert "GET /runs/$RUN_ID" in smoke_text
+    assert "assert_run_status_success" in smoke_text
     assert "ALLOW_NONLOCAL_SMOKE_API" in smoke_text
     assert "Refusing to run smoke demo against a non-local API_BASE" in smoke_text
     assert "require_local_api_base" in smoke_text

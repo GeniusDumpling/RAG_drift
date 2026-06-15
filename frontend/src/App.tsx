@@ -10,6 +10,14 @@ type View = 'Dashboard' | 'Sources' | 'Runs' | 'Search' | 'Content';
 
 const NAV_ITEMS: View[] = ['Dashboard', 'Sources', 'Runs', 'Search', 'Content'];
 
+const NAV_LABELS: Record<View, string> = {
+  Dashboard: '总览 Dashboard',
+  Sources: '数据源 Sources',
+  Runs: '运行记录 Runs',
+  Search: '检索问答 Search',
+  Content: '内容详情 Content',
+};
+
 export function App() {
   const [activeView, setActiveView] = useState<View>('Dashboard');
   const [searchSeed, setSearchSeed] = useState('');
@@ -37,11 +45,11 @@ export function App() {
         <div className="brand-block">
           <span className="brand-dot" />
           <div>
-            <strong>Intel RAG</strong>
-            <p className="muted compact">observable OSINT prototype</p>
+            <strong>情报 RAG</strong>
+            <p className="muted compact">可观测 OSINT 原型</p>
           </div>
         </div>
-        <nav aria-label="Primary">
+        <nav aria-label="主导航 Primary">
           {NAV_ITEMS.map((item) => (
             <button
               aria-current={activeView === item ? 'page' : undefined}
@@ -50,7 +58,7 @@ export function App() {
               type="button"
               onClick={() => setActiveView(item)}
             >
-              {item}
+              {NAV_LABELS[item] ?? item}
             </button>
           ))}
         </nav>

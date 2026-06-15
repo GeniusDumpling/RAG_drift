@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CrawlJob, CrawlRun, Page, SourceSite } from '../src/api/types';
 import { SourcesPage } from '../src/pages/SourcesPage';
 
-const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
+const EMPTY_STATE_COPY = '暂无数据。请先启动后端并运行 demo seed 脚本。';
 
 const source: SourceSite = {
   id: 'source-1',
@@ -103,9 +103,9 @@ describe('SourcesPage', () => {
       screen.getByText((_content, element) => element?.textContent === 'Daily Crawl · docs · max 5'),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Trigger Daily Crawl' }));
+    fireEvent.click(screen.getByRole('button', { name: '触发 Trigger Daily Crawl' }));
 
-    expect(await screen.findByText('Queued run run-1 for Daily Crawl.')).toBeInTheDocument();
+    expect(await screen.findByText('已创建 Run run-1（Daily Crawl）。')).toBeInTheDocument();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     const triggerCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith('/jobs/job-1/trigger'));
     expect(triggerCall).toBeDefined();
@@ -136,7 +136,7 @@ describe('SourcesPage', () => {
 
     render(<SourcesPage />);
 
-    const triggerButton = await screen.findByRole('button', { name: 'Trigger Daily Crawl' });
+    const triggerButton = await screen.findByRole('button', { name: '触发 Trigger Daily Crawl' });
     fireEvent.click(triggerButton);
 
     expect(triggerButton).toBeDisabled();
@@ -147,7 +147,7 @@ describe('SourcesPage', () => {
       resolveTrigger(jsonResponse(run));
     });
 
-    expect(await screen.findByText('Queued run run-1 for Daily Crawl.')).toBeInTheDocument();
+    expect(await screen.findByText('已创建 Run run-1（Daily Crawl）。')).toBeInTheDocument();
     await waitFor(() => expect(triggerButton).not.toBeDisabled());
   });
 
@@ -156,8 +156,8 @@ describe('SourcesPage', () => {
 
     render(<SourcesPage />);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to load sources data: backend offline');
-    expect(screen.getByText('Source data unavailable while the API request is failing.')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法加载数据源数据: backend offline');
+    expect(screen.getByText('Source 数据暂不可用：API 请求失败。')).toBeInTheDocument();
     expect(screen.queryByText(EMPTY_STATE_COPY)).not.toBeInTheDocument();
   });
 });

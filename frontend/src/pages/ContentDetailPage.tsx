@@ -5,10 +5,10 @@ import type { ContentDetail, ContentListItem, Page } from '../api/types';
 import { formatErrorMessage } from '../utils/errors';
 import { safeExternalHref } from '../utils/links';
 
-const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
-const CONTENT_UNAVAILABLE_COPY = 'Content detail unavailable while the API request is failing.';
-const LOADING_CONTENT_COPY = 'Loading content data...';
-const LOADING_CONTENT_DETAIL_COPY = 'Loading content detail...';
+const EMPTY_STATE_COPY = '暂无数据。请先启动后端并运行 demo seed 脚本。';
+const CONTENT_UNAVAILABLE_COPY = 'Content 详情暂不可用：API 请求失败。';
+const LOADING_CONTENT_COPY = '正在加载 Content 数据...';
+const LOADING_CONTENT_DETAIL_COPY = '正在加载 Content 详情...';
 
 type ContentDetailPageProps = {
   selectedContentId?: string;
@@ -38,7 +38,7 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
       .catch((caught) => {
         if (!ignore) {
           setContents(undefined);
-          setListError(formatErrorMessage('Unable to load content list', caught));
+          setListError(formatErrorMessage('无法加载 Content 列表', caught));
         }
       })
       .finally(() => {
@@ -76,7 +76,7 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
       .catch((caught) => {
         if (!ignore) {
           setDetail(undefined);
-          setDetailError(formatErrorMessage('Unable to load content detail', caught));
+          setDetailError(formatErrorMessage('无法加载 Content 详情', caught));
         }
       })
       .finally(() => {
@@ -112,7 +112,7 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
       return [
         {
           id: activeContentId,
-          label: `${displayedDetail?.item_type ?? 'selected'} · ${displayedDetail?.title || displayedDetail?.canonical_url || activeContentId} · ${activeContentId}`,
+          label: `${displayedDetail?.item_type ?? '已选择'} · ${displayedDetail?.title || displayedDetail?.canonical_url || activeContentId} · ${activeContentId}`,
         },
         ...options,
       ];
@@ -132,9 +132,9 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
   return (
     <section>
       <div className="page-title">
-        <p className="eyebrow">Corpus</p>
-        <h1>Content Detail</h1>
-        <p className="muted">Hydrated content records with raw snapshot, chunks, run lineage, and extraction metadata.</p>
+        <p className="eyebrow">语料库 Corpus</p>
+        <h1>内容详情 Content Detail</h1>
+        <p className="muted">展示 Content record 的 Raw snapshot、Chunks、Run lineage 和抽取元数据。</p>
       </div>
 
       <div className="card controls-card">
@@ -152,7 +152,7 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
             id="content-selector"
             value={activeContentId}
             onChange={handleContentChange}
-            placeholder="Paste content item id"
+            placeholder="粘贴 content item id"
           />
         )}
       </div>
@@ -178,72 +178,72 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
           <section className="card">
             <div className="card-header">
               <div>
-                <h2>{displayedDetail.title || 'Untitled content item'}</h2>
+                <h2>{displayedDetail.title || '未命名 Content item'}</h2>
                 <p className="muted compact">{displayedDetail.canonical_url}</p>
               </div>
               <span className="badge">{displayedDetail.item_type}</span>
             </div>
             <dl className="kv-grid">
               <div>
-                <dt>Source</dt>
+                <dt>Source 来源</dt>
                 <dd>{displayedDetail.source.name}</dd>
               </div>
               <div>
-                <dt>Author</dt>
-                <dd>{displayedDetail.author_name || 'unknown'}</dd>
+                <dt>作者 Author</dt>
+                <dd>{displayedDetail.author_name || '未知'}</dd>
               </div>
               <div>
-                <dt>Fetched</dt>
+                <dt>抓取时间 Fetched</dt>
                 <dd>{new Date(displayedDetail.fetched_at).toLocaleString()}</dd>
               </div>
               <div>
-                <dt>Published</dt>
+                <dt>发布时间 Published</dt>
                 <dd>{displayedDetail.published_at ? new Date(displayedDetail.published_at).toLocaleString() : 'n/a'}</dd>
               </div>
               <div>
-                <dt>Extraction confidence</dt>
+                <dt>抽取置信度 Extraction confidence</dt>
                 <dd>{displayedDetail.extraction_confidence ?? displayedDetail.raw_page.extraction_confidence ?? 'n/a'}</dd>
               </div>
               <div>
-                <dt>Parse status</dt>
+                <dt>解析状态 Parse status</dt>
                 <dd>{displayedDetail.raw_page.parse_status}</dd>
               </div>
             </dl>
             <div className="tag-row">
               {displayedDetail.tags.length
                 ? displayedDetail.tags.map((tag) => <span className="badge" key={tag}>{tag}</span>)
-                : 'No tags'}
+                : '无标签'}
             </div>
-            <p>{displayedDetail.summary_text || 'No summary available.'}</p>
+            <p>{displayedDetail.summary_text || '暂无摘要。'}</p>
             <div className="button-row link-row">
               {rawPageHref ? (
                 <a href={rawPageHref} target="_blank" rel="noreferrer">
-                  Raw page link
+                  Raw page 链接
                 </a>
               ) : (
                 <span className="muted" aria-disabled="true">
-                  Raw page link unavailable: {rawPageUrl || 'n/a'}
+                  Raw page 链接不可用：{rawPageUrl || 'n/a'}
                 </span>
               )}
               {onOpenRun ? (
                 <button className="link-button" type="button" onClick={() => onOpenRun(displayedDetail.crawl_run.id)}>
-                  Run link
+                  Run 链接
                 </button>
               ) : (
                 <span className="muted" aria-disabled="true">
-                  Run link unavailable
+                  Run 链接不可用
                 </span>
               )}
             </div>
           </section>
 
           <section className="card">
-            <h2>Indexed Text Preview</h2>
+            <h2>索引文本预览 Indexed Text</h2>
             {indexedTextPreview ? <pre>{indexedTextPreview}</pre> : <p className="muted">{EMPTY_STATE_COPY}</p>}
           </section>
 
           <section className="card">
-            <h2>Chunks</h2>
+            <h2>Chunks 分块</h2>
             {displayedDetail.chunks.length ? (
               <ol className="chunk-list">
                 {displayedDetail.chunks.map((chunk) => (
@@ -255,7 +255,7 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
                     <p>{chunk.display_text}</p>
                     <dl className="kv-grid">
                       <div>
-                        <dt>Chars</dt>
+                        <dt>字符范围 Chars</dt>
                         <dd>
                           {chunk.char_start ?? 'n/a'}–{chunk.char_end ?? 'n/a'}
                         </dd>

@@ -20,7 +20,7 @@ export function EvidenceCard({ evidence, onOpenContent }: EvidenceCardProps) {
     <article className="card evidence-card">
       <div className="card-header">
         <div>
-          <h3>{evidence.title || 'Untitled evidence'}</h3>
+          <h3>{evidence.title || '未命名 Evidence'}</h3>
           <p className="muted compact">
             {evidence.source_site_name} · {evidence.item_type}
           </p>
@@ -28,10 +28,10 @@ export function EvidenceCard({ evidence, onOpenContent }: EvidenceCardProps) {
         <span className="badge">{evidence.matched_by}</span>
       </div>
       <p>{evidence.snippet}</p>
-      {evidence.thread_summary ? <p className="muted">Thread: {evidence.thread_summary}</p> : null}
+      {evidence.thread_summary ? <p className="muted">Thread 线程：{evidence.thread_summary}</p> : null}
       <dl className="kv-grid">
         <div>
-          <dt>Score</dt>
+          <dt>评分</dt>
           <dd>{formatScore(evidence.score)}</dd>
         </div>
         <div>
@@ -47,7 +47,7 @@ export function EvidenceCard({ evidence, onOpenContent }: EvidenceCardProps) {
           <dd>
             {onOpenContent ? (
               <button
-                aria-label={`Open content item ${evidence.content_item_id}`}
+                aria-label={`打开 Content item ${evidence.content_item_id}`}
                 className="link-button"
                 type="button"
                 onClick={() => onOpenContent(evidence.content_item_id)}

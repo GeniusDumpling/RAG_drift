@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ContentChunk, ContentDetail, ContentListItem, CrawlRun, Page, RawPage, SourceSite } from '../src/api/types';
 import { ContentDetailPage } from '../src/pages/ContentDetailPage';
 
-const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
+const EMPTY_STATE_COPY = '暂无数据。请先启动后端并运行 demo seed 脚本。';
 
 const source: SourceSite = {
   id: 'source-1',
@@ -152,17 +152,17 @@ describe('ContentDetailPage', () => {
     expect(screen.getByText('Ops Writer')).toBeInTheDocument();
     expect(screen.getByText('parsed')).toBeInTheDocument();
     expect(screen.getByText('A concise setup guide.')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Indexed Text Preview' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '索引文本预览 Indexed Text' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Cleaned Text' })).not.toBeInTheDocument();
     expect(screen.getByText('Install the package and disable telemetry.', { selector: 'pre' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Raw page link' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Raw page 链接' })).toHaveAttribute(
       'href',
       'https://example.test/docs/setup?canonical=1',
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Run link' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run 链接' }));
     expect(onOpenRun).toHaveBeenCalledTimes(1);
     expect(onOpenRun).toHaveBeenCalledWith('run-1');
-    expect(screen.queryByRole('link', { name: 'Run link' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Run 链接' })).not.toBeInTheDocument();
     expect(screen.getByText('Chunk 0')).toBeInTheDocument();
     expect(screen.getByText('Install the package and disable telemetry.', { selector: 'p' })).toBeInTheDocument();
     expect(screen.getByText('qdrant')).toBeInTheDocument();
@@ -180,8 +180,8 @@ describe('ContentDetailPage', () => {
     render(<ContentDetailPage />);
 
     expect(await screen.findByRole('heading', { name: 'Setup Guide' })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Raw page link' })).not.toBeInTheDocument();
-    expect(screen.getByText(`Raw page link unavailable: ${unsafeUrl}`)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Raw page 链接' })).not.toBeInTheDocument();
+    expect(screen.getByText(`Raw page 链接不可用：${unsafeUrl}`)).toBeInTheDocument();
   });
 
   it('preserves and displays an externally selected content id that is absent from the loaded content page', async () => {
@@ -228,8 +228,8 @@ describe('ContentDetailPage', () => {
 
     render(<ContentDetailPage />);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to load content list: backend offline');
-    expect(screen.getByText('Content detail unavailable while the API request is failing.')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法加载 Content 列表: backend offline');
+    expect(screen.getByText('Content 详情暂不可用：API 请求失败。')).toBeInTheDocument();
     expect(screen.queryByText(EMPTY_STATE_COPY)).not.toBeInTheDocument();
   });
 

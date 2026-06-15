@@ -4,11 +4,11 @@ import { getRun, getRunEvents, listRuns } from '../api/client';
 import type { CrawlRun, CrawlRunEvent, Page } from '../api/types';
 import { formatErrorMessage } from '../utils/errors';
 
-const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
-const RUN_UNAVAILABLE_COPY = 'Run data unavailable while the API request is failing.';
-const EVENTS_UNAVAILABLE_COPY = 'Run events unavailable while the API request is failing.';
-const LOADING_RUN_COPY = 'Loading run data...';
-const LOADING_EVENTS_COPY = 'Loading run events...';
+const EMPTY_STATE_COPY = '暂无数据。请先启动后端并运行 demo seed 脚本。';
+const RUN_UNAVAILABLE_COPY = 'Run 数据暂不可用：API 请求失败。';
+const EVENTS_UNAVAILABLE_COPY = 'Run 事件暂不可用：API 请求失败。';
+const LOADING_RUN_COPY = '正在加载 Run 数据...';
+const LOADING_EVENTS_COPY = '正在加载 Run 事件...';
 
 type CounterField =
   | 'discovered_count'
@@ -21,14 +21,14 @@ type CounterField =
   | 'error_count';
 
 const COUNTER_FIELDS: Array<[CounterField, string]> = [
-  ['discovered_count', 'Discovered'],
-  ['fetched_count', 'Fetched'],
-  ['parsed_count', 'Parsed'],
-  ['extracted_count', 'Extracted'],
-  ['deduped_count', 'Deduped'],
-  ['chunked_count', 'Chunked'],
-  ['embedded_count', 'Embedded'],
-  ['error_count', 'Errors'],
+  ['discovered_count', '已发现'],
+  ['fetched_count', '已抓取'],
+  ['parsed_count', '已解析'],
+  ['extracted_count', '已抽取'],
+  ['deduped_count', '去重'],
+  ['chunked_count', 'Chunks'],
+  ['embedded_count', '已向量化'],
+  ['error_count', '错误'],
 ];
 
 type RunDetailPageProps = {
@@ -61,7 +61,7 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
       .catch((caught) => {
         if (!ignore) {
           setRuns(undefined);
-          setRunListError(formatErrorMessage('Unable to load runs', caught));
+          setRunListError(formatErrorMessage('无法加载 Runs', caught));
         }
       })
       .finally(() => {
@@ -104,14 +104,14 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
         setRun(runResult.value);
       } else {
         setRun(undefined);
-        setRunDetailError(formatErrorMessage('Unable to load run detail', runResult.reason));
+        setRunDetailError(formatErrorMessage('无法加载 Run 详情', runResult.reason));
       }
 
       if (eventsResult.status === 'fulfilled') {
         setEvents(eventsResult.value);
       } else {
         setEvents(undefined);
-        setEventError(formatErrorMessage('Unable to load run events', eventsResult.reason));
+        setEventError(formatErrorMessage('无法加载 Run 事件', eventsResult.reason));
       }
       setRunDetailLoading(false);
       setEventLoading(false);
@@ -163,9 +163,9 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
   return (
     <section>
       <div className="page-title">
-        <p className="eyebrow">Execution trace</p>
-        <h1>Run Detail</h1>
-        <p className="muted">Inspect crawl counters, event chronology, related content, and agent trace payloads.</p>
+        <p className="eyebrow">执行追踪 Execution trace</p>
+        <h1>运行详情 Run Detail</h1>
+        <p className="muted">查看 crawl 计数、事件时间线、关联 Content 和 Agent trace。</p>
       </div>
 
       <div className="card controls-card">
@@ -183,7 +183,7 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
             id="run-selector"
             value={activeRunId}
             onChange={handleRunChange}
-            placeholder="Paste crawl run id"
+            placeholder="粘贴 crawl run id"
           />
         )}
       </div>
@@ -222,11 +222,11 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
           </div>
           <dl className="kv-grid">
             <div>
-              <dt>Trigger</dt>
+              <dt>触发方式 Trigger</dt>
               <dd>{displayedRun.trigger_type}</dd>
             </div>
             <div>
-              <dt>Mode</dt>
+              <dt>执行模式 Mode</dt>
               <dd>{displayedRun.execution_mode}</dd>
             </div>
             <div>
@@ -234,16 +234,16 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
               <dd>{displayedRun.seed_url || 'n/a'}</dd>
             </div>
             <div>
-              <dt>Started</dt>
+              <dt>开始时间 Started</dt>
               <dd>{displayedRun.started_at ? new Date(displayedRun.started_at).toLocaleString() : 'n/a'}</dd>
             </div>
             <div>
-              <dt>Finished</dt>
+              <dt>结束时间 Finished</dt>
               <dd>{displayedRun.finished_at ? new Date(displayedRun.finished_at).toLocaleString() : 'n/a'}</dd>
             </div>
             <div>
-              <dt>Error</dt>
-              <dd>{displayedRun.error_message || 'none'}</dd>
+              <dt>错误 Error</dt>
+              <dd>{displayedRun.error_message || '无'}</dd>
             </div>
           </dl>
         </section>
@@ -254,7 +254,7 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
       )}
 
       <section className="card">
-        <h2>Stage Counters</h2>
+        <h2>阶段计数 Stage Counters</h2>
         {displayedRun ? (
           <div className="grid counter-grid">
             {COUNTER_FIELDS.map(([field, label]) => (
@@ -270,7 +270,7 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
       </section>
 
       <section className="card">
-        <h2>Event Timeline</h2>
+        <h2>事件时间线 Event Timeline</h2>
         {displayedEvents?.items.length ? (
           <ol className="timeline">
             {displayedEvents.items.map((event) => (
@@ -285,7 +285,7 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
                   </div>
                   <p>{event.message}</p>
                   <p className="muted compact">
-                    {new Date(event.created_at).toLocaleString()} · {event.related_url || 'no related url'}
+                    {new Date(event.created_at).toLocaleString()} · {event.related_url || '无关联 URL'}
                   </p>
                   {Object.keys(event.counters_json).length ? (
                     <pre>{JSON.stringify(event.counters_json, null, 2)}</pre>
@@ -310,7 +310,7 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
       </section>
 
       <section className="card">
-        <h2>Agent Trace Summary</h2>
+        <h2>Agent Trace 摘要</h2>
         {agentTraceEvents.length ? (
           agentTraceEvents.map((event) => (
             <pre key={event.id}>{JSON.stringify(event.agent_trace_json, null, 2)}</pre>

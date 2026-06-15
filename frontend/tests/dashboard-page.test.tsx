@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DashboardPage } from '../src/pages/DashboardPage';
 
-const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
+const EMPTY_STATE_COPY = '暂无数据。请先启动后端并运行 demo seed 脚本。';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -17,7 +17,7 @@ describe('DashboardPage', () => {
 
     render(<DashboardPage />);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to load dashboard data: backend offline');
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法加载总览数据: backend offline');
     expect(screen.queryByText(EMPTY_STATE_COPY)).not.toBeInTheDocument();
   });
 });

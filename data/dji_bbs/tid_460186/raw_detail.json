@@ -1,0 +1,240 @@
+{
+  "data": {
+    "item": {
+      "tid": 460186,
+      "fid": 91,
+      "posttableid": 5855913,
+      "typeid": 674,
+      "type_name": "特殊主题",
+      "sortid": 0,
+      "readperm": 0,
+      "author": {
+        "id": 3750053,
+        "uuid": "efdc7cb3958fda",
+        "name": "白菜6",
+        "group": {
+          "title": "第一阶段副驾驶",
+          "icon": "https://bbs.djicdn.com/data/attachment/common/c5/common_13_usergroup_icon.png"
+        },
+        "rank": null,
+        "avatar": "https://bbs.djicdn.com/data/attachment/forum/202605/08/5458O7i3yOZVHUQO7rvr.png@!200x200",
+        "credits": 198,
+        "signature": "",
+        "is_friend": false,
+        "total_distance": 0,
+        "threads": [
+          {
+            "tid": 460186,
+            "subject": "5.1 假期飞大疆无人机攻略！小白看完直接冲！",
+            "dateline": 1745923718,
+            "author_id": 3750053
+          },
+          {
+            "tid": 448139,
+            "subject": "史上最全大疆无人机寻机指南：从0基础到高阶技巧！",
+            "dateline": 1740740702,
+            "author_id": 3750053
+          },
+          {
+            "tid": 442996,
+            "subject": "无人机拍雪景全攻略，解锁绝美大片",
+            "dateline": 1738573642,
+            "author_id": 3750053
+          },
+          {
+            "tid": 438174,
+            "subject": "无人机姿态球怎么看？",
+            "dateline": 1736585227,
+            "author_id": 3750053
+          },
+          {
+            "tid": 430378,
+            "subject": "新品DJI Mic Mini值得买吗？",
+            "dateline": 1732967770,
+            "author_id": 3750053
+          }
+        ],
+        "devices": [],
+        "hide_distance": false,
+        "home_page_accessible_by_self": null,
+        "home_page_accessible_by_others": null,
+        "login_credit_added": null,
+        "visit_credit_added": null
+      },
+      "authorid": 3750053,
+      "subject": "5.1 假期飞大疆无人机攻略！小白看完直接冲！",
+      "summary": "宝子们！五一小长假终于要来了！是不是和我一样，新买的大疆无人机还在吃灰，正眼巴巴等着找个好地方试飞？别慌！作为刚入门的 “萌新”，我整理了几个超适合小白的飞行地点，还有超实用的注意事项，看完这篇就能放心起飞啦！​\n一、小白必看飞行注意事项​\n1. 提前查禁飞区​\n一定要在 ** 大疆官方 APP “DJI Fly”** 里查看飞行区域！输入目的地，就能看到禁飞区、限高区。像机场、军事禁区、市区高楼...",
+      "message": "[{\"type\":1,\"imgsrc\":\"\",\"key\":\"nuczli9o\",\"url\":\"\",\"desc\":\"宝子们！五一小长假终于要来了🎉！是不是和我一样，新买的大疆无人机还在吃灰，正眼巴巴等着找个好地方试飞？别慌！作为刚入门的 “萌新”，我整理了几个超适合小白的飞行地点，还有超实用的注意事项，看完这篇就能放心起飞啦！​\\n一、小白必看飞行注意事项​\\n1. 提前查禁飞区​\\n一定要在 ** 大疆官方 APP “DJI Fly”** 里查看飞行区域！输入目的地，就能看到禁飞区、限高区。像机场、军事禁区、市区高楼密集区都是绝对不能飞的，违规飞行可能会被罚款，甚至负法律责任！​\\n2. 实名登记很重要​\\n现在无人机都要实名登记！登录 “无人机实名登记系统”，按提示填写信息，给爱机贴上专属 “身份证”。要是没登记就起飞，被查到会很麻烦的！​\\n3. 起飞前检查设备​\\n出发前一定要检查电池电量、螺旋桨是否松动，遥控器和无人机连接是否正常。建议带两块电池，避免拍一半没电的尴尬～​\\n4. 飞行安全第一​\\n飞行时保持无人机在视线范围内，高度别超过 120 米（民航客机最低飞行高度的下限）。遇到大风、下雨、雷电天气，赶紧降落！安全才是拍大片的前提！​\\n二、我的五一飞行计划​\\n我打算去郊区的一个水库边试飞！那里人少景美，准备拍一拍波光粼粼的水面和远处的山峦～有没有小伙伴想偶遇的？欢迎在评论区分享你的飞行计划，或者安利超棒的飞行地点！要是试飞遇到问题，也可以随时问我，大家一起交流经验呀～​\\n最后祝大家五一假期都能拍出超美的无人机大片！记得点赞收藏，起飞不迷路～✈️\"}]",
+      "dateline": 1745923718,
+      "lastpost": 1780927178,
+      "lastposter": "岩羊很少在峨眉山智能避障",
+      "views": 4029,
+      "replies": 46,
+      "displayorder": 0,
+      "highlight": 0,
+      "digest": 0,
+      "rate": 0,
+      "special": 6,
+      "attachment": 0,
+      "moderated": 1,
+      "closed": 0,
+      "stickreply": 0,
+      "recommends": 0,
+      "heats": 0,
+      "status": 0,
+      "isgroup": 0,
+      "favtimes": 6,
+      "sharetimes": 1,
+      "stamp": 0,
+      "icon": 0,
+      "pushedaid": 0,
+      "cover": 0,
+      "covers": null,
+      "replycredit": 0,
+      "comments": 0,
+      "praise": 16,
+      "floor": 0,
+      "praised": false,
+      "favorite": false,
+      "platform": 0,
+      "devices": [
+        {
+          "key": "DJII_Mini_2_SE",
+          "name": "DJI Mini 2 SE",
+          "icon": "DJI Mini 2 SE 正面俯视.png",
+          "home_page": "https://store.dji.com/cn/product/dji-mini-2-se?from=store-nav&amp;vid=132621"
+        },
+        {
+          "key": "DJI_Mini_4_Pro",
+          "name": "DJI Mini 4 Pro",
+          "icon": "DJI Mini 4 Pro主机-正面微俯.png",
+          "home_page": "https://store.dji.com/cn/product/dji-mini-4-pro?from=store_homepage&amp;vid=148581"
+        },
+        {
+          "key": "dji_neo",
+          "name": "DJI Neo",
+          "icon": "neo.png",
+          "home_page": "https://store.dji.com/cn/product/dji-neo?from=bbs&amp;vid=169761"
+        },
+        {
+          "key": "DJI_Air_3S_1",
+          "name": "DJI Air 3S 畅飞套装",
+          "icon": "容器 5@1x.png",
+          "home_page": "https://store.dji.com/cn/product/dji-air-3s-fly-more-combo-rc-2?from=bbs&amp;vid=173571"
+        },
+        {
+          "key": "DJI_Flip",
+          "name": "DJI Flip 畅飞套装",
+          "icon": "flip.png",
+          "home_page": "https://store.dji.com/cn/product/dji-flip-fly-more-combo-rc-2?from=bbs_pro&amp;vid=181191"
+        }
+      ],
+      "forum_types": [
+        {
+          "fid": 83,
+          "forum_name": "教程",
+          "type_id": 486,
+          "name": "无人机教程",
+          "level": 1
+        },
+        {
+          "fid": 84,
+          "forum_name": "航拍无人机",
+          "type_id": 497,
+          "name": "DJI Mini",
+          "level": 1
+        },
+        {
+          "fid": 84,
+          "forum_name": "航拍无人机",
+          "type_id": 506,
+          "name": "DJI Air",
+          "level": 1
+        },
+        {
+          "fid": 84,
+          "forum_name": "航拍无人机",
+          "type_id": 685,
+          "name": "DJI Neo",
+          "level": 1
+        },
+        {
+          "fid": 84,
+          "forum_name": "航拍无人机",
+          "type_id": 688,
+          "name": "DJI Flip",
+          "level": 1
+        }
+      ],
+      "forum_channel_tags": [
+        {
+          "id": 190,
+          "slug": "djineo",
+          "name": "Neo 系列",
+          "display_type": "GROUP",
+          "channel_path": [
+            "djineo",
+            "equipment-circle-channel"
+          ]
+        },
+        {
+          "id": 66,
+          "slug": "mini",
+          "name": "Mini 系列",
+          "display_type": "GROUP",
+          "channel_path": [
+            "mini",
+            "equipment-circle-channel"
+          ]
+        },
+        {
+          "id": 230,
+          "slug": "flip",
+          "name": "Flip 系列",
+          "display_type": "GROUP",
+          "channel_path": [
+            "flip",
+            "equipment-circle-channel"
+          ]
+        },
+        {
+          "id": 90,
+          "slug": "air",
+          "name": "Air 系列",
+          "display_type": "GROUP",
+          "channel_path": [
+            "air",
+            "equipment-circle-channel"
+          ]
+        },
+        {
+          "id": 227,
+          "slug": "air-3s",
+          "name": "Air 3S",
+          "display_type": "THEME",
+          "channel_path": [
+            "air-3s"
+          ]
+        },
+        {
+          "id": 72,
+          "slug": "mini-4-pro",
+          "name": "Mini 4 Pro",
+          "display_type": "THEME",
+          "channel_path": [
+            "mini-4-pro"
+          ]
+        },
+        {
+          "id": 289,
+          "slug": "neo-1",
+          "name": "NEO",
+          "display_type": "THEME",
+          "channel_path": [
+            "neo-1"
+          ]
+        }
+      ]
+    }
+  }
+}

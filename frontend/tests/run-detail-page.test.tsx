@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RunDetailPage } from '../src/pages/RunDetailPage';
 import type { CrawlRun, CrawlRunEvent, Page } from '../src/api/types';
 
-const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
+const EMPTY_STATE_COPY = '暂无数据。请先启动后端并运行 demo seed 脚本。';
 
 const run: CrawlRun = {
   id: 'run-1',
@@ -67,9 +67,9 @@ describe('RunDetailPage', () => {
 
     render(<RunDetailPage />);
 
-    expect(screen.getByText('Run Detail')).toBeInTheDocument();
-    expect(screen.getByText('Stage Counters')).toBeInTheDocument();
-    expect(screen.getByText('Event Timeline')).toBeInTheDocument();
+    expect(screen.getByText('运行详情 Run Detail')).toBeInTheDocument();
+    expect(screen.getByText('阶段计数 Stage Counters')).toBeInTheDocument();
+    expect(screen.getByText('事件时间线 Event Timeline')).toBeInTheDocument();
   });
 
   it('renders fetched run counters and events from the default loaded run', async () => {
@@ -93,9 +93,9 @@ describe('RunDetailPage', () => {
     expect(await screen.findByRole('heading', { name: 'run-1' })).toBeInTheDocument();
     expect(screen.getByText('Fetched official setup guide.')).toBeInTheDocument();
     expect(screen.getByText('fetch / page_fetched')).toBeInTheDocument();
-    expect(screen.getByText('Discovered')).toBeInTheDocument();
+    expect(screen.getByText('已发现')).toBeInTheDocument();
     expect(screen.getByText('4')).toBeInTheDocument();
-    expect(screen.getByText('Fetched')).toBeInTheDocument();
+    expect(screen.getByText('已抓取')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
     expect(screen.queryByText(EMPTY_STATE_COPY)).not.toBeInTheDocument();
   });
@@ -105,7 +105,7 @@ describe('RunDetailPage', () => {
 
     render(<RunDetailPage />);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to load runs: backend offline');
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法加载 Runs: backend offline');
     expect(screen.queryByText(EMPTY_STATE_COPY)).not.toBeInTheDocument();
   });
 });

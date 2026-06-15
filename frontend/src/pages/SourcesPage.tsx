@@ -4,8 +4,8 @@ import { listJobs, listSources, triggerJob } from '../api/client';
 import type { CrawlJob, Page, SourceSite } from '../api/types';
 import { formatErrorMessage } from '../utils/errors';
 
-const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
-const LOADING_STATE_COPY = 'Loading sources data...';
+const EMPTY_STATE_COPY = '暂无数据。请先启动后端并运行 demo seed 脚本。';
+const LOADING_STATE_COPY = '正在加载数据源...';
 
 export function SourcesPage() {
   const [sources, setSources] = useState<Page<SourceSite>>();
@@ -29,7 +29,7 @@ export function SourcesPage() {
       );
       setSources(sourceResult.status === 'fulfilled' ? sourceResult.value : undefined);
       setJobs(jobResult.status === 'fulfilled' ? jobResult.value : undefined);
-      setLoadError(firstFailure ? formatErrorMessage('Unable to load sources data', firstFailure.reason) : '');
+      setLoadError(firstFailure ? formatErrorMessage('无法加载数据源数据', firstFailure.reason) : '');
       setLoading(false);
     });
     return () => {
@@ -61,12 +61,12 @@ export function SourcesPage() {
     }
 
     setJobPending(job.id, true);
-    setMessage(`Triggering ${job.name}...`);
+    setMessage(`正在触发 ${job.name}...`);
     try {
       const run = await triggerJob(job.id);
-      setMessage(`Queued run ${run.id} for ${job.name}.`);
+      setMessage(`已创建 Run ${run.id}（${job.name}）。`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to trigger job.');
+      setMessage(error instanceof Error ? error.message : '无法触发 Job。');
     } finally {
       setJobPending(job.id, false);
     }
@@ -75,9 +75,9 @@ export function SourcesPage() {
   return (
     <section>
       <div className="page-title">
-        <p className="eyebrow">Control plane</p>
-        <h1>Sources</h1>
-        <p className="muted">Registered source sites, crawl jobs, and manual trigger controls.</p>
+        <p className="eyebrow">控制面 Control plane</p>
+        <h1>数据源 Sources</h1>
+        <p className="muted">管理 Source site、Crawl job 和手动触发。</p>
       </div>
 
       {message ? <p className="card status-line">{message}</p> : null}
@@ -103,28 +103,28 @@ export function SourcesPage() {
                     <h2>{source.name}</h2>
                     <p className="muted compact">{source.base_url}</p>
                   </div>
-                  <span className="badge">{source.active ? 'active' : 'inactive'}</span>
+                  <span className="badge">{source.active ? 'active 活跃' : 'inactive 停用'}</span>
                 </div>
                 <dl className="kv-grid">
                   <div>
-                    <dt>Type</dt>
+                    <dt>类型 Type</dt>
                     <dd>{source.site_type}</dd>
                   </div>
                   <div>
-                    <dt>Fetch mode</dt>
+                    <dt>抓取模式 Fetch mode</dt>
                     <dd>{source.fetch_mode}</dd>
                   </div>
                   <div>
-                    <dt>Language</dt>
+                    <dt>语言 Language</dt>
                     <dd>{source.default_language || 'n/a'}</dd>
                   </div>
                   <div>
-                    <dt>Domains</dt>
+                    <dt>域名 Domains</dt>
                     <dd>{source.allowed_domains.join(', ') || 'n/a'}</dd>
                   </div>
                 </dl>
 
-                <h3>Jobs</h3>
+                <h3>Jobs 任务</h3>
                 {sourceJobs.length ? (
                   <ul className="dense-list">
                     {sourceJobs.map((job) => {
@@ -134,15 +134,15 @@ export function SourcesPage() {
                           <span>
                             <strong>{job.name}</strong> · {job.parser_profile} · max {job.max_pages}
                           </span>
-                          <span className="badge">{job.enabled ? 'enabled' : 'disabled'}</span>
+                          <span className="badge">{job.enabled ? 'enabled 已启用' : 'disabled 已禁用'}</span>
                           <button
                             type="button"
                             onClick={() => void handleTrigger(job)}
                             disabled={!job.enabled || triggerPending}
                             aria-busy={triggerPending}
-                            aria-label={`Trigger ${job.name}`}
+                            aria-label={`触发 Trigger ${job.name}`}
                           >
-                            Trigger
+                            触发 Trigger
                           </button>
                         </li>
                       );
@@ -150,7 +150,7 @@ export function SourcesPage() {
                   </ul>
                 ) : (
                   <p className="muted">
-                    {jobs ? 'No crawl jobs configured for this source.' : 'Job data unavailable while the API request is failing.'}
+                    {jobs ? '该 Source 暂无 Crawl job。' : 'Job 数据暂不可用：API 请求失败。'}
                   </p>
                 )}
               </article>
@@ -158,7 +158,7 @@ export function SourcesPage() {
           })}
         </div>
       ) : loadError ? (
-        <p className="card muted">Source data unavailable while the API request is failing.</p>
+        <p className="card muted">Source 数据暂不可用：API 请求失败。</p>
       ) : loading ? null : (
         <p className="card empty-state">{EMPTY_STATE_COPY}</p>
       )}

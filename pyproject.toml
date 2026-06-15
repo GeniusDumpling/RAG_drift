@@ -36,7 +36,7 @@ include = ["app*", "worker*"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["backend/tests", "worker/tests"]
-pythonpath = ["backend", "worker"]
+pythonpath = [".", "backend", "worker"]
 
 [tool.ruff]
 line-length = 100

@@ -5,9 +5,9 @@ import type { EvidenceObject, SearchQueryRead, SearchRequest } from '../api/type
 import { EvidenceCard } from '../components/EvidenceCard';
 import { formatErrorMessage } from '../utils/errors';
 
-const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
-const SEARCH_LOADING_COPY = 'Searching...';
-const ANSWER_LOADING_COPY = 'Generating answer...';
+const EMPTY_STATE_COPY = '暂无数据。请先启动后端并运行 demo seed 脚本。';
+const SEARCH_LOADING_COPY = '正在检索...';
+const ANSWER_LOADING_COPY = '正在生成答案...';
 
 type SearchPageProps = {
   initialQuery?: string;
@@ -40,13 +40,13 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
     const trimmed = query.trim();
     if (!trimmed) {
       clearResults();
-      setError('Query is required.');
+      setError('请输入查询。');
       return null;
     }
     const parsedTopK = Number(topKInput);
     if (!Number.isInteger(parsedTopK) || parsedTopK < 1 || parsedTopK > 50) {
       clearResults();
-      setError('Top K must be between 1 and 50.');
+      setError('Top K 必须在 1 到 50 之间。');
       return null;
     }
     return {
@@ -75,7 +75,7 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
     } catch (caught) {
       setEvidence([]);
       setQueryRecord(undefined);
-      setError(formatErrorMessage('Search failed', caught));
+      setError(formatErrorMessage('检索失败', caught));
     } finally {
       setLoading(false);
       setLoadingMessage('');
@@ -100,7 +100,7 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
       setEvidence([]);
       setQueryRecord(undefined);
       setAnswerText('');
-      setError(formatErrorMessage('Answer failed', caught));
+      setError(formatErrorMessage('生成答案失败', caught));
     } finally {
       setLoading(false);
       setLoadingMessage('');
@@ -123,19 +123,19 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
   return (
     <section>
       <div className="page-title">
-        <p className="eyebrow">Retrieval</p>
-        <h1>Search</h1>
-        <p className="muted">Run keyword/vector retrieval, inspect optimized query records, and cite evidence.</p>
+        <p className="eyebrow">检索 Retrieval</p>
+        <h1>检索问答 Search</h1>
+        <p className="muted">执行 keyword/vector 检索，检查 Query Trace，并引用 Evidence。</p>
       </div>
 
       <section className="card">
         <div className="form-grid">
-          <label htmlFor="query-input">Query</label>
+          <label htmlFor="query-input">Query 查询</label>
           <input
             id="query-input"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="disable telemetry in device settings"
+            placeholder="例如：telemetry settings"
           />
 
           <label htmlFor="source-filter">Source Site ID</label>
@@ -143,12 +143,12 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
             id="source-filter"
             value={sourceSiteId}
             onChange={(event) => setSourceSiteId(event.target.value)}
-            placeholder="optional UUID"
+            placeholder="可选 UUID"
           />
 
           <label htmlFor="type-filter">Item Type</label>
           <select id="type-filter" value={itemType} onChange={(event) => setItemType(event.target.value)}>
-            <option value="">Any</option>
+            <option value="">任意 Any</option>
             <option value="doc_page">doc_page</option>
             <option value="thread">thread</option>
             <option value="post">post</option>
@@ -168,10 +168,10 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
         </div>
         <div className="button-row">
           <button type="button" onClick={() => void runSearch()} disabled={loading}>
-            Search
+            检索 Search
           </button>
           <button type="button" onClick={() => void runAnswer()} disabled={loading}>
-            Answer
+            生成 Answer
           </button>
         </div>
         {error ? (
@@ -189,22 +189,22 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
 
       {queryRecord ? (
         <section className="card">
-          <h2>Query Trace</h2>
+          <h2>查询追踪 Query Trace</h2>
           <dl className="kv-grid">
             <div>
-              <dt>Raw query</dt>
+              <dt>原始 Query</dt>
               <dd>{queryRecord.raw_query}</dd>
             </div>
             <div>
-              <dt>Optimized</dt>
+              <dt>优化后 Query</dt>
               <dd>{queryRecord.optimized_query_text || 'n/a'}</dd>
             </div>
             <div>
-              <dt>Used agent</dt>
-              <dd>{queryRecord.used_agent ? 'yes' : 'no'}</dd>
+              <dt>使用 Agent</dt>
+              <dd>{queryRecord.used_agent ? '是' : '否'}</dd>
             </div>
             <div>
-              <dt>Results</dt>
+              <dt>结果数 Results</dt>
               <dd>{queryRecord.result_count ?? evidence.length}</dd>
             </div>
           </dl>
@@ -214,13 +214,13 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
 
       {answerText ? (
         <section className="card answer-card">
-          <h2>Answer Draft</h2>
+          <h2>答案草稿 Answer</h2>
           <p>{answerText}</p>
         </section>
       ) : null}
 
       <section>
-        <h2>Evidence</h2>
+        <h2>证据 Evidence</h2>
         {evidence.length ? (
           evidence.map((item) => <EvidenceCard evidence={item} key={item.chunk_id} onOpenContent={onOpenContent} />)
         ) : loading || error ? null : (

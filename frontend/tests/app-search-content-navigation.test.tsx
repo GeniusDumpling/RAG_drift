@@ -217,18 +217,18 @@ describe('App search evidence content navigation', () => {
 
     render(<App />);
 
-    const primaryNav = screen.getByRole('navigation', { name: 'Primary' });
-    fireEvent.click(within(primaryNav).getByRole('button', { name: 'Search' }));
-    fireEvent.change(screen.getByLabelText('Query'), { target: { value: 'telemetry disable' } });
-    fireEvent.click(within(screen.getByRole('main')).getByRole('button', { name: 'Search' }));
+    const primaryNav = screen.getByRole('navigation', { name: '主导航 Primary' });
+    fireEvent.click(within(primaryNav).getByRole('button', { name: '检索问答 Search' }));
+    fireEvent.change(screen.getByLabelText('Query 查询'), { target: { value: 'telemetry disable' } });
+    fireEvent.click(within(screen.getByRole('main')).getByRole('button', { name: '检索 Search' }));
 
     expect(await screen.findByText('Search Evidence Result')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: `Open content item ${selectedContent.id}` }));
+    fireEvent.click(screen.getByRole('button', { name: `打开 Content item ${selectedContent.id}` }));
 
     expect(await screen.findByRole('heading', { name: selectedContent.title })).toBeInTheDocument();
     expect(screen.getByText('Selected evidence chunk text.', { selector: 'pre' })).toBeInTheDocument();
-    expect(within(primaryNav).getByRole('button', { name: 'Content' })).toHaveAttribute('aria-current', 'page');
+    expect(within(primaryNav).getByRole('button', { name: '内容详情 Content' })).toHaveAttribute('aria-current', 'page');
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([request]) => String(request).endsWith(`/contents/${selectedContent.id}`))).toBe(
         true,

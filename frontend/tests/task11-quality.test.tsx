@@ -28,7 +28,7 @@ const apiMocks = vi.hoisted(() => ({
 
 vi.mock('../src/api/client', () => apiMocks);
 
-const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
+const EMPTY_STATE_COPY = '暂无数据。请先启动后端并运行 demo seed 脚本。';
 const NOW = '2025-01-01T00:00:00.000Z';
 
 type Deferred<T> = {
@@ -223,7 +223,7 @@ describe('Task 11 frontend quality fixes', () => {
 
     render(<SourcesPage />);
 
-    expect(screen.getByRole('status').textContent).toContain('Loading sources data');
+    expect(screen.getByRole('status').textContent).toContain('正在加载数据源');
     expect(screen.queryAllByText(EMPTY_STATE_COPY)).toHaveLength(0);
 
     await act(async () => {
@@ -242,7 +242,7 @@ describe('Task 11 frontend quality fixes', () => {
 
     render(<RunDetailPage />);
 
-    expect(screen.getByRole('status').textContent).toContain('Loading run data');
+    expect(screen.getByRole('status').textContent).toContain('正在加载 Run 数据');
     expect(screen.queryAllByText(EMPTY_STATE_COPY)).toHaveLength(0);
 
     await act(async () => {
@@ -260,7 +260,7 @@ describe('Task 11 frontend quality fixes', () => {
 
     render(<ContentDetailPage />);
 
-    expect(screen.getByRole('status').textContent).toContain('Loading content data');
+    expect(screen.getByRole('status').textContent).toContain('正在加载 Content 数据');
     expect(screen.queryAllByText(EMPTY_STATE_COPY)).toHaveLength(0);
 
     await act(async () => {
@@ -284,7 +284,7 @@ describe('Task 11 frontend quality fixes', () => {
 
     render(<DashboardPage />);
 
-    expect(screen.getByRole('status').textContent).toContain('Loading dashboard data');
+    expect(screen.getByRole('status').textContent).toContain('正在加载总览数据');
     expect(screen.queryAllByText(EMPTY_STATE_COPY)).toHaveLength(0);
 
     await act(async () => {

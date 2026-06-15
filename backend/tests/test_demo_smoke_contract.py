@@ -91,11 +91,12 @@ def test_readme_demo_paths_are_split_and_target_seeded_run() -> None:
 
     readme_text = readme.read_text()
 
-    assert "Smoke-script path (API already running)" in readme_text
+    assert "冒烟脚本路径（API 已运行）" in readme_text
     assert "One-command smoke path" not in readme_text
-    assert "Manual demo path" in readme_text
+    assert "一键冒烟路径" not in readme_text
+    assert "手动演示路径" in readme_text
     assert "SKIP_DOCKER=1" in readme_text
-    assert "may create `.env` from `.env.example`" in readme_text
+    assert "当缺少 `.env` 时可能从 `.env.example` 创建 `.env`" in readme_text
     assert "test -f .env || cp .env.example .env" in readme_text
     assert "\ncp .env.example .env\n" not in readme_text
     assert "SEED_JSON" in readme_text

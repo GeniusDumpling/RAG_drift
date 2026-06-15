@@ -29,6 +29,8 @@ describe('EvidenceCard', () => {
     render(<EvidenceCard evidence={evidence} />);
 
     expect(screen.getByRole('link', { name: evidence.canonical_url })).toHaveAttribute('href', evidence.canonical_url);
+    expect(screen.getByText('评分')).toBeInTheDocument();
+    expect(screen.getByText('Raw page')).toBeInTheDocument();
   });
 
   it('renders an unsafe canonical URL as plain text instead of a link', () => {

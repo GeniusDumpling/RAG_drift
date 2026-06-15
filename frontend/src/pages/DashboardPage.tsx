@@ -4,8 +4,8 @@ import { listContents, listJobs, listRuns, listSources } from '../api/client';
 import type { ContentListItem, CrawlJob, CrawlRun, Page, SourceSite } from '../api/types';
 import { formatErrorMessage } from '../utils/errors';
 
-const EMPTY_STATE_COPY = 'No data loaded yet. Start the backend and run the demo seed script.';
-const LOADING_STATE_COPY = 'Loading dashboard data...';
+const EMPTY_STATE_COPY = '暂无数据。请先启动后端并运行 demo seed 脚本。';
+const LOADING_STATE_COPY = '正在加载总览数据...';
 
 type DashboardData = {
   sources?: Page<SourceSite>;
@@ -42,7 +42,7 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
           runs: runsResult.status === 'fulfilled' ? runsResult.value : undefined,
           contents: contentsResult.status === 'fulfilled' ? contentsResult.value : undefined,
         });
-        setError(firstFailure ? formatErrorMessage('Unable to load dashboard data', firstFailure.reason) : '');
+        setError(firstFailure ? formatErrorMessage('无法加载总览数据', firstFailure.reason) : '');
         setLoading(false);
       },
     );
@@ -76,32 +76,32 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
   return (
     <section>
       <div className="page-title">
-        <p className="eyebrow">Workbench</p>
-        <h1>Intelligence RAG Dashboard</h1>
-        <p className="muted">Observe source state, crawl execution, indexed content, and query evidence.</p>
+        <p className="eyebrow">工作台 Workbench</p>
+        <h1>情报 RAG 总览 Dashboard</h1>
+        <p className="muted">观察 Source 状态、Crawl 执行、索引 Content 和 Evidence。</p>
       </div>
 
       <div className="grid metric-grid">
         <div className="card metric-card">
-          <span className="muted">Active sources</span>
+          <span className="muted">活跃 Sources</span>
           <strong>{metrics.activeSources ?? '—'}</strong>
         </div>
         <div className="card metric-card">
-          <span className="muted">Enabled jobs</span>
+          <span className="muted">启用 Jobs</span>
           <strong>{metrics.enabledJobs ?? '—'}</strong>
         </div>
         <div className="card metric-card">
-          <span className="muted">24h runs</span>
+          <span className="muted">24h Runs</span>
           <strong>{metrics.runs24h ?? '—'}</strong>
         </div>
         <div className="card metric-card">
-          <span className="muted">Recent items</span>
+          <span className="muted">最近 Items</span>
           <strong>{metrics.recentItems ?? '—'}</strong>
         </div>
       </div>
 
       <form className="card search-entry" onSubmit={handleSubmit}>
-        <label htmlFor="dashboard-query">Search the indexed corpus</label>
+        <label htmlFor="dashboard-query">检索已索引语料</label>
         <div className="inline-form">
           <input
             id="dashboard-query"
@@ -109,7 +109,7 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
             onChange={(event) => setQuery(event.target.value)}
             placeholder="telemetry disable procedure"
           />
-          <button type="submit">Open Search</button>
+          <button type="submit">打开 Search</button>
         </div>
       </form>
 
@@ -128,7 +128,7 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
 
       <div className="grid two-column">
         <section className="card">
-          <h2>Recent runs</h2>
+          <h2>最近 Runs</h2>
           {data.runs?.items.length ? (
             <ul className="dense-list">
               {data.runs.items.slice(0, 5).map((run) => (
@@ -141,20 +141,20 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
             </ul>
           ) : (
             <p className="muted">
-              {loading ? LOADING_STATE_COPY : error ? 'Recent runs unavailable while the API request is failing.' : EMPTY_STATE_COPY}
+              {loading ? LOADING_STATE_COPY : error ? '最近 Runs 暂不可用：API 请求失败。' : EMPTY_STATE_COPY}
             </p>
           )}
         </section>
 
         <section className="card">
-          <h2>Recent content</h2>
+          <h2>最近 Content</h2>
           {data.contents?.items.length ? (
             <ul className="dense-list">
               {data.contents.items.slice(0, 5).map((item) => (
                 <li key={item.id}>
                   <span className="badge">{item.item_type}</span>
                   <span>{item.title || item.canonical_url}</span>
-                  <span className="muted">{item.author_name || 'unknown author'}</span>
+                  <span className="muted">{item.author_name || '未知作者'}</span>
                 </li>
               ))}
             </ul>
@@ -163,7 +163,7 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
               {loading
                 ? LOADING_STATE_COPY
                 : error
-                  ? 'Recent content unavailable while the API request is failing.'
+                  ? '最近 Content 暂不可用：API 请求失败。'
                   : EMPTY_STATE_COPY}
             </p>
           )}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -68,6 +69,7 @@ async def reindex_embeddings(
                 backend_name=indexer.backend_name,
                 embedding=embedding,
                 collection=collection,
+                vector_store_id=_vector_store_id(qdrant_url),
             )
             succeeded += 1
         except Exception as exc:  # noqa: BLE001 - per-chunk failure must be recorded.
@@ -115,6 +117,7 @@ def _mark_success(
     backend_name: str,
     embedding: EmbeddingService,
     collection: str,
+    vector_store_id: str,
 ) -> None:
     content_chunk.embed_status = "success"
     content_chunk.embed_error = None
@@ -125,9 +128,14 @@ def _mark_success(
     content_chunk.chunk_metadata_json = {
         **content_chunk.chunk_metadata_json,
         "vector_collection": collection,
+        "vector_store_id": vector_store_id,
         "embedding_model": embedding.model_name,
         "embedding_dimension": embedding.dimension,
     }
+
+
+def _vector_store_id(url: str) -> str:
+    return hashlib.sha256(url.encode("utf-8")).hexdigest()
 
 
 def _mark_failed(*, content_chunk: ContentChunk, backend_name: str, error_message: str) -> None:

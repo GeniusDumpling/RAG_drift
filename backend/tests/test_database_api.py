@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from app.api import database as database_api
 from app.main import app
 from app.models.content import ContentChunk, ContentItem, RawPage
 from app.models.control import CrawlJob, CrawlRun, CrawlRunEvent, SourceSite
@@ -191,6 +193,22 @@ async def _seed_database_rows(session: AsyncSession) -> dict[str, str]:
     }
 
 
+def test_database_overview_returns_not_found_outside_dev(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        database_api,
+        "get_settings",
+        lambda: SimpleNamespace(app_env="prod"),
+        raising=False,
+    )
+
+    response = TestClient(app).get("/database/overview")
+
+    assert response.status_code == 404
+    assert _json_object(response) == {"detail": "Not found"}
+
+
 @pytest.mark.asyncio
 async def test_database_overview_returns_postgres_and_qdrant_reconciliation(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
@@ -332,6 +350,15 @@ async def test_database_row_detail_returns_safe_related_summary(db_session: Asyn
         "qdrant_point_id": "point-1",
         "vector_backend": "qdrant",
     }
+
+
+def test_database_rows_rejects_query_longer_than_200() -> None:
+    response = TestClient(app).get(
+        "/database/tables/content_items/rows",
+        params={"q": "x" * 201},
+    )
+
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio

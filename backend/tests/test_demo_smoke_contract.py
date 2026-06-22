@@ -31,6 +31,20 @@ def test_demo_scripts_exist_and_are_executable() -> None:
         assert _is_executable(script), f"{script} must be executable"
 
 
+def test_demo_proxy_forwards_database_api_paths() -> None:
+    root = Path(__file__).resolve().parents[2]
+    proxy = root / "skills" / "dji-lito-demo-ingestion" / "scripts" / "demo_proxy.py"
+    spec = importlib.util.spec_from_file_location("demo_proxy_contract", proxy)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.is_api_path("/database")
+    assert module.is_api_path("/database/overview")
+    assert module.is_api_path("/database/tables/content_chunks/rows")
+
+
 def test_seed_demo_has_local_db_guard_and_reconciles_demo_config() -> None:
     root = Path(__file__).resolve().parents[2]
     seed = root / "scripts" / "seed_demo.py"

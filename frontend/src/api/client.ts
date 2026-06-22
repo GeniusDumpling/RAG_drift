@@ -3,6 +3,10 @@ import type {
   ContentDetail,
   ContentListItem,
   CrawlJob,
+  DatabaseOverview,
+  DatabaseTableList,
+  DatabaseTableRow,
+  DatabaseTableRowsPage,
   CrawlRun,
   CrawlRunEvent,
   Page,
@@ -89,6 +93,31 @@ export function listContents(
 
 export function getContent(id: UUID): Promise<ContentDetail> {
   return request<ContentDetail>(`/contents/${id}`);
+}
+
+export function getDatabaseOverview(): Promise<DatabaseOverview> {
+  return request<DatabaseOverview>('/database/overview');
+}
+
+export function listDatabaseTables(): Promise<DatabaseTableList> {
+  return request<DatabaseTableList>('/database/tables');
+}
+
+export function listDatabaseRows(
+  tableName: string,
+  params: { q?: string; limit?: number; offset?: number } = {},
+): Promise<DatabaseTableRowsPage> {
+  return request<DatabaseTableRowsPage>(
+    buildPath(`/database/tables/${tableName}/rows`, {
+      limit: params.limit ?? 50,
+      offset: params.offset ?? 0,
+      q: params.q,
+    }),
+  );
+}
+
+export function getDatabaseRow(tableName: string, rowId: UUID): Promise<DatabaseTableRow> {
+  return request<DatabaseTableRow>(`/database/tables/${tableName}/rows/${rowId}`);
 }
 
 export function search(requestBody: SearchRequest): Promise<SearchResponse> {

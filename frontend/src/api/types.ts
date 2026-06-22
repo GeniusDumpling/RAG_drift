@@ -204,3 +204,95 @@ export type AnswerResponse = {
   answer: string;
   supporting_evidence: EvidenceObject[];
 };
+
+export type DatabaseTableCount = {
+  table_name: string;
+  count: number;
+};
+
+export type ChunkVectorStatus = {
+  embed_status: string;
+  vector_backend: string | null;
+  count: number;
+};
+
+export type DatabaseRunSummary = {
+  id: UUID;
+  status: string;
+  created_at: ISODateTime;
+  parsed_count: number;
+  chunked_count: number;
+  embedded_count: number;
+  error_count: number;
+};
+
+export type DatabaseSearchSummary = {
+  id: UUID;
+  raw_query: string;
+  mode: string;
+  result_count: number | null;
+  created_at: ISODateTime;
+};
+
+export type PostgresOverview = {
+  status: 'ok';
+  database_name: string;
+  server_version: string;
+  checked_at: ISODateTime;
+  table_counts: DatabaseTableCount[];
+  latest_run: DatabaseRunSummary | null;
+  latest_search: DatabaseSearchSummary | null;
+  chunk_vector_status: ChunkVectorStatus[];
+};
+
+export type QdrantOverview = {
+  status: 'ok' | 'unavailable';
+  collection: string;
+  points_count: number | null;
+  vector_size: number | null;
+  distance: string | null;
+  error: string | null;
+};
+
+export type DatabaseReconciliation = {
+  postgres_qdrant_chunk_count: number;
+  qdrant_points_count: number | null;
+  status: 'matched' | 'mismatch' | 'unknown';
+};
+
+export type DatabaseOverview = {
+  postgres: PostgresOverview;
+  qdrant: QdrantOverview;
+  reconciliation: DatabaseReconciliation;
+};
+
+export type DatabaseTableMeta = {
+  table_name: string;
+  label: string;
+  description: string;
+  default_sort: string;
+  preview_columns: string[];
+  searchable_columns: string[];
+};
+
+export type DatabaseTableList = {
+  items: DatabaseTableMeta[];
+  total: number;
+};
+
+export type DatabaseJsonValue = JsonObject | unknown[] | string | number | boolean | null;
+
+export type DatabaseTableRow = {
+  id: UUID;
+  table_name: string;
+  preview: Record<string, DatabaseJsonValue>;
+  detail: Record<string, DatabaseJsonValue>;
+  related: Record<string, DatabaseJsonValue>;
+};
+
+export type DatabaseTableRowsPage = {
+  items: DatabaseTableRow[];
+  total: number;
+  limit: number;
+  offset: number;
+};

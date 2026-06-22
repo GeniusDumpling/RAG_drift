@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 
 import pytest
@@ -182,6 +183,9 @@ async def test_reindex_embeddings_indexes_pending_chunk_and_updates_metadata(
     assert refreshed.embedded_at is not None
     assert refreshed.chunk_metadata_json["embedding_model"] == "fake-bge-small-zh"
     assert refreshed.chunk_metadata_json["embedding_dimension"] == 4
+    assert refreshed.chunk_metadata_json["vector_store_id"] == hashlib.sha256(
+        b"memory://bge-reindex-test"
+    ).hexdigest()
     assert (
         refreshed.chunk_metadata_json["vector_collection"]
         == "content_chunks_bge_small_zh_v1_test"

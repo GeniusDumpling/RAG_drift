@@ -10,4 +10,7 @@ dist/
 .ruff_cache/
 node_modules/
 frontend/dist/
+.worktrees/
+.superpowers/
+.api-18000.pid
 .DS_Store

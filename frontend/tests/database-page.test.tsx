@@ -91,6 +91,21 @@ const itemRows = {
   offset: 0,
 };
 
+const itemRowsWithTwoItems = {
+  ...itemRows,
+  items: [
+    ...itemRows.items,
+    {
+      id: 'item-2',
+      table_name: 'content_items',
+      preview: { id: 'item-2', item_type: 'article', title: 'Battery safety notice' },
+      detail: { cleaned_text: { cleaned_text_preview: 'Battery safety notice cleaned text' } },
+      related: { raw_page_id: 'raw-2', crawl_run_id: 'run-1' },
+    },
+  ],
+  total: 2,
+};
+
 const chunkRows = {
   items: [
     {
@@ -147,6 +162,62 @@ describe('DatabasePage', () => {
     fireEvent.change(screen.getByLabelText('选择表'), { target: { value: 'content_chunks' } });
     expect(await screen.findByText('chunk-1')).toBeInTheDocument();
     expect(screen.getByText('Telemetry firmware report embed text')).toBeInTheDocument();
+  });
+
+  it('selects row detail via an accessible row action button', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/database/overview')) {
+        return Promise.resolve(jsonResponse(overview));
+      }
+      if (url.endsWith('/database/tables')) {
+        return Promise.resolve(jsonResponse(tables));
+      }
+      if (url.endsWith('/database/tables/content_items/rows?limit=50&offset=0')) {
+        return Promise.resolve(jsonResponse(itemRowsWithTwoItems));
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DatabasePage />);
+
+    expect(await screen.findByText('Telemetry firmware report')).toBeInTheDocument();
+    expect(screen.getByText('Telemetry firmware report cleaned text')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '查看 item-2' }));
+
+    expect(screen.getByText('Battery safety notice cleaned text')).toBeInTheDocument();
+  });
+
+  it('clears stale rows and row detail when the next table rows request fails', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/database/overview')) {
+        return Promise.resolve(jsonResponse(overview));
+      }
+      if (url.endsWith('/database/tables')) {
+        return Promise.resolve(jsonResponse(tables));
+      }
+      if (url.endsWith('/database/tables/content_items/rows?limit=50&offset=0')) {
+        return Promise.resolve(jsonResponse(itemRows));
+      }
+      if (url.endsWith('/database/tables/content_chunks/rows?limit=50&offset=0')) {
+        return Promise.reject(new Error('rows offline'));
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DatabasePage />);
+
+    expect(await screen.findByText('Telemetry firmware report')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('选择表'), { target: { value: 'content_chunks' } });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法加载表数据: rows offline');
+    expect(screen.queryByText('Telemetry firmware report')).not.toBeInTheDocument();
+    expect(screen.queryByText('Telemetry firmware report cleaned text')).not.toBeInTheDocument();
   });
 
   it('passes keyword search to the selected table rows endpoint', async () => {

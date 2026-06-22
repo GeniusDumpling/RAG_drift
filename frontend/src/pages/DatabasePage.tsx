@@ -66,7 +66,7 @@ export function DatabasePage() {
   const [rowsLoading, setRowsLoading] = useState(false);
   const [error, setError] = useState('');
   const [rowsError, setRowsError] = useState('');
-  const [copiedTitle, setCopiedTitle] = useState('');
+  const [copyMessage, setCopyMessage] = useState('');
 
   useEffect(() => {
     let ignore = false;
@@ -103,6 +103,8 @@ export function DatabasePage() {
     let ignore = false;
     setRowsLoading(true);
     setRowsError('');
+    setRowsPage(null);
+    setSelectedRow(null);
     listDatabaseRows(selectedTable, { limit: PAGE_SIZE, offset, q: appliedQuery })
       .then((page) => {
         if (ignore) {
@@ -116,6 +118,8 @@ export function DatabasePage() {
         if (ignore) {
           return;
         }
+        setRowsPage(null);
+        setSelectedRow(null);
         setRowsError(formatErrorMessage('无法加载表数据', reason));
         setRowsLoading(false);
       });
@@ -144,11 +148,15 @@ export function DatabasePage() {
 
   async function copyCommand(title: string, command: string) {
     if (!navigator.clipboard) {
-      setCopiedTitle('当前浏览器不支持复制。');
+      setCopyMessage('当前浏览器不支持复制。');
       return;
     }
-    await navigator.clipboard.writeText(command);
-    setCopiedTitle(title);
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopyMessage(`已复制：${title}`);
+    } catch {
+      setCopyMessage('复制失败，请手动复制。');
+    }
   }
 
   const canGoPrevious = offset > 0;
@@ -252,7 +260,7 @@ export function DatabasePage() {
             <h2>psql / Qdrant 命令手册</h2>
             <p className="muted compact">用于终端验证数据库和向量库接入；前端不会展示数据库密码。</p>
           </div>
-          {copiedTitle ? <span className="badge">已复制：{copiedTitle}</span> : null}
+          {copyMessage ? <span className="badge">{copyMessage}</span> : null}
         </div>
         <div className="grid command-grid">
           {COMMAND_GROUPS.map((group) => (
@@ -354,16 +362,18 @@ function DatabaseRowsTable({
       <table className="data-table">
         <thead>
           <tr>
+            <th>操作</th>
             {columns.map((column) => <th key={column}>{column}</th>)}
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr
-              className={selectedRow?.id === row.id ? 'selected-row' : ''}
-              key={row.id}
-              onClick={() => onSelectRow(row)}
-            >
+            <tr className={selectedRow?.id === row.id ? 'selected-row' : ''} key={row.id}>
+              <td>
+                <button type="button" aria-label={`查看 ${row.id}`} onClick={() => onSelectRow(row)}>
+                  查看详情
+                </button>
+              </td>
               {columns.map((column) => <td key={column}>{formatValue(row.preview[column])}</td>)}
             </tr>
           ))}

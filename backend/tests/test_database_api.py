@@ -170,7 +170,9 @@ async def _seed_database_rows(session: AsyncSession) -> dict[str, str]:
         entity_hints_json=[],
         time_hints_json={},
         result_summary_json={"result_count": 1},
-        query_trace_json={"retrieval": {"vector": {"attempted": True, "failed": False, "hit_count": 1}}},
+        query_trace_json={
+            "retrieval": {"vector": {"attempted": True, "failed": False, "hit_count": 1}}
+        },
         result_count=1,
         created_at=now,
     )
@@ -213,10 +215,14 @@ async def test_database_overview_returns_postgres_and_qdrant_reconciliation(
     payload = _json_object(response)
     assert payload["postgres"]["status"] == "ok"
     assert payload["postgres"]["database_name"]
-    table_counts = {item["table_name"]: item["count"] for item in payload["postgres"]["table_counts"]}
+    table_counts = {
+        item["table_name"]: item["count"]
+        for item in payload["postgres"]["table_counts"]
+    }
     assert table_counts["source_sites"] == 1
     assert table_counts["crawl_jobs"] == 1
     assert table_counts["crawl_runs"] == 1
+    assert table_counts["crawl_run_events"] == 1
     assert table_counts["raw_pages"] == 1
     assert table_counts["content_items"] == 1
     assert table_counts["content_chunks"] == 1
@@ -271,7 +277,7 @@ async def test_database_overview_keeps_postgres_visible_when_qdrant_is_unavailab
 
 @pytest.mark.asyncio
 async def test_database_tables_and_rows_are_whitelisted_and_searchable(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
 ) -> None:
     ids = await _seed_database_rows(db_session)
 

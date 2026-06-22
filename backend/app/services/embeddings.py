@@ -11,8 +11,11 @@ DEFAULT_SENTENCE_TRANSFORMERS_MODEL = "BAAI/bge-small-zh-v1.5"
 
 
 class EmbeddingService(Protocol):
-    model_name: str
-    dimension: int
+    @property
+    def model_name(self) -> str: ...
+
+    @property
+    def dimension(self) -> int: ...
 
     def embed(self, text: str) -> list[float]: ...
 
@@ -54,7 +57,9 @@ class SentenceTransformerEmbeddingService:
         if self._dimension is None:
             raw_dimension = self._loaded_model.get_sentence_embedding_dimension()
             if not isinstance(raw_dimension, int) or raw_dimension < 1:
-                raise RuntimeError(f"Invalid embedding dimension for {self.model_name}: {raw_dimension}")
+                raise RuntimeError(
+                    f"Invalid embedding dimension for {self.model_name}: {raw_dimension}"
+                )
             self._dimension = raw_dimension
         return self._dimension
 

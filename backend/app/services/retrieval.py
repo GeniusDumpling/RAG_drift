@@ -110,6 +110,24 @@ class QdrantIndexer:
                 ),
             )
 
+    def recreate_collection(self) -> None:
+        if self.backend_name == "memory":
+            _MEMORY_COLLECTIONS[(self.url, self.collection)] = _MemoryCollection(
+                dimension=self.embedding.dimension
+            )
+            return
+
+        client = self._require_client()
+        if client.collection_exists(collection_name=self.collection):
+            client.delete_collection(collection_name=self.collection)
+        client.create_collection(
+            collection_name=self.collection,
+            vectors_config=qdrant_models.VectorParams(
+                size=self.embedding.dimension,
+                distance=qdrant_models.Distance.COSINE,
+            ),
+        )
+
     def upsert_chunk(self, *, chunk_id: UUID, embed_text: str, payload: dict[str, Any]) -> str:
         point_id = str(chunk_id)
         vector = self.embedding.embed(embed_text)

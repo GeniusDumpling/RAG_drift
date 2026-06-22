@@ -282,3 +282,60 @@ def test_memory_indexer_delete_chunk_removes_existing_point_and_ignores_missing(
     indexer.delete_chunk(point_id=point_id)
 
     assert point_id not in memory_collection.points
+
+
+def test_memory_indexer_recreate_collection_clears_existing_points() -> None:
+    _MEMORY_COLLECTIONS.clear()
+    chunk_id = uuid.uuid4()
+    indexer = QdrantIndexer(
+        url="memory://unit-test-reset",
+        collection="content_chunks_reset_test",
+        embedding=DeterministicEmbeddingService(dimension=16),
+    )
+    indexer.ensure_collection()
+    indexer.upsert_chunk(
+        chunk_id=chunk_id,
+        embed_text="telemetry settings",
+        payload={"content_item_id": str(uuid.uuid4())},
+    )
+
+    indexer.recreate_collection()
+
+    collection = _MEMORY_COLLECTIONS[(indexer.url, indexer.collection)]
+    assert collection.dimension == 16
+    assert collection.points == {}
+
+
+def test_qdrant_indexer_recreate_collection_deletes_then_creates_remote_collection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    class FakeQdrantClient:
+        def __init__(self, url: str) -> None:
+            self.url = url
+
+        def collection_exists(self, *, collection_name: str) -> bool:
+            calls.append(("exists", collection_name))
+            return True
+
+        def delete_collection(self, *, collection_name: str) -> None:
+            calls.append(("delete", collection_name))
+
+        def create_collection(self, *, collection_name: str, vectors_config: object) -> None:
+            calls.append(("create", collection_name))
+
+    monkeypatch.setattr("app.services.retrieval.QdrantClient", FakeQdrantClient)
+    indexer = QdrantIndexer(
+        url="http://qdrant.example.test:6333",
+        collection="content_chunks_reset_remote_test",
+        embedding=DeterministicEmbeddingService(dimension=16),
+    )
+
+    indexer.recreate_collection()
+
+    assert calls == [
+        ("exists", "content_chunks_reset_remote_test"),
+        ("delete", "content_chunks_reset_remote_test"),
+        ("create", "content_chunks_reset_remote_test"),
+    ]

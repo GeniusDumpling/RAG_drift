@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     )
     qdrant_url: str = Field(default="http://localhost:6333", alias="QDRANT_URL")
     qdrant_collection: str = Field(default="content_chunks_v1", alias="QDRANT_COLLECTION")
+    embedding_provider: str = Field(default="deterministic", alias="EMBEDDING_PROVIDER")
+    embedding_model: str = Field(default="deterministic-hash-v1", alias="EMBEDDING_MODEL")
     llm_provider: str = Field(default="fake", alias="LLM_PROVIDER")
     agent_timeout_seconds: int = Field(default=20, alias="AGENT_TIMEOUT_SECONDS")
     worker_poll_interval_seconds: int = Field(default=2, alias="WORKER_POLL_INTERVAL_SECONDS")

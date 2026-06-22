@@ -18,6 +18,7 @@ API_PREFIXES = (
     "/search",
     "/answer",
     "/search-queries",
+    "/database",
 )
 HOP_BY_HOP_HEADERS = {
     "connection",
@@ -77,7 +78,11 @@ class DemoProxyHandler(SimpleHTTPRequestHandler):
             if key.lower() not in HOP_BY_HOP_HEADERS and key.lower() != "host"
         }
         headers["Host"] = target.netloc
-        connection_class = http.client.HTTPSConnection if target.scheme == "https" else http.client.HTTPConnection
+        connection_class = (
+            http.client.HTTPSConnection
+            if target.scheme == "https"
+            else http.client.HTTPConnection
+        )
         port = target.port or (443 if target.scheme == "https" else 80)
         connection = None
         try:
@@ -97,7 +102,7 @@ class DemoProxyHandler(SimpleHTTPRequestHandler):
             self.send_response(502, "Bad Gateway")
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.end_headers()
-            self.wfile.write(f"API proxy failed: {exc}\n".encode("utf-8"))
+            self.wfile.write(f"API proxy failed: {exc}\n".encode())
         finally:
             if connection is not None:
                 connection.close()
@@ -123,7 +128,11 @@ def main() -> None:
     DemoProxyHandler.dist_dir = args.dist
     DemoProxyHandler.api_base = args.api.rstrip("/")
     server = ThreadingHTTPServer((args.host, args.port), DemoProxyHandler)
-    print(f"Serving {args.dist} on http://{args.host}:{args.port}, proxying API to {DemoProxyHandler.api_base}", flush=True)
+    print(
+        f"Serving {args.dist} on http://{args.host}:{args.port}, "
+        f"proxying API to {DemoProxyHandler.api_base}",
+        flush=True,
+    )
     server.serve_forever()
 
 

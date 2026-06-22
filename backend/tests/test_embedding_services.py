@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 import app.services.embeddings as embeddings
+import pytest
 from app.core.config import Settings
 from app.services.embeddings import (
     DeterministicEmbeddingService,
@@ -22,7 +21,7 @@ class FakeVector:
 
 
 class FakeSentenceTransformer:
-    instances: list["FakeSentenceTransformer"] = []
+    instances: list[FakeSentenceTransformer] = []
 
     def __init__(self, model_name: str) -> None:
         self.model_name = model_name
@@ -103,7 +102,9 @@ def test_unsupported_embedding_provider_raises_clear_error() -> None:
 
 def test_sentence_transformer_import_error_is_clear(monkeypatch: pytest.MonkeyPatch) -> None:
     def raise_import_error() -> Any:
-        raise RuntimeError("sentence-transformers is required for EMBEDDING_PROVIDER=sentence-transformers")
+        raise RuntimeError(
+            "sentence-transformers is required for EMBEDDING_PROVIDER=sentence-transformers"
+        )
 
     monkeypatch.setattr(embeddings, "_load_sentence_transformer_class", raise_import_error)
     service = SentenceTransformerEmbeddingService("BAAI/bge-small-zh-v1.5")

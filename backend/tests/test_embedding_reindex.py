@@ -3,13 +3,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.content import ContentChunk, ContentItem, RawPage
 from app.models.control import CrawlJob, CrawlRun, SourceSite
 from app.services.embedding_reindex import reindex_embeddings
 from app.services.retrieval import _MEMORY_COLLECTIONS
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class FakeEmbedding:
@@ -22,7 +21,11 @@ class FakeEmbedding:
         return [1.0, 0.0, 0.0, 0.0]
 
 
-async def _seed_chunk(session: AsyncSession, *, embed_text: str = "遥控器 图传 设置") -> ContentChunk:
+async def _seed_chunk(
+    session: AsyncSession,
+    *,
+    embed_text: str = "遥控器 图传 设置",
+) -> ContentChunk:
     now = datetime(2026, 6, 22, 12, 0, tzinfo=UTC)
     source = SourceSite(
         name="BGE Test Source",
@@ -179,15 +182,22 @@ async def test_reindex_embeddings_indexes_pending_chunk_and_updates_metadata(
     assert refreshed.embedded_at is not None
     assert refreshed.chunk_metadata_json["embedding_model"] == "fake-bge-small-zh"
     assert refreshed.chunk_metadata_json["embedding_dimension"] == 4
-    assert refreshed.chunk_metadata_json["vector_collection"] == "content_chunks_bge_small_zh_v1_test"
-    memory_collection = _MEMORY_COLLECTIONS[("memory://bge-reindex-test", "content_chunks_bge_small_zh_v1_test")]
+    assert (
+        refreshed.chunk_metadata_json["vector_collection"]
+        == "content_chunks_bge_small_zh_v1_test"
+    )
+    memory_collection = _MEMORY_COLLECTIONS[
+        ("memory://bge-reindex-test", "content_chunks_bge_small_zh_v1_test")
+    ]
     assert str(chunk.id) in memory_collection.points
     assert memory_collection.points[str(chunk.id)].payload["source_site_id"]
     assert memory_collection.points[str(chunk.id)].payload["tags"] == ["dji", "图传"]
 
 
 @pytest.mark.asyncio
-async def test_reindex_embeddings_marks_failed_chunk_and_continues(db_session: AsyncSession) -> None:
+async def test_reindex_embeddings_marks_failed_chunk_and_continues(
+    db_session: AsyncSession,
+) -> None:
     _MEMORY_COLLECTIONS.clear()
     failing_chunk = await _seed_chunk(db_session, embed_text="fail-me")
 
@@ -199,7 +209,9 @@ async def test_reindex_embeddings_marks_failed_chunk_and_continues(db_session: A
         reset_collection=True,
     )
 
-    refreshed = await db_session.scalar(select(ContentChunk).where(ContentChunk.id == failing_chunk.id))
+    refreshed = await db_session.scalar(
+        select(ContentChunk).where(ContentChunk.id == failing_chunk.id)
+    )
     assert refreshed is not None
     assert summary.total == 1
     assert summary.succeeded == 0

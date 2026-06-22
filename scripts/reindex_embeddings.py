@@ -22,7 +22,9 @@ from app.services.embeddings import build_embedding_service  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Rebuild Qdrant vectors for existing content chunks.")
+    parser = argparse.ArgumentParser(
+        description="Rebuild Qdrant vectors for existing content chunks."
+    )
     parser.add_argument(
         "--collection",
         default=None,

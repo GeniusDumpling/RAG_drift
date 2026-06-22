@@ -100,7 +100,9 @@ def _build_payload(*, content_chunk: ContentChunk, content_item: ContentItem) ->
         "item_type": content_item.item_type,
         "canonical_url": content_item.canonical_url,
         "title": content_item.title,
-        "published_at": content_item.published_at.isoformat() if content_item.published_at else None,
+        "published_at": (
+            content_item.published_at.isoformat() if content_item.published_at else None
+        ),
         "language": content_item.language,
         "tags": list(content_item.tags),
     }

@@ -97,6 +97,37 @@ npm run dev -- --host 0.0.0.0
 
 `QDRANT_URL=memory://...` 和 `QDRANT_URL=:memory:` 会选择显式的内存向量后端，用于本地开发和测试。它们是进程本地的便捷模式，不是跨进程向量冒烟，也不是实际 Qdrant 故障时的自动回退。如果配置了真实 Qdrant URL，而 Qdrant 连接或 HTTP 调用失败，摄取流程会记录失败/部分 chunk 索引状态，而不是静默切换到内存存储。除非设置 `ALLOW_NONLOCAL_SMOKE_VECTOR=1`，否则冒烟脚本只接受内存向量或本地 Qdrant 主机（`localhost`、`127.0.0.1` 或 `::1`）。
 
+### 本地语义 Embedding 配置
+
+默认配置使用 `EMBEDDING_PROVIDER=deterministic`，这是可复现的 hash 向量，只用于测试和演示链路。若要启用真实语义向量检索，可以安装本地 embedding 依赖并使用 BGE small zh：
+
+```bash
+source .venv/bin/activate
+python -m pip install -e ".[dev,local-embeddings]"
+```
+
+然后设置：
+
+```bash
+export EMBEDDING_PROVIDER=sentence-transformers
+export EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
+export QDRANT_COLLECTION=content_chunks_bge_small_zh_v1
+```
+
+第一次运行会下载模型文件。切换 embedding 模型后必须重建 Qdrant 向量索引，因为旧 collection 中的向量维度和语义空间不同：
+
+```bash
+python3 scripts/reindex_embeddings.py --reset-collection
+```
+
+回滚到 deterministic demo 模式：
+
+```bash
+export EMBEDDING_PROVIDER=deterministic
+export EMBEDDING_MODEL=deterministic-hash-v1
+export QDRANT_COLLECTION=content_chunks_v1
+```
+
 如果在 Debian/Ubuntu 上运行 `python3 -m venv` 时提示 `ensurepip` 不可用，请安装 `python3.12-venv` 或 `python3-venv` 后重试。也可以使用 `make install` 创建 `.venv`；当 `uv` 可用时，它会回退到 `uv venv --seed`。
 
 ## 核心不变量

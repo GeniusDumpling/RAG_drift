@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_session
+from app.core.config import get_settings
 from app.repositories.database import (
     get_database_overview,
     get_table_config,
@@ -21,7 +22,17 @@ from app.schemas.database import (
     DatabaseTableRowsPage,
 )
 
-router = APIRouter(prefix="/database", tags=["database"])
+
+def _require_dev_database_api() -> None:
+    if get_settings().app_env != "dev":
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+router = APIRouter(
+    prefix="/database",
+    tags=["database"],
+    dependencies=[Depends(_require_dev_database_api)],
+)
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 LimitQuery = Annotated[int, Query(ge=1, le=100)]
 OffsetQuery = Annotated[int, Query(ge=0)]
@@ -42,7 +53,7 @@ async def database_tables() -> DatabaseTableList:
 async def database_table_rows(
     table_name: str,
     session: SessionDep,
-    q: str | None = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
     limit: LimitQuery = 50,
     offset: OffsetQuery = 0,
 ) -> DatabaseTableRowsPage:

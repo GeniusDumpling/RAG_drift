@@ -23,6 +23,7 @@ API_PATH_PREFIXES = (
     "/redoc",
     "/openapi.json",
 )
+)
 
 
 def _is_api_like_path(path: str) -> bool:

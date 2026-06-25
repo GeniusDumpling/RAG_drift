@@ -312,6 +312,8 @@ async def retrieve_evidence(
         top_k=top_k,
         snippet_terms=snippet_terms,
     )
+    if filters.item_type == "video_description":
+        evidence = _deduplicate_video_evidence(evidence, top_k)
     return RetrievalResult(
         evidence=evidence,
         trace={
@@ -324,6 +326,33 @@ async def retrieve_evidence(
             ],
         },
     )
+
+
+def _deduplicate_video_evidence(
+    evidence: list[EvidenceObject], top_k: int
+) -> list[EvidenceObject]:
+    """Deduplicate video evidence by content_item_id, keeping the best-scoring chunk.
+
+    For video_description results, multiple chunks from the same video can match.
+    This collapses them into a single evidence entry per video, preserving the
+    highest-scoring chunk's score and showing the full video_url and description.
+
+    Also filters out videos whose description indicates they are unrelated to
+    the intended analysis topic (e.g. VLM noted "视频内容与无人机无关"), so they
+    won't pollute retrieval results with high-scoring but irrelevant matches.
+    """
+    seen: set[UUID] = set()
+    deduped: list[EvidenceObject] = []
+    for item in evidence:
+        if item.content_item_id not in seen:
+            # Skip videos VLM explicitly flagged as unrelated
+            if item.description_text and item.description_text.startswith(
+                "视频内容与无人机无关"
+            ):
+                continue
+            seen.add(item.content_item_id)
+            deduped.append(item)
+    return deduped[:top_k]
 
 
 async def _keyword_search(
@@ -655,6 +684,7 @@ async def _hydrate_and_rank_evidence(
         thread_summary = typing_cast(str | None, row[4])
         if hit.content_item_id is not None and hit.content_item_id != content_item.id:
             continue
+        is_video = content_item.item_type == "video_description"
         evidence.append(
             EvidenceObject(
                 chunk_id=content_chunk.id,
@@ -673,6 +703,8 @@ async def _hydrate_and_rank_evidence(
                 keyword_score=hit.keyword_score,
                 matched_by=hit.matched_by,
                 thread_summary=thread_summary,
+                video_url=content_item.canonical_url if is_video else None,
+                description_text=content_item.cleaned_text if is_video else None,
             )
         )
 

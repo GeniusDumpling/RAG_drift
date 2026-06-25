@@ -192,6 +192,8 @@ export type EvidenceObject = {
   keyword_score: number | null;
   matched_by: 'vector' | 'keyword' | 'hybrid';
   thread_summary: string | null;
+  video_url: string | null;
+  description_text: string | null;
 };
 
 export type SearchResponse = {

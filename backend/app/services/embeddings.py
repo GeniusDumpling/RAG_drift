@@ -10,6 +10,10 @@ from app.core.config import Settings
 DEFAULT_DETERMINISTIC_MODEL = "deterministic-hash-v1"
 DEFAULT_SENTENCE_TRANSFORMERS_MODEL = "BAAI/bge-small-zh-v1.5"
 
+import httpx
+
+from app.core.config import Settings
+
 
 class EmbeddingService(Protocol):
     @property
@@ -115,3 +119,55 @@ def _load_sentence_transformer_class() -> Any:
             "Install it with: python -m pip install -e '.[local-embeddings]'"
         ) from exc
     return SentenceTransformer
+
+    """SiliconFlow OpenAI-compatible embeddings (BAAI/bge-m3)."""
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        base_url: str,
+        model: str,
+        dimension: int,
+        client: httpx.Client | None = None,
+    ) -> None:
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.model_name = model
+        self.dimension = dimension
+        self.client = client or httpx.Client(timeout=60)
+
+    def embed(self, text: str) -> list[float]:
+        response = self.client.post(
+            f"{self.base_url}/embeddings",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json={"model": self.model_name, "input": text},
+        )
+        response.raise_for_status()
+        vector = response.json()["data"][0]["embedding"]
+        if len(vector) != self.dimension:
+            raise ValueError(
+                f"embedding dimension mismatch: expected {self.dimension}, got {len(vector)}"
+            )
+        return [float(value) for value in vector]
+
+
+def build_embedding_service(settings: Settings) -> EmbeddingService:
+    """Factory: returns the appropriate EmbeddingService based on settings.
+
+    - ``fake`` -> ``DeterministicEmbeddingService`` (tests / dev)
+    - ``siliconflow`` -> ``SiliconFlowEmbeddingService`` (production BGE-M3)
+    """
+    if settings.embedding_provider == "fake":
+        return DeterministicEmbeddingService()
+    if settings.embedding_provider != "siliconflow":
+        raise ValueError(f"unsupported embedding provider: {settings.embedding_provider}")
+    if not settings.siliconflow_api_key:
+        raise RuntimeError("SILICONFLOW_API_KEY is required when EMBEDDING_PROVIDER=siliconflow")
+    return SiliconFlowEmbeddingService(
+        api_key=settings.siliconflow_api_key,
+        base_url=settings.siliconflow_base_url,
+        model=settings.embedding_model,
+        dimension=settings.embedding_dimension,
+    )
+

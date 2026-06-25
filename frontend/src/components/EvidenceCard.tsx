@@ -15,6 +15,7 @@ type EvidenceCardProps = {
 
 export function EvidenceCard({ evidence, onOpenContent }: EvidenceCardProps) {
   const canonicalHref = safeExternalHref(evidence.canonical_url);
+  const videoHref = evidence.video_url ? safeExternalHref(evidence.video_url) : null;
 
   return (
     <article className="card evidence-card">
@@ -29,6 +30,17 @@ export function EvidenceCard({ evidence, onOpenContent }: EvidenceCardProps) {
       </div>
       <p>{evidence.snippet}</p>
       {evidence.thread_summary ? <p className="muted">Thread 线程：{evidence.thread_summary}</p> : null}
+      {videoHref ? (
+        <video controls preload="metadata" src={videoHref} data-testid="video-evidence" className="video-player">
+          当前浏览器不支持视频播放。
+        </video>
+      ) : null}
+      {evidence.description_text ? (
+        <details className="video-description">
+          <summary>查看完整视频描述</summary>
+          <p>{evidence.description_text}</p>
+        </details>
+      ) : null}
       <dl className="kv-grid">
         <div>
           <dt>评分</dt>

@@ -84,6 +84,8 @@ class EvidenceObject(BaseModel):
     keyword_score: float | None = None
     matched_by: Literal["vector", "keyword", "hybrid"]
     thread_summary: str | None
+    video_url: str | None = None
+    description_text: str | None = None
 
 
 class SearchResponse(BaseModel):

@@ -154,6 +154,7 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
             <option value="post">post</option>
             <option value="article">article</option>
             <option value="comment">comment</option>
+            <option value="video_description">video_description</option>
           </select>
 
           <label htmlFor="top-k">Top K</label>

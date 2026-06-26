@@ -19,6 +19,7 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
   const [sourceSiteId, setSourceSiteId] = useState('');
   const [itemType, setItemType] = useState('');
   const [topKInput, setTopKInput] = useState('10');
+  const [rawEvidence, setRawEvidence] = useState<EvidenceObject[]>([]);
   const [evidence, setEvidence] = useState<EvidenceObject[]>([]);
   const [queryRecord, setQueryRecord] = useState<SearchQueryRead>();
   const [answerText, setAnswerText] = useState('');
@@ -31,6 +32,7 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
   }, [initialQuery]);
 
   function clearResults() {
+    setRawEvidence([]);
     setEvidence([]);
     setQueryRecord(undefined);
     setAnswerText('');
@@ -70,7 +72,8 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
     setError('');
     try {
       const response = await search(request);
-      setEvidence(response.evidence);
+      setRawEvidence(response.evidence);
+      setEvidence(deduplicateVideoEvidence(response.evidence));
       setQueryRecord(response.query);
     } catch (caught) {
       setEvidence([]);
@@ -93,7 +96,8 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
     setError('');
     try {
       const response = await answer(request);
-      setEvidence(response.supporting_evidence);
+      setRawEvidence(response.supporting_evidence);
+      setEvidence(deduplicateVideoEvidence(response.supporting_evidence));
       setQueryRecord(response.query);
       setAnswerText(response.answer);
     } catch (caught) {
@@ -223,11 +227,45 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
       <section>
         <h2>证据 Evidence</h2>
         {evidence.length ? (
-          evidence.map((item) => <EvidenceCard evidence={item} key={item.chunk_id} onOpenContent={onOpenContent} />)
+          evidence.map((item) => <EvidenceCard evidence={item} key={item.content_item_id + (item.item_type === 'video_description' ? '_video' : item.chunk_id)} onOpenContent={onOpenContent} />)
         ) : loading || error ? null : (
           <p className="card empty-state">{EMPTY_STATE_COPY}</p>
         )}
       </section>
     </section>
   );
+}
+
+function deduplicateVideoEvidence(evidence: EvidenceObject[]): EvidenceObject[] {
+  const seen = new Map<string, EvidenceObject>();
+  for (const item of evidence) {
+    if (item.item_type === 'video_description') {
+      const key = item.content_item_id;
+      const existing = seen.get(key);
+      if (existing) {
+        // 合并：保留更高 score、拼接 snippet
+        if (item.score > existing.score) {
+          existing.score = item.score;
+          existing.vector_score = item.vector_score;
+          existing.keyword_score = item.keyword_score;
+        }
+        if (!existing.description_text && item.description_text) {
+          existing.description_text = item.description_text;
+        }
+        if (!existing.video_url && item.video_url) {
+          existing.video_url = item.video_url;
+        }
+        if (existing.snippet !== item.snippet) {
+          existing.snippet = existing.snippet + '\n---\n' + item.snippet;
+        }
+      } else {
+        seen.set(key, { ...item });
+      }
+    } else {
+      // 非视频类型，保持原样
+      const key = item.content_item_id + '::' + item.chunk_id;
+      seen.set(key, item);
+    }
+  }
+  return Array.from(seen.values());
 }

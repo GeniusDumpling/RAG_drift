@@ -1,0 +1,66 @@
+services:
+  app:
+    image: ${INTELLIGENCE_RAG_IMAGE:-intelligence-rag-app:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: intelligence-rag-app
+    environment:
+      APP_ENV: prod
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      DATABASE_URL: postgresql+psycopg://intelligence:intelligence@postgres:5432/intelligence_rag
+      SYNC_DATABASE_URL: postgresql+psycopg://intelligence:intelligence@postgres:5432/intelligence_rag
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: content_chunks_v1
+      EMBEDDING_PROVIDER: deterministic
+      EMBEDDING_MODEL: deterministic-hash-v1
+      LLM_PROVIDER: fake
+      AGENT_TIMEOUT_SECONDS: 20
+      WORKER_POLL_INTERVAL_SECONDS: 2
+      WAIT_TIMEOUT_SECONDS: 90
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: intelligence-rag-postgres-deploy
+    environment:
+      POSTGRES_USER: intelligence
+      POSTGRES_PASSWORD: intelligence
+      POSTGRES_DB: intelligence_rag
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U intelligence -d intelligence_rag"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: intelligence-rag-qdrant-deploy
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  qdrant-data:

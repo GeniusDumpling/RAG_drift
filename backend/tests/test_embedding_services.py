@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import app.services.embeddings as embeddings
@@ -18,6 +19,16 @@ class FakeVector:
 
     def tolist(self) -> list[float]:
         return list(self.values)
+
+
+@pytest.fixture(autouse=True)  # type: ignore[misc]
+def clear_sentence_transformer_cache() -> Iterator[None]:
+    cache_clear = getattr(embeddings, "_clear_sentence_transformer_model_cache", None)
+    if cache_clear is not None:
+        cache_clear()
+    yield
+    if cache_clear is not None:
+        cache_clear()
 
 
 class FakeSentenceTransformer:
@@ -91,6 +102,28 @@ def test_sentence_transformer_provider_reuses_loaded_model(monkeypatch: pytest.M
     assert second_dimension == 3
     assert vector == [0.1, 0.2, 0.3]
     assert len(FakeSentenceTransformer.instances) == 1
+
+
+def test_sentence_transformer_provider_reuses_model_across_service_instances(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    FakeSentenceTransformer.instances.clear()
+    monkeypatch.setattr(
+        embeddings,
+        "_load_sentence_transformer_class",
+        lambda: FakeSentenceTransformer,
+    )
+
+    first_service = SentenceTransformerEmbeddingService("BAAI/bge-small-zh-v1.5")
+    second_service = SentenceTransformerEmbeddingService("BAAI/bge-small-zh-v1.5")
+
+    assert first_service.embed("遥控器 图传") == [0.1, 0.2, 0.3]
+    assert second_service.embed("固件 升级") == [0.1, 0.2, 0.3]
+    assert len(FakeSentenceTransformer.instances) == 1
+    assert FakeSentenceTransformer.instances[0].encode_calls == [
+        ("遥控器 图传", True),
+        ("固件 升级", True),
+    ]
 
 
 def test_unsupported_embedding_provider_raises_clear_error() -> None:

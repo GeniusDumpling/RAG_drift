@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+from functools import lru_cache
 from typing import Any, Protocol, cast
 
 from app.core.config import Settings
@@ -78,8 +79,7 @@ class SentenceTransformerEmbeddingService:
     @property
     def _loaded_model(self) -> Any:
         if self._model is None:
-            sentence_transformer_class = _load_sentence_transformer_class()
-            self._model = sentence_transformer_class(self.model_name)
+            self._model = _load_sentence_transformer_model(self.model_name)
         return self._model
 
 
@@ -94,6 +94,16 @@ def build_embedding_service(settings: Settings) -> EmbeddingService:
         "Unsupported EMBEDDING_PROVIDER "
         f"{settings.embedding_provider!r}; expected deterministic or sentence-transformers"
     )
+
+
+@lru_cache(maxsize=4)
+def _load_sentence_transformer_model(model_name: str) -> Any:
+    sentence_transformer_class = _load_sentence_transformer_class()
+    return sentence_transformer_class(model_name)
+
+
+def _clear_sentence_transformer_model_cache() -> None:
+    _load_sentence_transformer_model.cache_clear()
 
 
 def _load_sentence_transformer_class() -> Any:

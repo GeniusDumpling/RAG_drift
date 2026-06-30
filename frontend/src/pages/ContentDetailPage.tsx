@@ -29,7 +29,7 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
     let ignore = false;
     setListError('');
     setListLoading(true);
-    listContents({ limit: 25 })
+    listContents({ limit: 500 })
       .then((page) => {
         if (!ignore) {
           setContents(page);

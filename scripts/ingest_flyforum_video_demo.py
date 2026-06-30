@@ -327,13 +327,6 @@ def ingest(args: argparse.Namespace) -> dict[str, object]:
     """Crawl flyforum.cn pages, extract videos, describe via VLM, ingest into RAG."""
     settings = get_settings()
 
-    siliconflow_base = settings.siliconflow_base_url
-    siliconflow_key = settings.siliconflow_api_key
-    if not siliconflow_key and settings.embedding_provider == "siliconflow":
-        raise RuntimeError(
-            "SILICONFLOW_API_KEY is required when EMBEDDING_PROVIDER=siliconflow"
-        )
-
     embedding_service = build_embedding_service(settings)
     vlm_http = httpx.Client(timeout=120, follow_redirects=True)
     validation_http = httpx.Client(
@@ -556,8 +549,8 @@ def ingest(args: argparse.Namespace) -> dict[str, object]:
             try:
                 description = describe_video(
                     client=vlm_http,
-                    base_url=siliconflow_base,
-                    api_key=siliconflow_key or "",
+                    base_url=settings.vlm_base_url,
+                    api_key=settings.vlm_api_key or "",
                     model=settings.vlm_model,
                     video_url=video_url,
                 )

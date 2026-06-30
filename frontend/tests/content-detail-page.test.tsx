@@ -152,7 +152,7 @@ describe('ContentDetailPage', () => {
     expect(screen.getByText('Ops Writer')).toBeInTheDocument();
     expect(screen.getByText('parsed')).toBeInTheDocument();
     expect(screen.getByText('A concise setup guide.')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '索引文本预览 Indexed Text' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '索引文本预览' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Cleaned Text' })).not.toBeInTheDocument();
     expect(screen.getByText('Install the package and disable telemetry.', { selector: 'pre' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Raw page 链接' })).toHaveAttribute(
@@ -212,7 +212,7 @@ describe('ContentDetailPage', () => {
     render(<ContentDetailPage selectedContentId={selectedItem.id} />);
 
     expect(await screen.findByRole('heading', { name: 'Selected Evidence Guide' })).toBeInTheDocument();
-    const selector = screen.getByLabelText('Content item') as HTMLSelectElement;
+    const selector = screen.getByLabelText('内容') as HTMLSelectElement;
     expect(selector.tagName).toBe('SELECT');
     expect(selector.value).toBe(selectedItem.id);
     expect(Array.from(selector.options).map((option) => option.value)).toContain(selectedItem.id);

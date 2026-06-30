@@ -163,9 +163,9 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
   return (
     <section>
       <div className="page-title">
-        <p className="eyebrow">执行追踪 Execution trace</p>
-        <h1>运行详情 Run Detail</h1>
-        <p className="muted">查看 crawl 计数、事件时间线、关联 Content 和 Agent trace。</p>
+        <p className="eyebrow">执行追踪</p>
+        <h1>运行详情</h1>
+        <p className="muted">查看爬取计数、事件时间线、关联内容和智能体追踪。</p>
       </div>
 
       <div className="card controls-card">
@@ -222,11 +222,11 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
           </div>
           <dl className="kv-grid">
             <div>
-              <dt>触发方式 Trigger</dt>
+              <dt>触发方式</dt>
               <dd>{displayedRun.trigger_type}</dd>
             </div>
             <div>
-              <dt>执行模式 Mode</dt>
+              <dt>执行模式</dt>
               <dd>{displayedRun.execution_mode}</dd>
             </div>
             <div>
@@ -242,7 +242,7 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
               <dd>{displayedRun.finished_at ? new Date(displayedRun.finished_at).toLocaleString() : 'n/a'}</dd>
             </div>
             <div>
-              <dt>错误 Error</dt>
+              <dt>错误</dt>
               <dd>{displayedRun.error_message || '无'}</dd>
             </div>
           </dl>
@@ -254,7 +254,7 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
       )}
 
       <section className="card">
-        <h2>阶段计数 Stage Counters</h2>
+        <h2>阶段计数</h2>
         {displayedRun ? (
           <div className="grid counter-grid">
             {COUNTER_FIELDS.map(([field, label]) => (
@@ -270,7 +270,7 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
       </section>
 
       <section className="card">
-        <h2>事件时间线 Event Timeline</h2>
+        <h2>事件时间线</h2>
         {displayedEvents?.items.length ? (
           <ol className="timeline">
             {displayedEvents.items.map((event) => (
@@ -310,7 +310,7 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
       </section>
 
       <section className="card">
-        <h2>Agent Trace 摘要</h2>
+        <h2>智能体摘要</h2>
         {agentTraceEvents.length ? (
           agentTraceEvents.map((event) => (
             <pre key={event.id}>{JSON.stringify(event.agent_trace_json, null, 2)}</pre>

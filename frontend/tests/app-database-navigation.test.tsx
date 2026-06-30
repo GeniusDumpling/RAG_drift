@@ -70,9 +70,9 @@ describe('App database navigation', () => {
 
     render(<App />);
 
-    fireEvent.click(screen.getByRole('button', { name: '数据库 Database' }));
+    fireEvent.click(screen.getByRole('button', { name: '数据库' }));
 
-    expect(await screen.findByRole('heading', { name: 'PostgreSQL 数据库展示 Database' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '数据库' })).toBeInTheDocument();
     expect(screen.getByText('只读展示，不支持 SQL 执行或写入操作。')).toBeInTheDocument();
   });
 });

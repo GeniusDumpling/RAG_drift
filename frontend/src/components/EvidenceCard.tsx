@@ -1,5 +1,5 @@
 import type { EvidenceObject } from '../api/types';
-import { safeExternalHref } from '../utils/links';
+import { itemTypeLabel, safeExternalHref } from '../utils/links';
 
 function formatScore(score: number | null | undefined): string {
   if (score === null || score === undefined || Number.isNaN(score)) {
@@ -23,7 +23,7 @@ export function EvidenceCard({ evidence, onOpenContent }: EvidenceCardProps) {
         <div>
           <h3>{evidence.title || '未命名 Evidence'}</h3>
           <p className="muted compact">
-            {evidence.source_site_name} · {evidence.item_type}
+            {evidence.source_site_name} · {itemTypeLabel(evidence.item_type)}
           </p>
         </div>
         <span className="badge">{evidence.matched_by}</span>

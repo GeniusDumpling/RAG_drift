@@ -146,8 +146,8 @@ describe('App run navigation', () => {
     render(<App />);
 
     const primaryNav = screen.getByRole('navigation', { name: '主导航 Primary' });
-    const dashboardButton = within(primaryNav).getByRole('button', { name: '总览 Dashboard' });
-    const searchButton = within(primaryNav).getByRole('button', { name: '检索问答 Search' });
+    const dashboardButton = within(primaryNav).getByRole('button', { name: '总览' });
+    const searchButton = within(primaryNav).getByRole('button', { name: '检索问答' });
 
     expect(dashboardButton).toHaveAttribute('aria-current', 'page');
     expect(searchButton).not.toHaveAttribute('aria-current');
@@ -194,13 +194,13 @@ describe('App run navigation', () => {
 
     render(<App />);
 
-    fireEvent.click(screen.getByRole('button', { name: '内容详情 Content' }));
+    fireEvent.click(screen.getByRole('button', { name: '内容详情' }));
     expect(await screen.findByRole('heading', { name: 'Setup Guide' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Run 链接' }));
 
     expect(await screen.findByRole('heading', { name: 'run-1' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '运行记录 Runs' })).toHaveClass('active');
+    expect(screen.getByRole('button', { name: '运行记录' })).toHaveClass('active');
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([request]) => String(request).endsWith('/runs/run-1'))).toBe(true);
     });

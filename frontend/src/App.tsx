@@ -12,12 +12,12 @@ type View = 'Dashboard' | 'Sources' | 'Runs' | 'Search' | 'Content' | 'Database'
 const NAV_ITEMS: View[] = ['Dashboard', 'Sources', 'Runs', 'Search', 'Content', 'Database'];
 
 const NAV_LABELS: Record<View, string> = {
-  Dashboard: '总览 Dashboard',
-  Sources: '数据源 Sources',
-  Runs: '运行记录 Runs',
-  Search: '检索问答 Search',
-  Content: '内容详情 Content',
-  Database: '数据库 Database',
+  Dashboard: '总览',
+  Sources: '数据源',
+  Runs: '运行记录',
+  Search: '检索问答',
+  Content: '内容详情',
+  Database: '数据库',
 };
 
 export function App() {
@@ -47,8 +47,8 @@ export function App() {
         <div className="brand-block">
           <span className="brand-dot" />
           <div>
-            <strong>情报 RAG</strong>
-            <p className="muted compact">可观测 OSINT 原型</p>
+            <strong>信息 RAG</strong>
+            <p className="muted compact">信息检索增强问答系统</p>
           </div>
         </div>
         <nav aria-label="主导航 Primary">

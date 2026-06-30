@@ -148,7 +148,7 @@ describe('DatabasePage', () => {
 
     render(<DatabasePage />);
 
-    expect(await screen.findByRole('heading', { name: 'PostgreSQL 数据库展示 Database' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '数据库' })).toBeInTheDocument();
     expect(screen.getByText('intelligence_rag')).toBeInTheDocument();
     expect(screen.getByText('content_chunks_v1')).toBeInTheDocument();
     expect(screen.getByText('matched')).toBeInTheDocument();

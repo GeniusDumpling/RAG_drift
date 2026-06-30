@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { listContents, listJobs, listRuns, listSources } from '../api/client';
+import { itemTypeLabel } from '../utils/links';
 import type { ContentListItem, CrawlJob, CrawlRun, Page, SourceSite } from '../api/types';
 import { formatErrorMessage } from '../utils/errors';
 
@@ -76,9 +77,9 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
   return (
     <section>
       <div className="page-title">
-        <p className="eyebrow">工作台 Workbench</p>
-        <h1>情报 RAG 总览 Dashboard</h1>
-        <p className="muted">观察 Source 状态、Crawl 执行、索引 Content 和 Evidence。</p>
+        <p className="eyebrow">工作台</p>
+        <h1>信息 RAG 总览</h1>
+        <p className="muted">观察数据源状态、爬取执行、索引内容和证据。</p>
       </div>
 
       <div className="grid metric-grid">
@@ -101,7 +102,7 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
       </div>
 
       <form className="card search-entry" onSubmit={handleSubmit}>
-        <label htmlFor="dashboard-query">检索已索引语料</label>
+        <label htmlFor="dashboard-query">检索已索引内容</label>
         <div className="inline-form">
           <input
             id="dashboard-query"
@@ -109,7 +110,7 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
             onChange={(event) => setQuery(event.target.value)}
             placeholder="telemetry disable procedure"
           />
-          <button type="submit">打开 Search</button>
+          <button type="submit">打开检索</button>
         </div>
       </form>
 
@@ -128,7 +129,7 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
 
       <div className="grid two-column">
         <section className="card">
-          <h2>最近 Runs</h2>
+          <h2>最近运行</h2>
           {data.runs?.items.length ? (
             <ul className="dense-list">
               {data.runs.items.slice(0, 5).map((run) => (
@@ -147,12 +148,12 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
         </section>
 
         <section className="card">
-          <h2>最近 Content</h2>
+          <h2>最新内容</h2>
           {data.contents?.items.length ? (
             <ul className="dense-list">
               {data.contents.items.slice(0, 5).map((item) => (
                 <li key={item.id}>
-                  <span className="badge">{item.item_type}</span>
+                  <span className="badge">{itemTypeLabel(item.item_type)}</span>
                   <span>{item.title || item.canonical_url}</span>
                   <span className="muted">{item.author_name || '未知作者'}</span>
                 </li>

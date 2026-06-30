@@ -173,7 +173,7 @@ describe('App run navigation', () => {
       if (url.endsWith('/contents?limit=10&offset=0')) {
         return Promise.resolve(jsonResponse(page<ContentListItem>([], 10)));
       }
-      if (url.endsWith('/contents?limit=25&offset=0')) {
+      if (url.endsWith('/contents?limit=100&offset=0')) {
         return Promise.resolve(jsonResponse(page<ContentListItem>([contentItem], 25)));
       }
       if (url.endsWith('/contents/content-1')) {

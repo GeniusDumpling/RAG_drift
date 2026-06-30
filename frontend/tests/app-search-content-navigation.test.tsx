@@ -205,7 +205,7 @@ describe('App search evidence content navigation', () => {
       if (url.endsWith('/search') && init?.method === 'POST') {
         return Promise.resolve(jsonResponse(searchResponse));
       }
-      if (url.endsWith('/contents?limit=25&offset=0')) {
+      if (url.endsWith('/contents?limit=100&offset=0')) {
         return Promise.resolve(jsonResponse(page<ContentListItem>([listedContent], 25)));
       }
       if (url.endsWith(`/contents/${selectedContent.id}`)) {
@@ -224,7 +224,7 @@ describe('App search evidence content navigation', () => {
 
     expect(await screen.findByText('Search Evidence Result')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: `打开 Content item ${selectedContent.id}` }));
+    fireEvent.click(screen.getByRole('button', { name: `打开内容 ${selectedContent.id}` }));
 
     expect(await screen.findByRole('heading', { name: selectedContent.title })).toBeInTheDocument();
     expect(screen.getByText('Selected evidence chunk text.', { selector: 'pre' })).toBeInTheDocument();

@@ -123,7 +123,7 @@ function jsonResponse(body: unknown): Response {
 function stubContentFetch(contentDetail: ContentDetail = detail) {
   const fetchMock = vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.endsWith('/contents?limit=25&offset=0')) {
+    if (url.endsWith('/contents?limit=100&offset=0')) {
       return Promise.resolve(jsonResponse(page<ContentListItem>([contentItem])));
     }
     if (url.endsWith('/contents/content-1')) {
@@ -199,7 +199,7 @@ describe('ContentDetailPage', () => {
     };
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/contents?limit=25&offset=0')) {
+      if (url.endsWith('/contents?limit=100&offset=0')) {
         return Promise.resolve(jsonResponse(page<ContentListItem>([contentItem])));
       }
       if (url.endsWith('/contents/content-selected')) {
@@ -236,7 +236,7 @@ describe('ContentDetailPage', () => {
   it('renders the empty state when no content records are available', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/contents?limit=25&offset=0')) {
+      if (url.endsWith('/contents?limit=100&offset=0')) {
         return Promise.resolve(jsonResponse(page<ContentListItem>([])));
       }
       return Promise.reject(new Error(`Unexpected URL: ${url}`));

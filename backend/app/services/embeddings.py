@@ -90,7 +90,7 @@ class SentenceTransformerEmbeddingService:
 def build_embedding_service(settings: Settings) -> EmbeddingService:
     provider = settings.embedding_provider.strip().casefold().replace("_", "-")
     if provider == "deterministic":
-        return DeterministicEmbeddingService()
+        return DeterministicEmbeddingService(dimension=settings.embedding_dimension)
     if provider == "sentence-transformers":
         model_name = settings.embedding_model.strip() or DEFAULT_SENTENCE_TRANSFORMERS_MODEL
         return SentenceTransformerEmbeddingService(model_name=model_name)

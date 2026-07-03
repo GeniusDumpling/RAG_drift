@@ -59,6 +59,20 @@ cd /home/admin/.openclaw/workspace/RAG_drift
   --source bilibili
 ```
 
+### 仅验证 YouTube 解析与 VLM 描述（不入库）
+
+```bash
+.venv/bin/python skills/video-crawler/scripts/video_fetch.py \
+  --analyze-only \
+  --video-url "https://www.youtube.com/watch?v=fAZZLPwbPyg" \
+  --source youtube \
+  --json
+```
+
+该模式使用 `yt-dlp` 获取不高于 480p 的临时媒体输入，调用 VLM 后只输出稳定的
+YouTube 页面 URL、视频元数据和中文描述，不连接 PostgreSQL 或 Qdrant，也不输出
+临时签名媒体 URL。
+
 ## 环境变量
 
 | 变量 | 默认值 | 说明 |

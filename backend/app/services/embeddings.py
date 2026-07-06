@@ -87,39 +87,7 @@ class SentenceTransformerEmbeddingService:
         return self._model
 
 
-def build_embedding_service(settings: Settings) -> EmbeddingService:
-    provider = settings.embedding_provider.strip().casefold().replace("_", "-")
-    if provider == "deterministic":
-        return DeterministicEmbeddingService(dimension=settings.embedding_dimension)
-    if provider == "sentence-transformers":
-        model_name = settings.embedding_model.strip() or DEFAULT_SENTENCE_TRANSFORMERS_MODEL
-        return SentenceTransformerEmbeddingService(model_name=model_name)
-    raise ValueError(
-        "Unsupported EMBEDDING_PROVIDER "
-        f"{settings.embedding_provider!r}; expected deterministic or sentence-transformers"
-    )
-
-
-@lru_cache(maxsize=4)
-def _load_sentence_transformer_model(model_name: str) -> Any:
-    sentence_transformer_class = _load_sentence_transformer_class()
-    return sentence_transformer_class(model_name)
-
-
-def _clear_sentence_transformer_model_cache() -> None:
-    _load_sentence_transformer_model.cache_clear()
-
-
-def _load_sentence_transformer_class() -> Any:
-    try:
-        from sentence_transformers import SentenceTransformer
-    except ImportError as exc:
-        raise RuntimeError(
-            "sentence-transformers is required for EMBEDDING_PROVIDER=sentence-transformers. "
-            "Install it with: python -m pip install -e '.[local-embeddings]'"
-        ) from exc
-    return SentenceTransformer
-
+class SiliconFlowEmbeddingService:
     """SiliconFlow OpenAI-compatible embeddings (BAAI/bge-m3)."""
 
     def __init__(
@@ -153,21 +121,48 @@ def _load_sentence_transformer_class() -> Any:
 
 
 def build_embedding_service(settings: Settings) -> EmbeddingService:
-    """Factory: returns the appropriate EmbeddingService based on settings.
-
-    - ``fake`` -> ``DeterministicEmbeddingService`` (tests / dev)
-    - ``siliconflow`` -> ``SiliconFlowEmbeddingService`` (production BGE-M3)
-    """
-    if settings.embedding_provider == "fake":
-        return DeterministicEmbeddingService()
-    if settings.embedding_provider != "siliconflow":
-        raise ValueError(f"unsupported embedding provider: {settings.embedding_provider}")
-    if not settings.siliconflow_api_key:
-        raise RuntimeError("SILICONFLOW_API_KEY is required when EMBEDDING_PROVIDER=siliconflow")
-    return SiliconFlowEmbeddingService(
-        api_key=settings.siliconflow_api_key,
-        base_url=settings.siliconflow_base_url,
-        model=settings.embedding_model,
-        dimension=settings.embedding_dimension,
+    provider = settings.embedding_provider.strip().casefold().replace("_", "-")
+    if provider == "deterministic":
+        return DeterministicEmbeddingService(dimension=settings.embedding_dimension)
+    if provider == "sentence-transformers":
+        model_name = settings.embedding_model.strip() or DEFAULT_SENTENCE_TRANSFORMERS_MODEL
+        return SentenceTransformerEmbeddingService(model_name=model_name)
+    if provider == "siliconflow":
+        if not settings.siliconflow_api_key:
+            raise RuntimeError(
+                "SILICONFLOW_API_KEY is required when EMBEDDING_PROVIDER=siliconflow"
+            )
+        return SiliconFlowEmbeddingService(
+            api_key=settings.siliconflow_api_key,
+            base_url=settings.siliconflow_base_url,
+            model=settings.embedding_model,
+            dimension=settings.embedding_dimension,
+        )
+    raise ValueError(
+        "Unsupported EMBEDDING_PROVIDER "
+        f"{settings.embedding_provider!r}; expected deterministic, sentence-transformers, or siliconflow"
     )
+
+
+@lru_cache(maxsize=4)
+def _load_sentence_transformer_model(model_name: str) -> Any:
+    sentence_transformer_class = _load_sentence_transformer_class()
+    return sentence_transformer_class(model_name)
+
+
+def _clear_sentence_transformer_model_cache() -> None:
+    _load_sentence_transformer_model.cache_clear()
+
+
+def _load_sentence_transformer_class() -> Any:
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as exc:
+        raise RuntimeError(
+            "sentence-transformers is required for EMBEDDING_PROVIDER=sentence-transformers. "
+            "Install it with: python -m pip install -e '.[local-embeddings]'"
+        ) from exc
+    return SentenceTransformer
+
+
 

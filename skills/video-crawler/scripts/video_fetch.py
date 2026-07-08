@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session, sessionmaker
 import app.models  # noqa: F401 — register ORM metadata
 from app.core.config import Settings, get_settings
 from app.db.base import utcnow
-from app.models.content import ContentChunk, ContentItem
+from app.models.content import ContentChunk, ContentItem, RawPage
 from app.models.control import CrawlJob, CrawlRun, CrawlRunEvent, SourceSite
 from app.services.chunking import build_chunks
 from app.services.embeddings import build_embedding_service
@@ -94,8 +94,8 @@ def resolve_video_input(
             "extract_flat": False,
             "skip_download": True,
             "noplaylist": True,
-            "js_runtimes": {"node": {}},
-            "remote_components": {"ejs": "github"},
+            "js_runtimes": {"node": {"path": None}},
+            "remote_components": ["ejs:github"],
         }
         if cookies_path and pathlib.Path(cookies_path).is_file():
             options["cookiefile"] = cookies_path
@@ -173,8 +173,8 @@ def download_video_input_for_vlm(
             "restrictfilenames": True,
             "overwrites": True,
             "max_filesize": 200_000_000,
-            "js_runtimes": {"node": {}},
-            "remote_components": {"ejs": "github"},
+            "js_runtimes": {"node": {"path": None}},
+            "remote_components": ["ejs:github"],
         }
         if cookies_path and pathlib.Path(cookies_path).is_file():
             options["cookiefile"] = cookies_path
@@ -514,15 +514,35 @@ def ingest_video(
     settings: Settings,
     vlm_http: httpx.Client,
     cookies_path: str | None = None,
+    download_for_vlm: bool = False,
+    public_media_base_url: str | None = None,
 ) -> dict[str, Any]:
     """Ingest a single video: resolve URL -> VLM -> chunk -> embed -> store."""
-    resolved_url, vlm_ok, hint = resolve_video_url(video_url, cookies_path)
-    logger.info("resolve result: vlm_ok=%s hint=%s resolved=%s …", vlm_ok, hint, resolved_url[:80])
-
-    # 决定送给 VLM 的 URL：优先用解析后的直链，否则退回原 URL
-    vlm_input_url = resolved_url if vlm_ok else video_url
-    if not vlm_ok:
-        logger.warning("VLM 可能无法处理该视频 URL: %s", video_url)
+    downloaded_input: DownloadedVideoInput | None = None
+    if download_for_vlm:
+        if not public_media_base_url:
+            raise VideoResolutionError("--download-for-vlm 需要 --public-media-base-url")
+        downloaded_input = download_video_input_for_vlm(
+            video_url=video_url,
+            public_media_base_url=public_media_base_url,
+            cookies_path=cookies_path,
+        )
+        video_input = downloaded_input.video
+    else:
+        video_input = resolve_video_input(video_url, cookies_path)
+    resolved_url = video_input.media_url
+    vlm_input_url = video_input.media_url
+    hint = (
+        f"{video_input.extractor.lower()}_downloaded_public_media"
+        if downloaded_input
+        else f"{video_input.extractor.lower()}_resolved_media_url"
+    )
+    logger.info(
+        "yt-dlp 已解析入库视频: extractor=%s id=%s duration=%s",
+        video_input.extractor,
+        video_input.video_id,
+        video_input.duration_seconds,
+    )
 
     # VLM description
     description = describe_video(
@@ -552,7 +572,7 @@ def ingest_video(
         session.flush()
 
         # Create content item
-        canonical_url = source_page_url or video_url
+        canonical_url = source_page_url or video_input.page_url
         dedup_key = stable_hash(f"{source.id}:{video_url}:video_description:{description[:100]}")
         existing = session.scalar(select(ContentItem).where(ContentItem.dedup_key == dedup_key).limit(1))
         if existing is not None:
@@ -562,13 +582,59 @@ def ingest_video(
             session.commit()
             return {"status": "skipped", "reason": "duplicate"}
 
-        content = ContentItem(
+        raw_snapshot = {
+            "kind": "video_crawler_vlm_analysis",
+            "video_url": video_url,
+            "video_page_url": video_input.page_url,
+            "video_id": video_input.video_id,
+            "video_title": video_input.title,
+            "video_duration_seconds": video_input.duration_seconds,
+            "video_extractor": video_input.extractor,
+            "resolve_hint": hint,
+            "vlm_model": settings.vlm_model,
+            "description": description,
+            **(
+                {
+                    "media_filename": downloaded_input.local_path.name,
+                    "media_public_url": downloaded_input.public_url,
+                    "media_format_id": downloaded_input.format_id,
+                    "media_ext": downloaded_input.ext,
+                }
+                if downloaded_input
+                else {}
+            ),
+        }
+        raw_page = RawPage(
             source_site_id=source.id,
             crawl_run_id=run.id,
+            requested_url=video_url,
+            final_url=video_input.page_url,
+            http_status=200,
+            content_type="application/vnd.video-crawler+json",
+            response_headers_json={},
+            raw_html=None,
+            raw_text=description,
+            raw_json=raw_snapshot,
+            fetched_at=utcnow(),
+            fetch_error=None,
+            parser_profile="video_crawler",
+            extraction_method="vlm_video_analysis",
+            extraction_confidence=None,
+            parse_status="parsed",
+            parse_error=None,
+            body_hash=stable_hash(json.dumps(raw_snapshot, ensure_ascii=False, sort_keys=True)),
+        )
+        session.add(raw_page)
+        session.flush()
+
+        content = ContentItem(
+            source_site_id=source.id,
+            raw_page_id=raw_page.id,
+            crawl_run_id=run.id,
             item_type="video_description",
-            title=title,
+            title=title or video_input.title,
             canonical_url=canonical_url,
-            source_url=video_url,
+            source_url=video_input.page_url,
             language="zh",
             cleaned_text=description,
             summary_text=description[:240],
@@ -576,12 +642,26 @@ def ingest_video(
             structured_by="qwen3_omni_video_crawler",
             metadata_json={
                 "video_url": video_url,
+                "video_page_url": video_input.page_url,
+                "video_id": video_input.video_id,
+                "video_duration_seconds": video_input.duration_seconds,
+                "video_extractor": video_input.extractor,
                 "resolved_url": resolved_url,
                 "resolve_hint": hint,
                 "vlm_input_url": vlm_input_url,
                 "source_page_url": source_page_url,
                 "source_name": source_name,
                 "vlm_model": settings.vlm_model,
+                **(
+                    {
+                        "media_filename": downloaded_input.local_path.name,
+                        "media_public_url": downloaded_input.public_url,
+                        "media_format_id": downloaded_input.format_id,
+                        "media_ext": downloaded_input.ext,
+                    }
+                    if downloaded_input
+                    else {}
+                ),
             },
             content_hash=stable_hash(description),
             dedup_key=dedup_key,
@@ -627,9 +707,8 @@ def ingest_video(
         try:
             indexer.ensure_collection()
             for chunk in chunks:
-                point_id = indexer.index_chunk(
-                    chunk_id=str(chunk.id),
-                    content_item_id=str(content.id),
+                point_id = indexer.upsert_chunk(
+                    chunk_id=chunk.id,
                     embed_text=chunk.embed_text,
                     payload={
                         "chunk_id": str(chunk.id),
@@ -660,8 +739,16 @@ def ingest_video(
             "status": "success",
             "content_id": str(content.id),
             "chunks": len(chunks),
-            "video_url": video_url,
+            "video_url": video_input.page_url,
             "resolve_hint": hint,
+            **(
+                {
+                    "media_filename": downloaded_input.local_path.name,
+                    "media_public_url": downloaded_input.public_url,
+                }
+                if downloaded_input
+                else {}
+            ),
         }
 
 
@@ -692,10 +779,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--download-for-vlm",
         action="store_true",
-        help=(
-            "In analyze-only mode, download <=720p media locally and send its "
-            "public URL to VLM"
-        ),
+        help="Download <=720p media locally and send its public URL to VLM",
     )
     parser.add_argument(
         "--public-media-base-url",
@@ -741,6 +825,8 @@ def main() -> None:
         source_page_url=args.source_page_url or args.video_url,
         settings=settings,
         vlm_http=vlm_http,
+        download_for_vlm=args.download_for_vlm,
+        public_media_base_url=args.public_media_base_url,
     )
 
     print(json.dumps(result, ensure_ascii=False, indent=2))

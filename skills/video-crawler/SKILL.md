@@ -73,6 +73,26 @@ cd /home/admin/.openclaw/workspace/RAG_drift
 YouTube 页面 URL、视频元数据和中文描述，不连接 PostgreSQL 或 Qdrant，也不输出
 临时签名媒体 URL。
 
+### 下载 720p 内视频后交给 VLM（不入库）
+
+当远端 VLM 无法稳定访问 YouTube 临时签名媒体 URL 时，先把视频下载到
+`skills/video-crawler/downloads/`，再通过公网文件服务暴露为稳定 MP4 URL：
+
+```bash
+.venv/bin/python skills/video-crawler/scripts/video_fetch.py \
+  --analyze-only \
+  --download-for-vlm \
+  --public-media-base-url "https://example.com/video-crawler" \
+  --video-url "https://www.youtube.com/watch?v=xxx" \
+  --source youtube \
+  --cookies skills/video-crawler/cookies_www.youtube.com.txt \
+  --json
+```
+
+该模式优先下载浏览器/VLM 兼容性最好的 `18` progressive MP4（通常为 360p），
+再回退到不高于 480p/720p、音视频同文件的媒体。JSON 输出包含本地文件名、
+公网媒体 URL、视频元数据和中文描述；仍然不连接 PostgreSQL 或 Qdrant。
+
 ## 环境变量
 
 | 变量 | 默认值 | 说明 |

@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import logging
 import pathlib
 import uuid
+from dataclasses import asdict, dataclass
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 from sqlalchemy import create_engine, select
@@ -32,6 +34,200 @@ logger = logging.getLogger(__name__)
 VLM_TIMEOUT = 120
 DOWNLOAD_DIR = pathlib.Path(__file__).resolve().parent.parent / "downloads"
 _VIDEO_EXTENSIONS = (".mp4", ".webm", ".mov", ".m3u8", ".flv")
+
+
+class VideoResolutionError(RuntimeError):
+    """Raised when a video page cannot produce a safe VLM media input."""
+
+
+@dataclass(frozen=True)
+class VideoInput:
+    page_url: str
+    video_id: str
+    title: str
+    media_url: str
+    duration_seconds: int | None
+    extractor: str
+
+
+@dataclass(frozen=True)
+class DownloadedVideoInput:
+    video: VideoInput
+    local_path: pathlib.Path
+    public_url: str
+    format_id: str
+    ext: str
+
+
+def _require_http_url(url: str, *, label: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise VideoResolutionError(f"{label}必须是有效的 HTTP(S) URL")
+
+
+def build_public_media_url(public_media_base_url: str, local_path: pathlib.Path) -> str:
+    """Build the stable media URL that the remote VLM service can fetch."""
+    _require_http_url(public_media_base_url, label="公网媒体基础地址")
+    filename = quote(local_path.name)
+    return f"{public_media_base_url.rstrip('/')}/{filename}"
+
+
+def _normalize_youtube_page_url(video_url: str, extractor: str, video_id: str) -> str:
+    if extractor.casefold() == "youtube":
+        return f"https://www.youtube.com/watch?v={video_id}"
+    return video_url
+
+
+def resolve_video_input(
+    video_url: str,
+    cookies_path: str | None = None,
+) -> VideoInput:
+    """Resolve a public video page into stable metadata and an HTTPS VLM input URL."""
+    _require_http_url(video_url, label="视频页面")
+    try:
+        import yt_dlp
+
+        options: dict[str, object] = {
+            "format": "best[ext=mp4][height<=480]/best[height<=480]/best",
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": False,
+            "skip_download": True,
+            "noplaylist": True,
+            "js_runtimes": {"node": {}},
+            "remote_components": {"ejs": "github"},
+        }
+        if cookies_path and pathlib.Path(cookies_path).is_file():
+            options["cookiefile"] = cookies_path
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+    except VideoResolutionError:
+        raise
+    except Exception as exc:
+        raise VideoResolutionError(
+            f"yt-dlp 无法解析视频（{type(exc).__name__}）"
+        ) from exc
+
+    if not isinstance(info, dict) or info.get("_type") == "playlist":
+        raise VideoResolutionError("仅支持单个视频页面")
+    video_id = str(info.get("id") or "").strip()
+    title = str(info.get("title") or "").strip()
+    media_url = str(info.get("url") or "").strip()
+    if not video_id:
+        raise VideoResolutionError("yt-dlp 未返回视频 ID")
+    if not media_url:
+        raise VideoResolutionError("yt-dlp 未返回可供 VLM 读取的媒体地址")
+    _require_http_url(media_url, label="媒体地址")
+
+    extractor = str(info.get("extractor_key") or info.get("extractor") or "unknown")
+    page_url = _normalize_youtube_page_url(video_url, extractor, video_id)
+    raw_duration = info.get("duration")
+    duration = int(raw_duration) if isinstance(raw_duration, int | float) else None
+    logger.info(
+        "yt-dlp 已解析视频: extractor=%s id=%s duration=%s",
+        extractor,
+        video_id,
+        duration,
+    )
+    return VideoInput(
+        page_url=page_url,
+        video_id=video_id,
+        title=title or video_id,
+        media_url=media_url,
+        duration_seconds=duration,
+        extractor=extractor,
+    )
+
+
+def download_video_input_for_vlm(
+    *,
+    video_url: str,
+    public_media_base_url: str,
+    cookies_path: str | None = None,
+    download_dir: pathlib.Path = DOWNLOAD_DIR,
+) -> DownloadedVideoInput:
+    """Download a <=720p single-file media input and expose its configured public URL."""
+    _require_http_url(video_url, label="视频页面")
+    _require_http_url(public_media_base_url, label="公网媒体基础地址")
+    download_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        import yt_dlp
+
+        safe_seed = hashlib.sha256(video_url.encode("utf-8")).hexdigest()[:16]
+        output_template = str(download_dir / f"{safe_seed}.%(ext)s")
+        options: dict[str, object] = {
+            "format": (
+                "18/"
+                "best[ext=mp4][height<=480][acodec!=none][vcodec!=none]/"
+                "best[height<=480][acodec!=none][vcodec!=none]/"
+                "best[ext=mp4][height<=720][acodec!=none][vcodec!=none]/"
+                "best[height<=720][acodec!=none][vcodec!=none]/"
+                "best[height<=720]/best"
+            ),
+            "quiet": True,
+            "no_warnings": True,
+            "noprogress": True,
+            "extract_flat": False,
+            "noplaylist": True,
+            "outtmpl": output_template,
+            "restrictfilenames": True,
+            "overwrites": True,
+            "max_filesize": 200_000_000,
+            "js_runtimes": {"node": {}},
+            "remote_components": {"ejs": "github"},
+        }
+        if cookies_path and pathlib.Path(cookies_path).is_file():
+            options["cookiefile"] = cookies_path
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(video_url, download=True)
+            prepared = pathlib.Path(ydl.prepare_filename(info))
+    except VideoResolutionError:
+        raise
+    except Exception as exc:
+        raise VideoResolutionError(
+            f"yt-dlp 无法下载视频（{type(exc).__name__}）"
+        ) from exc
+
+    if not isinstance(info, dict) or info.get("_type") == "playlist":
+        raise VideoResolutionError("仅支持单个视频页面")
+    actual = (
+        prepared
+        if prepared.is_file()
+        else next(download_dir.glob(f"{safe_seed}.*"), None)
+    )
+    if actual is None or not actual.is_file():
+        raise VideoResolutionError("yt-dlp 下载完成后未找到媒体文件")
+
+    video_id = str(info.get("id") or "").strip()
+    if not video_id:
+        raise VideoResolutionError("yt-dlp 未返回视频 ID")
+    title = str(info.get("title") or video_id).strip()
+    extractor = str(info.get("extractor_key") or info.get("extractor") or "unknown")
+    raw_duration = info.get("duration")
+    duration = int(raw_duration) if isinstance(raw_duration, int | float) else None
+    format_id = str(info.get("format_id") or "").strip()
+    video = VideoInput(
+        page_url=_normalize_youtube_page_url(video_url, extractor, video_id),
+        video_id=video_id,
+        title=title or video_id,
+        media_url=build_public_media_url(public_media_base_url, actual),
+        duration_seconds=duration,
+        extractor=extractor,
+    )
+    logger.info(
+        "yt-dlp 已下载视频: extractor=%s id=%s duration=%s file=%s",
+        extractor,
+        video_id,
+        duration,
+        actual.name,
+    )
+    return DownloadedVideoInput(
+        video=video,
+        local_path=actual,
+        public_url=video.media_url,
+        format_id=format_id,
+        ext=actual.suffix.lstrip("."),
+    )
 
 
 def stable_hash(text: str) -> str:
@@ -252,6 +448,63 @@ def describe_video(
     return description.strip()
 
 
+def analyze_video_only(
+    *,
+    video_url: str,
+    base_url: str,
+    api_key: str,
+    model: str,
+    client: Any,
+    cookies_path: str | None = None,
+    download_for_vlm: bool = False,
+    public_media_base_url: str | None = None,
+) -> dict[str, Any]:
+    """Resolve and describe one video without initializing persistence services."""
+    downloaded_input: DownloadedVideoInput | None = None
+    if download_for_vlm:
+        if not public_media_base_url:
+            raise VideoResolutionError("--download-for-vlm 需要 --public-media-base-url")
+        downloaded_input = download_video_input_for_vlm(
+            video_url=video_url,
+            public_media_base_url=public_media_base_url,
+            cookies_path=cookies_path,
+        )
+        video_input = downloaded_input.video
+    else:
+        video_input = resolve_video_input(video_url, cookies_path)
+    description = describe_video(
+        client=client,
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        video_url=downloaded_input.public_url if downloaded_input else video_input.media_url,
+    )
+    if not description.strip():
+        raise ValueError("VLM returned empty description")
+    safe_metadata = asdict(video_input)
+    safe_metadata.pop("media_url")
+    return {
+        "status": "success",
+        "video_page_url": safe_metadata.pop("page_url"),
+        **safe_metadata,
+        "model": model,
+        "vlm_input_kind": (
+            "downloaded_public_media" if downloaded_input else "resolved_media_url"
+        ),
+        **(
+            {
+                "media_filename": downloaded_input.local_path.name,
+                "media_public_url": downloaded_input.public_url,
+                "media_format_id": downloaded_input.format_id,
+                "media_ext": downloaded_input.ext,
+            }
+            if downloaded_input
+            else {}
+        ),
+        "description": description.strip(),
+    }
+
+
 def ingest_video(
     *,
     video_url: str,
@@ -431,6 +684,25 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Path to cookies.txt file (default: auto-detect cookies_www.youtube.com.txt in skill dir)",
     )
+    parser.add_argument(
+        "--analyze-only",
+        action="store_true",
+        help="Resolve metadata and call the VLM without writing PostgreSQL or Qdrant",
+    )
+    parser.add_argument(
+        "--download-for-vlm",
+        action="store_true",
+        help=(
+            "In analyze-only mode, download <=720p media locally and send its "
+            "public URL to VLM"
+        ),
+    )
+    parser.add_argument(
+        "--public-media-base-url",
+        default=None,
+        help="Public HTTP(S) base URL serving skills/video-crawler/downloads files",
+    )
+    parser.add_argument("--json", action="store_true", help="Print the safe result as JSON")
     return parser.parse_args()
 
 
@@ -440,6 +712,26 @@ def main() -> None:
     settings = get_settings()
 
     vlm_http = httpx.Client(timeout=VLM_TIMEOUT, follow_redirects=True)
+
+    if args.analyze_only:
+        if not settings.vlm_api_key:
+            raise SystemExit("缺少环境变量 VLM_API_KEY")
+        try:
+            result = analyze_video_only(
+                cookies_path=args.cookies,
+                video_url=args.video_url,
+                base_url=settings.vlm_base_url,
+                api_key=settings.vlm_api_key,
+                model=settings.vlm_model,
+                client=vlm_http,
+                download_for_vlm=args.download_for_vlm,
+                public_media_base_url=args.public_media_base_url,
+            )
+        except Exception as exc:
+            logger.error("视频分析失败（%s）", type(exc).__name__)
+            raise SystemExit(1) from exc
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
 
     result = ingest_video(
         cookies_path=args.cookies,
@@ -451,9 +743,7 @@ def main() -> None:
         vlm_http=vlm_http,
     )
 
-    import json as json_mod
-
-    print(json_mod.dumps(result, ensure_ascii=False, indent=2))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

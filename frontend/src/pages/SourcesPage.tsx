@@ -75,9 +75,9 @@ export function SourcesPage() {
   return (
     <section>
       <div className="page-title">
-        <p className="eyebrow">控制面 Control plane</p>
-        <h1>数据源 Sources</h1>
-        <p className="muted">管理 Source site、Crawl job 和手动触发。</p>
+        <p className="eyebrow">控制面板</p>
+        <h1>数据源</h1>
+        <p className="muted">管理数据源、爬取任务和手动触发。</p>
       </div>
 
       {message ? <p className="card status-line">{message}</p> : null}
@@ -107,24 +107,24 @@ export function SourcesPage() {
                 </div>
                 <dl className="kv-grid">
                   <div>
-                    <dt>类型 Type</dt>
+                    <dt>类型</dt>
                     <dd>{source.site_type}</dd>
                   </div>
                   <div>
-                    <dt>抓取模式 Fetch mode</dt>
+                    <dt>抓取模式</dt>
                     <dd>{source.fetch_mode}</dd>
                   </div>
                   <div>
-                    <dt>语言 Language</dt>
+                    <dt>语言</dt>
                     <dd>{source.default_language || 'n/a'}</dd>
                   </div>
                   <div>
-                    <dt>域名 Domains</dt>
+                    <dt>域名</dt>
                     <dd>{source.allowed_domains.join(', ') || 'n/a'}</dd>
                   </div>
                 </dl>
 
-                <h3>Jobs 任务</h3>
+                <h3>任务</h3>
                 {sourceJobs.length ? (
                   <ul className="dense-list">
                     {sourceJobs.map((job) => {

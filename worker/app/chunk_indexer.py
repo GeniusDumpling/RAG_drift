@@ -8,7 +8,7 @@ from app.db.base import utcnow
 from app.models.content import ContentChunk, ContentItem
 from app.models.control import CrawlRunEvent
 from app.services.chunking import BuiltChunk, build_chunks
-from app.services.embeddings import DeterministicEmbeddingService
+from app.services.embeddings import build_embedding_service
 from app.services.retrieval import QdrantIndexer
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -441,13 +441,13 @@ def _build_qdrant_indexer() -> QdrantIndexer:
     return QdrantIndexer(
         url=settings.qdrant_url,
         collection=settings.qdrant_collection,
-        embedding=DeterministicEmbeddingService(),
+        embedding=build_embedding_service(settings),
     )
 
 
 def _current_vector_index_target() -> VectorIndexTarget:
     settings = get_settings()
-    embedding = DeterministicEmbeddingService()
+    embedding = build_embedding_service(settings)
     return VectorIndexTarget(
         backend_name=_vector_backend_name(settings.qdrant_url),
         metadata={

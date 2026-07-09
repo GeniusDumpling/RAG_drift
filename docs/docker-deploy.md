@@ -143,12 +143,14 @@ docker compose -f docker-compose.deploy.yml down -v
 DATABASE_URL=postgresql+psycopg://intelligence:intelligence@postgres:5432/intelligence_rag
 SYNC_DATABASE_URL=postgresql+psycopg://intelligence:intelligence@postgres:5432/intelligence_rag
 QDRANT_URL=http://qdrant:6333
-EMBEDDING_PROVIDER=deterministic
-EMBEDDING_MODEL=deterministic-hash-v1
+EMBEDDING_PROVIDER=sentence-transformers
+EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
+EMBEDDING_DIMENSION=512
+QDRANT_COLLECTION=content_chunks_v2
 LLM_PROVIDER=fake
 ```
 
-默认 embedding 是 deterministic，适合可移植演示。若启用真实本地 embedding，需要重新构建包含 `local-embeddings` 依赖的镜像，并重建 Qdrant collection。
+部署镜像只使用本地 `BAAI/bge-small-zh-v1.5` embedding，维度为 512。服务器可通过 `MODEL_CACHE_DIR` 挂载 HuggingFace/SentenceTransformers 模型缓存，避免每次启动重新下载模型。切换模型或维度时需要重建 Qdrant collection。
 
 ## 11. 注意事项
 

@@ -99,19 +99,20 @@ npm run dev -- --host 0.0.0.0
 
 ### 本地语义 Embedding 配置
 
-默认配置使用 `EMBEDDING_PROVIDER=deterministic`，这是可复现的 hash 向量，只用于测试和演示链路。若要启用真实语义向量检索，可以安装本地 embedding 依赖并使用 BGE small zh：
+项目只使用 512 维本地语义 embedding。安装本地 embedding 依赖后，统一使用 `sentence-transformers` 加载 `BAAI/bge-small-zh-v1.5`：
 
 ```bash
 source .venv/bin/activate
 python -m pip install -e ".[dev,local-embeddings]"
 ```
 
-然后设置：
+配置：
 
 ```bash
 export EMBEDDING_PROVIDER=sentence-transformers
 export EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
-export QDRANT_COLLECTION=content_chunks_bge_small_zh_v1
+export EMBEDDING_DIMENSION=512
+export QDRANT_COLLECTION=content_chunks_v2
 ```
 
 第一次运行会下载模型文件。切换 embedding 模型后必须重建 Qdrant 向量索引，因为旧 collection 中的向量维度和语义空间不同：
@@ -120,19 +121,11 @@ export QDRANT_COLLECTION=content_chunks_bge_small_zh_v1
 python3 scripts/reindex_embeddings.py --reset-collection
 ```
 
-回滚到 deterministic demo 模式：
-
-```bash
-export EMBEDDING_PROVIDER=deterministic
-export EMBEDDING_MODEL=deterministic-hash-v1
-export QDRANT_COLLECTION=content_chunks_v1
-```
-
 如果在 Debian/Ubuntu 上运行 `python3 -m venv` 时提示 `ensurepip` 不可用，请安装 `python3.12-venv` 或 `python3-venv` 后重试。也可以使用 `make install` 创建 `.venv`；当 `uv` 可用时，它会回退到 `uv venv --seed`。
 
 ## FlyForum 视频 RAG Demo（2026-06-24）
 
-一个最小可演示的视频 RAG 链路：从 FlyForum 公网页面发现直链视频 URL，通过硅基流动 VLM 生成中文描述，存入 PostgreSQL，用 BGE-M3 embedding 写入 Qdrant 1024 维 collection，并在现有 Search 页面展示视频播放器和完整描述。
+一个最小可演示的视频 RAG 链路：从 FlyForum 公网页面发现直链视频 URL，通过硅基流动 VLM 生成中文描述，存入 PostgreSQL，用本地 `BAAI/bge-small-zh-v1.5` 512 维 embedding 写入 Qdrant collection，并在现有 Search 页面展示视频播放器和完整描述。
 
 **只支持：**
 
@@ -147,8 +140,10 @@ export QDRANT_COLLECTION=content_chunks_v1
 ```bash
 # 设置环境变量（替换 <set-locally> 为真实 API key）
 export SILICONFLOW_API_KEY='<set-locally>'
-export EMBEDDING_PROVIDER=siliconflow
-export QDRANT_COLLECTION=flyforum_video_bge_m3
+export EMBEDDING_PROVIDER=sentence-transformers
+export EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
+export EMBEDDING_DIMENSION=512
+export QDRANT_COLLECTION=content_chunks_v2
 ```
 
 确保 PostgreSQL 和 Qdrant 已运行：
@@ -200,9 +195,11 @@ python scripts/ingest_flyforum_video_demo.py --page-limit 3 --video-limit 1 --js
 已知视频 URL 时，可以跳过页面发现步骤，直接测试 VLM + PostgreSQL + Qdrant 完整链路：
 
 ```bash
-# 1. 启动 API（使用 1024 维 collection）
-QDRANT_COLLECTION=flyforum_video_bge_m3 \
-EMBEDDING_PROVIDER=siliconflow \
+# 1. 启动 API（使用 512 维本地 embedding collection）
+QDRANT_COLLECTION=content_chunks_v2 \
+EMBEDDING_PROVIDER=sentence-transformers \
+EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5 \
+EMBEDDING_DIMENSION=512 \
 uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 
 # 2. 在另一个终端，验证搜索能够命中视频：
@@ -240,11 +237,11 @@ psql -h 127.0.0.1 -p 54329 -U intelligence -d intelligence_rag -c "
 |---|---|---|
 | `SILICONFLOW_API_KEY` | — | 硅基流动 API key（必填） |
 | `SILICONFLOW_BASE_URL` | `https://api.siliconflow.cn/v1` | API 地址 |
-| `EMBEDDING_PROVIDER` | `fake` | `siliconflow` 时启用远程 embedding |
-| `EMBEDDING_MODEL` | `BAAI/bge-m3` | 向量模型 |
-| `EMBEDDING_DIMENSION` | `1024` | 向量维度 |
+| `EMBEDDING_PROVIDER` | `sentence-transformers` | 仅支持本地 sentence-transformers embedding |
+| `EMBEDDING_MODEL` | `BAAI/bge-small-zh-v1.5` | 本地向量模型 |
+| `EMBEDDING_DIMENSION` | `512` | 向量维度 |
 | `VLM_MODEL` | `Qwen/Qwen3-Omni-30B-A3B-Instruct` | 视频描述模型 |
-| `QDRANT_COLLECTION` | `content_chunks_v1` | 视频 demo 需设为 `flyforum_video_bge_m3` |
+| `QDRANT_COLLECTION` | `content_chunks_v2` | 512 维本地 embedding collection |
 
 ## 核心不变量
 

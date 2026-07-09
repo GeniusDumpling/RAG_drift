@@ -5,35 +5,31 @@ They are in a ``unit/`` subdirectory so they avoid the async ``conftest.py``
 in ``backend/tests/`` and run under synchronous pytest without a database.
 """
 
+import importlib.util
+
 import pytest
 
 from app.core.config import Settings
 from app.services.embeddings import (
-    DeterministicEmbeddingService,
+    _clear_sentence_transformer_model_cache,
     SentenceTransformerEmbeddingService,
     build_embedding_service,
-    _clear_sentence_transformer_model_cache,
 )
 
 
-def test_deterministic_embedding_is_stable() -> None:
-    service = DeterministicEmbeddingService(dimension=384)
-    v1 = service.embed("Hello world")
-    v2 = service.embed("Hello world")
-    assert v1 == v2
-    assert len(v1) == 384
+requires_sentence_transformers = pytest.mark.skipif(
+    importlib.util.find_spec("sentence_transformers") is None,
+    reason="sentence-transformers optional dependency is not installed",
+)
 
 
-def test_deterministic_embedding_differs_for_diff_text() -> None:
-    service = DeterministicEmbeddingService(dimension=384)
-    v1 = service.embed("Hello world")
-    v2 = service.embed("Goodbye world")
-    assert v1 != v2
+def test_embedding_settings_default_to_local_bge_small_zh() -> None:
+    settings = Settings()
 
-
-def test_embedding_factory_keeps_deterministic_for_tests() -> None:
-    service = build_embedding_service(Settings(EMBEDDING_PROVIDER="deterministic"))
-    assert service.model_name == "deterministic-hash-v1"
+    assert settings.qdrant_collection == "content_chunks_v2"
+    assert settings.embedding_provider == "sentence-transformers"
+    assert settings.embedding_model == "BAAI/bge-small-zh-v1.5"
+    assert settings.embedding_dimension == 512
 
 
 def test_embedding_factory_raises_on_unsupported_provider() -> None:
@@ -41,6 +37,23 @@ def test_embedding_factory_raises_on_unsupported_provider() -> None:
         build_embedding_service(Settings(EMBEDDING_PROVIDER="openai"))
 
 
+@pytest.mark.parametrize("provider", ["deterministic", "fake", "siliconflow"])
+def test_embedding_factory_rejects_removed_embedding_providers(provider: str) -> None:
+    with pytest.raises(ValueError, match="Unsupported EMBEDDING_PROVIDER"):
+        build_embedding_service(Settings(EMBEDDING_PROVIDER=provider))
+
+
+def test_embedding_factory_rejects_non_512_dimension() -> None:
+    with pytest.raises(ValueError, match="EMBEDDING_DIMENSION must be 512"):
+        build_embedding_service(Settings(EMBEDDING_DIMENSION=1024))
+
+
+def test_embedding_factory_rejects_other_local_model() -> None:
+    with pytest.raises(ValueError, match="EMBEDDING_MODEL must be BAAI/bge-small-zh-v1.5"):
+        build_embedding_service(Settings(EMBEDDING_MODEL="BAAI/bge-m3"))
+
+
+@requires_sentence_transformers
 def test_sentence_transformer_embedding_shape() -> None:
     """Integration-light: verify SentenceTransformer yields the expected dimension."""
     _clear_sentence_transformer_model_cache()
@@ -55,6 +68,7 @@ def test_sentence_transformer_embedding_shape() -> None:
     assert service.dimension == 512
 
 
+@requires_sentence_transformers
 def test_sentence_transformer_is_stable() -> None:
     _clear_sentence_transformer_model_cache()
     service = SentenceTransformerEmbeddingService(

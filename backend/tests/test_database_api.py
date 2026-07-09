@@ -151,7 +151,7 @@ async def _seed_database_rows(session: AsyncSession) -> dict[str, str]:
         display_text="Telemetry firmware report display text",
         embed_text="Telemetry firmware report embed text",
         token_count=5,
-        chunk_metadata_json={"chunker_version": "v1", "vector_collection": "content_chunks_v1"},
+        chunk_metadata_json={"chunker_version": "v1", "vector_collection": "content_chunks_v2"},
         qdrant_point_id="point-1",
         vector_backend="qdrant",
         vector_point_id="point-1",
@@ -218,9 +218,9 @@ async def test_database_overview_returns_postgres_and_qdrant_reconciliation(
     async def fake_qdrant_status() -> database_repo.QdrantCollectionStatus:
         return database_repo.QdrantCollectionStatus(
             status="ok",
-            collection="content_chunks_v1",
+            collection="content_chunks_v2",
             points_count=1,
-            vector_size=384,
+            vector_size=512,
             distance="Cosine",
             error=None,
         )
@@ -252,9 +252,9 @@ async def test_database_overview_returns_postgres_and_qdrant_reconciliation(
     ]
     assert payload["qdrant"] == {
         "status": "ok",
-        "collection": "content_chunks_v1",
+        "collection": "content_chunks_v2",
         "points_count": 1,
-        "vector_size": 384,
+        "vector_size": 512,
         "distance": "Cosine",
         "error": None,
     }
@@ -274,7 +274,7 @@ async def test_database_overview_keeps_postgres_visible_when_qdrant_is_unavailab
     async def fake_qdrant_status() -> database_repo.QdrantCollectionStatus:
         return database_repo.QdrantCollectionStatus(
             status="unavailable",
-            collection="content_chunks_v1",
+            collection="content_chunks_v2",
             points_count=None,
             vector_size=None,
             distance=None,

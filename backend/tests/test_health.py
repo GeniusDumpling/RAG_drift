@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 def test_settings_reads_known_defaults() -> None:
     settings = Settings()
     assert settings.app_env == "dev"
-    assert settings.qdrant_collection == "content_chunks_v1"
+    assert settings.qdrant_collection == "content_chunks_v2"
     assert settings.agent_timeout_seconds == 20
 
 

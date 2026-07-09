@@ -7,7 +7,6 @@ import app.services.embeddings as embeddings
 import pytest
 from app.core.config import Settings
 from app.services.embeddings import (
-    DeterministicEmbeddingService,
     SentenceTransformerEmbeddingService,
     build_embedding_service,
 )
@@ -47,19 +46,29 @@ class FakeSentenceTransformer:
         return FakeVector([0.1, 0.2, 0.3])
 
 
-def test_embedding_settings_default_to_deterministic() -> None:
+def test_embedding_settings_default_to_local_bge_small_zh() -> None:
     settings = Settings()
 
-    assert settings.embedding_provider == "deterministic"
-    assert settings.embedding_model == "deterministic-hash-v1"
+    assert settings.embedding_provider == "sentence-transformers"
+    assert settings.embedding_model == "BAAI/bge-small-zh-v1.5"
+    assert settings.embedding_dimension == 512
 
 
-def test_build_embedding_service_returns_deterministic_by_default() -> None:
+def test_build_embedding_service_returns_sentence_transformer_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    FakeSentenceTransformer.instances.clear()
+    monkeypatch.setattr(
+        embeddings,
+        "_load_sentence_transformer_class",
+        lambda: FakeSentenceTransformer,
+    )
+
     service = build_embedding_service(Settings())
 
-    assert isinstance(service, DeterministicEmbeddingService)
-    assert service.model_name == "deterministic-hash-v1"
-    assert service.dimension == 384
+    assert isinstance(service, SentenceTransformerEmbeddingService)
+    assert service.model_name == "BAAI/bge-small-zh-v1.5"
+    assert service.dimension == 3
 
 
 def test_build_embedding_service_returns_sentence_transformer_provider(
@@ -128,6 +137,14 @@ def test_sentence_transformer_provider_reuses_model_across_service_instances(
 
 def test_unsupported_embedding_provider_raises_clear_error() -> None:
     settings = Settings(EMBEDDING_PROVIDER="unknown-provider")
+
+    with pytest.raises(ValueError, match="Unsupported EMBEDDING_PROVIDER"):
+        build_embedding_service(settings)
+
+
+@pytest.mark.parametrize("provider", ["deterministic", "fake", "siliconflow"])
+def test_removed_embedding_providers_raise_clear_error(provider: str) -> None:
+    settings = Settings(EMBEDDING_PROVIDER=provider)
 
     with pytest.raises(ValueError, match="Unsupported EMBEDDING_PROVIDER"):
         build_embedding_service(settings)

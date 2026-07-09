@@ -19,6 +19,7 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
   const [sourceSiteId, setSourceSiteId] = useState('');
   const [itemType, setItemType] = useState('');
   const [topKInput, setTopKInput] = useState('10');
+  const [rawEvidence, setRawEvidence] = useState<EvidenceObject[]>([]);
   const [evidence, setEvidence] = useState<EvidenceObject[]>([]);
   const [queryRecord, setQueryRecord] = useState<SearchQueryRead>();
   const [answerText, setAnswerText] = useState('');
@@ -31,6 +32,7 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
   }, [initialQuery]);
 
   function clearResults() {
+    setRawEvidence([]);
     setEvidence([]);
     setQueryRecord(undefined);
     setAnswerText('');
@@ -46,7 +48,7 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
     const parsedTopK = Number(topKInput);
     if (!Number.isInteger(parsedTopK) || parsedTopK < 1 || parsedTopK > 50) {
       clearResults();
-      setError('Top K 必须在 1 到 50 之间。');
+      setError('结果数必须在 1 到 50 之间。');
       return null;
     }
     return {
@@ -70,7 +72,8 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
     setError('');
     try {
       const response = await search(request);
-      setEvidence(response.evidence);
+      setRawEvidence(response.evidence);
+      setEvidence(deduplicateVideoEvidence(response.evidence));
       setQueryRecord(response.query);
     } catch (caught) {
       setEvidence([]);
@@ -93,7 +96,8 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
     setError('');
     try {
       const response = await answer(request);
-      setEvidence(response.supporting_evidence);
+      setRawEvidence(response.supporting_evidence);
+      setEvidence(deduplicateVideoEvidence(response.supporting_evidence));
       setQueryRecord(response.query);
       setAnswerText(response.answer);
     } catch (caught) {
@@ -123,22 +127,22 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
   return (
     <section>
       <div className="page-title">
-        <p className="eyebrow">检索 Retrieval</p>
-        <h1>检索问答 Search</h1>
-        <p className="muted">执行 keyword/vector 检索，检查 Query Trace，并引用 Evidence。</p>
+        <p className="eyebrow">检索</p>
+        <h1>检索问答</h1>
+        <p className="muted">执行关键词/向量检索，查看查询追踪，引用证据。</p>
       </div>
 
       <section className="card">
         <div className="form-grid">
-          <label htmlFor="query-input">Query 查询</label>
+          <label htmlFor="query-input">查询</label>
           <input
             id="query-input"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="例如：telemetry settings"
+            placeholder="搜索关键词"
           />
 
-          <label htmlFor="source-filter">Source Site ID</label>
+          <label htmlFor="source-filter">数据源 ID</label>
           <input
             id="source-filter"
             value={sourceSiteId}
@@ -146,17 +150,18 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
             placeholder="可选 UUID"
           />
 
-          <label htmlFor="type-filter">Item Type</label>
+          <label htmlFor="type-filter">内容类型</label>
           <select id="type-filter" value={itemType} onChange={(event) => setItemType(event.target.value)}>
-            <option value="">任意 Any</option>
-            <option value="doc_page">doc_page</option>
-            <option value="thread">thread</option>
-            <option value="post">post</option>
-            <option value="article">article</option>
-            <option value="comment">comment</option>
+            <option value="">全部</option>
+            <option value="doc_page">文档</option>
+            <option value="thread">帖子</option>
+            <option value="post">评论</option>
+            <option value="article">文章</option>
+            <option value="comment">回复</option>
+            <option value="video_description">视频描述</option>
           </select>
 
-          <label htmlFor="top-k">Top K</label>
+          <label htmlFor="top-k">结果数</label>
           <input
             id="top-k"
             type="number"
@@ -168,10 +173,10 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
         </div>
         <div className="button-row">
           <button type="button" onClick={() => void runSearch()} disabled={loading}>
-            检索 Search
+            检索
           </button>
           <button type="button" onClick={() => void runAnswer()} disabled={loading}>
-            生成 Answer
+            生成答案
           </button>
         </div>
         {error ? (
@@ -189,22 +194,22 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
 
       {queryRecord ? (
         <section className="card">
-          <h2>查询追踪 Query Trace</h2>
+          <h2>查询追踪</h2>
           <dl className="kv-grid">
             <div>
-              <dt>原始 Query</dt>
+              <dt>原始查询</dt>
               <dd>{queryRecord.raw_query}</dd>
             </div>
             <div>
-              <dt>优化后 Query</dt>
+              <dt>优化后查询</dt>
               <dd>{queryRecord.optimized_query_text || 'n/a'}</dd>
             </div>
             <div>
-              <dt>使用 Agent</dt>
+              <dt>使用智能体</dt>
               <dd>{queryRecord.used_agent ? '是' : '否'}</dd>
             </div>
             <div>
-              <dt>结果数 Results</dt>
+              <dt>结果数</dt>
               <dd>{queryRecord.result_count ?? evidence.length}</dd>
             </div>
           </dl>
@@ -214,19 +219,53 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
 
       {answerText ? (
         <section className="card answer-card">
-          <h2>答案草稿 Answer</h2>
+          <h2>答案</h2>
           <p>{answerText}</p>
         </section>
       ) : null}
 
       <section>
-        <h2>证据 Evidence</h2>
+        <h2>证据</h2>
         {evidence.length ? (
-          evidence.map((item) => <EvidenceCard evidence={item} key={item.chunk_id} onOpenContent={onOpenContent} />)
+          evidence.map((item) => <EvidenceCard evidence={item} key={item.content_item_id + (item.item_type === 'video_description' ? '_video' : item.chunk_id)} onOpenContent={onOpenContent} />)
         ) : loading || error ? null : (
           <p className="card empty-state">{EMPTY_STATE_COPY}</p>
         )}
       </section>
     </section>
   );
+}
+
+function deduplicateVideoEvidence(evidence: EvidenceObject[]): EvidenceObject[] {
+  const seen = new Map<string, EvidenceObject>();
+  for (const item of evidence) {
+    if (item.item_type === 'video_description') {
+      const key = item.content_item_id;
+      const existing = seen.get(key);
+      if (existing) {
+        // 合并：保留更高 score、拼接 snippet
+        if (item.score > existing.score) {
+          existing.score = item.score;
+          existing.vector_score = item.vector_score;
+          existing.keyword_score = item.keyword_score;
+        }
+        if (!existing.description_text && item.description_text) {
+          existing.description_text = item.description_text;
+        }
+        if (!existing.video_url && item.video_url) {
+          existing.video_url = item.video_url;
+        }
+        if (existing.snippet !== item.snippet) {
+          existing.snippet = existing.snippet + '\n---\n' + item.snippet;
+        }
+      } else {
+        seen.set(key, { ...item });
+      }
+    } else {
+      // 非视频类型，保持原样
+      const key = item.content_item_id + '::' + item.chunk_id;
+      seen.set(key, item);
+    }
+  }
+  return Array.from(seen.values());
 }

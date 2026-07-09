@@ -1,6 +1,7 @@
 import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 
 import { getContent, listContents } from '../api/client';
+import { itemTypeLabel } from '../utils/links';
 import type { ContentDetail, ContentListItem, Page } from '../api/types';
 import { formatErrorMessage } from '../utils/errors';
 import { safeExternalHref } from '../utils/links';
@@ -28,7 +29,7 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
     let ignore = false;
     setListError('');
     setListLoading(true);
-    listContents({ limit: 25 })
+    listContents({ limit: 100 })
       .then((page) => {
         if (!ignore) {
           setContents(page);
@@ -106,13 +107,13 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
 
     const options = loadedContents.map((item) => ({
       id: item.id,
-      label: `${item.item_type} · ${item.title || item.canonical_url}`,
+      label: `${itemTypeLabel(item.item_type)} · ${item.title || item.canonical_url}`,
     }));
     if (activeContentId && !loadedContents.some((item) => item.id === activeContentId)) {
       return [
         {
           id: activeContentId,
-          label: `${displayedDetail?.item_type ?? '已选择'} · ${displayedDetail?.title || displayedDetail?.canonical_url || activeContentId} · ${activeContentId}`,
+          label: `${itemTypeLabel(displayedDetail?.item_type ?? '已选择')} · ${displayedDetail?.title || displayedDetail?.canonical_url || activeContentId} · ${activeContentId}`,
         },
         ...options,
       ];
@@ -132,13 +133,13 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
   return (
     <section>
       <div className="page-title">
-        <p className="eyebrow">语料库 Corpus</p>
-        <h1>内容详情 Content Detail</h1>
-        <p className="muted">展示 Content record 的 Raw snapshot、Chunks、Run lineage 和抽取元数据。</p>
+        <p className="eyebrow">语料库</p>
+        <h1>内容详情</h1>
+        <p className="muted">展示内容记录的原始快照、分块、运行链和提取元数据。</p>
       </div>
 
       <div className="card controls-card">
-        <label htmlFor="content-selector">Content item</label>
+        <label htmlFor="content-selector">内容</label>
         {contentOptions.length ? (
           <select id="content-selector" value={activeContentId} onChange={handleContentChange}>
             {contentOptions.map((item) => (
@@ -178,34 +179,34 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
           <section className="card">
             <div className="card-header">
               <div>
-                <h2>{displayedDetail.title || '未命名 Content item'}</h2>
+                <h2>{displayedDetail.title || '未命名内容'}</h2>
                 <p className="muted compact">{displayedDetail.canonical_url}</p>
               </div>
-              <span className="badge">{displayedDetail.item_type}</span>
+              <span className="badge">{itemTypeLabel(displayedDetail.item_type)}</span>
             </div>
             <dl className="kv-grid">
               <div>
-                <dt>Source 来源</dt>
+                <dt>来源</dt>
                 <dd>{displayedDetail.source.name}</dd>
               </div>
               <div>
-                <dt>作者 Author</dt>
+                <dt>作者</dt>
                 <dd>{displayedDetail.author_name || '未知'}</dd>
               </div>
               <div>
-                <dt>抓取时间 Fetched</dt>
+                <dt>抓取时间</dt>
                 <dd>{new Date(displayedDetail.fetched_at).toLocaleString()}</dd>
               </div>
               <div>
-                <dt>发布时间 Published</dt>
+                <dt>发布时间</dt>
                 <dd>{displayedDetail.published_at ? new Date(displayedDetail.published_at).toLocaleString() : 'n/a'}</dd>
               </div>
               <div>
-                <dt>抽取置信度 Extraction confidence</dt>
+                <dt>提取置信度</dt>
                 <dd>{displayedDetail.extraction_confidence ?? displayedDetail.raw_page.extraction_confidence ?? 'n/a'}</dd>
               </div>
               <div>
-                <dt>解析状态 Parse status</dt>
+                <dt>解析状态</dt>
                 <dd>{displayedDetail.raw_page.parse_status}</dd>
               </div>
             </dl>
@@ -238,12 +239,12 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
           </section>
 
           <section className="card">
-            <h2>索引文本预览 Indexed Text</h2>
+            <h2>索引文本预览</h2>
             {indexedTextPreview ? <pre>{indexedTextPreview}</pre> : <p className="muted">{EMPTY_STATE_COPY}</p>}
           </section>
 
           <section className="card">
-            <h2>Chunks 分块</h2>
+            <h2>分块</h2>
             {displayedDetail.chunks.length ? (
               <ol className="chunk-list">
                 {displayedDetail.chunks.map((chunk) => (
@@ -255,13 +256,13 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
                     <p>{chunk.display_text}</p>
                     <dl className="kv-grid">
                       <div>
-                        <dt>字符范围 Chars</dt>
+                        <dt>字符范围</dt>
                         <dd>
                           {chunk.char_start ?? 'n/a'}–{chunk.char_end ?? 'n/a'}
                         </dd>
                       </div>
                       <div>
-                        <dt>Tokens</dt>
+                        <dt>词元数</dt>
                         <dd>{chunk.token_count ?? 'n/a'}</dd>
                       </div>
                       <div>

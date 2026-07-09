@@ -15,7 +15,7 @@ from app.schemas.search import (
     SearchRequest,
     SearchResponse,
 )
-from app.services.embeddings import DeterministicEmbeddingService, EmbeddingService
+from app.services.embeddings import EmbeddingService, build_embedding_service
 from app.services.retrieval import retrieve_evidence
 
 ANSWER_EVIDENCE_LIMIT = 3
@@ -40,7 +40,7 @@ class SearchService:
             provider=self.settings.llm_provider,
             timeout_seconds=self.settings.agent_timeout_seconds,
         )
-        self.embedding = embedding or DeterministicEmbeddingService()
+        self.embedding = embedding or build_embedding_service(self.settings)
 
     async def search(self, request: SearchRequest) -> SearchResponse:
         if request.mode != "search":

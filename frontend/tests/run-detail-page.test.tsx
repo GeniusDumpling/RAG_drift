@@ -67,9 +67,9 @@ describe('RunDetailPage', () => {
 
     render(<RunDetailPage />);
 
-    expect(screen.getByText('运行详情 Run Detail')).toBeInTheDocument();
-    expect(screen.getByText('阶段计数 Stage Counters')).toBeInTheDocument();
-    expect(screen.getByText('事件时间线 Event Timeline')).toBeInTheDocument();
+    expect(screen.getByText('运行详情')).toBeInTheDocument();
+    expect(screen.getByText('阶段计数')).toBeInTheDocument();
+    expect(screen.getByText('事件时间线')).toBeInTheDocument();
   });
 
   it('renders fetched run counters and events from the default loaded run', async () => {

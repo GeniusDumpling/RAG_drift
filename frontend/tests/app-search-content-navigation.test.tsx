@@ -205,7 +205,7 @@ describe('App search evidence content navigation', () => {
       if (url.endsWith('/search') && init?.method === 'POST') {
         return Promise.resolve(jsonResponse(searchResponse));
       }
-      if (url.endsWith('/contents?limit=25&offset=0')) {
+      if (url.endsWith('/contents?limit=100&offset=0')) {
         return Promise.resolve(jsonResponse(page<ContentListItem>([listedContent], 25)));
       }
       if (url.endsWith(`/contents/${selectedContent.id}`)) {
@@ -218,17 +218,17 @@ describe('App search evidence content navigation', () => {
     render(<App />);
 
     const primaryNav = screen.getByRole('navigation', { name: '主导航 Primary' });
-    fireEvent.click(within(primaryNav).getByRole('button', { name: '检索问答 Search' }));
-    fireEvent.change(screen.getByLabelText('Query 查询'), { target: { value: 'telemetry disable' } });
-    fireEvent.click(within(screen.getByRole('main')).getByRole('button', { name: '检索 Search' }));
+    fireEvent.click(within(primaryNav).getByRole('button', { name: '检索问答' }));
+    fireEvent.change(screen.getByLabelText('查询'), { target: { value: 'telemetry disable' } });
+    fireEvent.click(within(screen.getByRole('main')).getByRole('button', { name: '检索' }));
 
     expect(await screen.findByText('Search Evidence Result')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: `打开 Content item ${selectedContent.id}` }));
+    fireEvent.click(screen.getByRole('button', { name: `打开内容 ${selectedContent.id}` }));
 
     expect(await screen.findByRole('heading', { name: selectedContent.title })).toBeInTheDocument();
     expect(screen.getByText('Selected evidence chunk text.', { selector: 'pre' })).toBeInTheDocument();
-    expect(within(primaryNav).getByRole('button', { name: '内容详情 Content' })).toHaveAttribute('aria-current', 'page');
+    expect(within(primaryNav).getByRole('button', { name: '内容详情' })).toHaveAttribute('aria-current', 'page');
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([request]) => String(request).endsWith(`/contents/${selectedContent.id}`))).toBe(
         true,

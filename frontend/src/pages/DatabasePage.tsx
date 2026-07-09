@@ -165,8 +165,8 @@ export function DatabasePage() {
   return (
     <section>
       <div className="page-title">
-        <p className="eyebrow">只读数据库视图 Read-only Database</p>
-        <h1>PostgreSQL 数据库展示 Database</h1>
+        <p className="eyebrow">只读数据库视图</p>
+        <h1>数据库</h1>
         <p className="muted">只读展示，不支持 SQL 执行或写入操作。</p>
       </div>
 

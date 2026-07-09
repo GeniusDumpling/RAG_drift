@@ -97,7 +97,154 @@ npm run dev -- --host 0.0.0.0
 
 `QDRANT_URL=memory://...` 和 `QDRANT_URL=:memory:` 会选择显式的内存向量后端，用于本地开发和测试。它们是进程本地的便捷模式，不是跨进程向量冒烟，也不是实际 Qdrant 故障时的自动回退。如果配置了真实 Qdrant URL，而 Qdrant 连接或 HTTP 调用失败，摄取流程会记录失败/部分 chunk 索引状态，而不是静默切换到内存存储。除非设置 `ALLOW_NONLOCAL_SMOKE_VECTOR=1`，否则冒烟脚本只接受内存向量或本地 Qdrant 主机（`localhost`、`127.0.0.1` 或 `::1`）。
 
+### 本地语义 Embedding 配置
+
+默认配置使用 `EMBEDDING_PROVIDER=deterministic`，这是可复现的 hash 向量，只用于测试和演示链路。若要启用真实语义向量检索，可以安装本地 embedding 依赖并使用 BGE small zh：
+
+```bash
+source .venv/bin/activate
+python -m pip install -e ".[dev,local-embeddings]"
+```
+
+然后设置：
+
+```bash
+export EMBEDDING_PROVIDER=sentence-transformers
+export EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
+export QDRANT_COLLECTION=content_chunks_bge_small_zh_v1
+```
+
+第一次运行会下载模型文件。切换 embedding 模型后必须重建 Qdrant 向量索引，因为旧 collection 中的向量维度和语义空间不同：
+
+```bash
+python3 scripts/reindex_embeddings.py --reset-collection
+```
+
+回滚到 deterministic demo 模式：
+
+```bash
+export EMBEDDING_PROVIDER=deterministic
+export EMBEDDING_MODEL=deterministic-hash-v1
+export QDRANT_COLLECTION=content_chunks_v1
+```
+
 如果在 Debian/Ubuntu 上运行 `python3 -m venv` 时提示 `ensurepip` 不可用，请安装 `python3.12-venv` 或 `python3-venv` 后重试。也可以使用 `make install` 创建 `.venv`；当 `uv` 可用时，它会回退到 `uv venv --seed`。
+
+## FlyForum 视频 RAG Demo（2026-06-24）
+
+一个最小可演示的视频 RAG 链路：从 FlyForum 公网页面发现直链视频 URL，通过硅基流动 VLM 生成中文描述，存入 PostgreSQL，用 BGE-M3 embedding 写入 Qdrant 1024 维 collection，并在现有 Search 页面展示视频播放器和完整描述。
+
+**只支持：**
+
+- `https://www.flyforum.cn/forum.php` 及同域公开论坛页/帖子页
+- HTML 中直接出现的 `<video src>`、`<source src>`，以及 `.mp4`、`.webm`、`.m3u8` 结尾的链接
+- 默认最多 3 个页面、1 个视频，请求间隔至少 1 秒
+
+**明确不做：** 登录、验证码、JS 播放器逆向、隐藏流解析、FFmpeg、全站爬取、定时调度、新页面。
+
+### 前置条件
+
+```bash
+# 设置环境变量（替换 <set-locally> 为真实 API key）
+export SILICONFLOW_API_KEY='<set-locally>'
+export EMBEDDING_PROVIDER=siliconflow
+export QDRANT_COLLECTION=flyforum_video_bge_m3
+```
+
+确保 PostgreSQL 和 Qdrant 已运行：
+
+```bash
+docker compose up -d postgres qdrant
+alembic upgrade head
+```
+
+### 手动创建 Qdrant 1024 维 collection
+
+视频 demo 使用 1024 维 BGE-M3 embedding，需要在 Qdrant 中创建独立 collection：
+
+```bash
+curl -s -X PUT 'http://localhost:6333/collections/flyforum_video_bge_m3' \
+  -H 'Content-Type: application/json' \
+  -d '{"vectors": {"size": 1024, "distance": "Cosine"}}'
+```
+
+### 运行导入脚本
+
+```bash
+python scripts/ingest_flyforum_video_demo.py --page-limit 3 --video-limit 1 --json
+```
+
+输出示例：
+
+```json
+{
+  "status": "success",
+  "run_id": "f503f878-ede6-4b50-baa9-24e28acf059c",
+  "pages_discovered": 2,
+  "pages_fetched": 2,
+  "pages_parsed": 2,
+  "video_discovered": 0,
+  "video_analyzed": 0,
+  "video_failed": 0,
+  "chunked_count": 0,
+  "embedded_count": 0,
+  "deduped_count": 0,
+  "error_count": 0
+}
+```
+
+> **注意：** 公开页面没有直接视频 URL 时，脚本可能成功结束但 `video_discovered_count=0`。这表示当前采样页面没有满足 demo 规则的直链视频链接，不代表 PostgreSQL/Qdrant 故障。不要为了"找出视频"绕过登录、验证码或站点限制。
+
+### 直接视频 URL 导入方法
+
+已知视频 URL 时，可以跳过页面发现步骤，直接测试 VLM + PostgreSQL + Qdrant 完整链路：
+
+```bash
+# 1. 启动 API（使用 1024 维 collection）
+QDRANT_COLLECTION=flyforum_video_bge_m3 \
+EMBEDDING_PROVIDER=siliconflow \
+uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
+
+# 2. 在另一个终端，验证搜索能够命中视频：
+curl -s -X POST http://localhost:8000/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"无人机","mode":"search","top_k":5,"filters":{}}' | python3 -m json.tool
+```
+
+### 核对 PostgreSQL 与 Qdrant 一致性
+
+```bash
+psql -h 127.0.0.1 -p 54329 -U intelligence -d intelligence_rag -c "
+  select
+    ci.id as content_item_id,
+    ci.canonical_url as video_url,
+    cc.id as chunk_id,
+    cc.vector_point_id,
+    cc.embed_status
+  from content_items ci
+  join content_chunks cc on cc.content_item_id = ci.id
+  where ci.item_type = 'video_description'
+  order by ci.created_at desc, cc.chunk_index;
+"
+```
+
+期望：每一行 `chunk_id::text = vector_point_id` 且 `embed_status=success`。
+
+### 前端验证
+
+启动前端后，在导航栏点击 **检索问答 Search**，输入查询（如"无人机失控"），在 Item Type 下拉选择 `video_description`，点击 **检索 Search**。结果中的视频证据会显示 `<video>` 播放器和可折叠的完整中文描述。
+
+### 环境变量参考
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `SILICONFLOW_API_KEY` | — | 硅基流动 API key（必填） |
+| `SILICONFLOW_BASE_URL` | `https://api.siliconflow.cn/v1` | API 地址 |
+| `EMBEDDING_PROVIDER` | `fake` | `siliconflow` 时启用远程 embedding |
+| `EMBEDDING_MODEL` | `BAAI/bge-m3` | 向量模型 |
+| `EMBEDDING_DIMENSION` | `1024` | 向量维度 |
+| `VLM_MODEL` | `Qwen/Qwen3-Omni-30B-A3B-Instruct` | 视频描述模型 |
+| `QDRANT_COLLECTION` | `content_chunks_v1` | 视频 demo 需设为 `flyforum_video_bge_m3` |
 
 ## 核心不变量
 

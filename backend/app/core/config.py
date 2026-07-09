@@ -20,9 +20,25 @@ class Settings(BaseSettings):
     )
     qdrant_url: str = Field(default="http://localhost:6333", alias="QDRANT_URL")
     qdrant_collection: str = Field(default="content_chunks_v1", alias="QDRANT_COLLECTION")
+    embedding_provider: str = Field(default="deterministic", alias="EMBEDDING_PROVIDER")
+    embedding_model: str = Field(default="deterministic-hash-v1", alias="EMBEDDING_MODEL")
     llm_provider: str = Field(default="fake", alias="LLM_PROVIDER")
     agent_timeout_seconds: int = Field(default=20, alias="AGENT_TIMEOUT_SECONDS")
     worker_poll_interval_seconds: int = Field(default=2, alias="WORKER_POLL_INTERVAL_SECONDS")
+
+    # VLM settings
+    vlm_base_url: str = Field(
+        default="https://api.siliconflow.cn/v1", alias="VLM_BASE_URL"
+    )
+    vlm_api_key: str | None = Field(default=None, alias="VLM_API_KEY")
+    vlm_model: str = Field(
+        default="Qwen/Qwen3-Omni-30B-A3B-Instruct", alias="VLM_MODEL"
+    )
+
+    # Embedding settings
+    embedding_provider: str = Field(default="sentence-transformers", alias="EMBEDDING_PROVIDER")
+    embedding_model: str = Field(default="BAAI/bge-small-zh-v1.5", alias="EMBEDDING_MODEL")
+    embedding_dimension: int = Field(default=512, alias="EMBEDDING_DIMENSION")
 
 
 @lru_cache(maxsize=1)

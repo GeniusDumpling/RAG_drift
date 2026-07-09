@@ -16,7 +16,6 @@ from app.main import app
 from app.models.content import ContentChunk, ContentItem, RawPage
 from app.models.control import CrawlJob, CrawlRun, CrawlRunEvent, SourceSite
 from app.services.chunking import build_chunks
-from app.services.embeddings import DeterministicEmbeddingService
 from app.services.retrieval import _MEMORY_COLLECTIONS, QdrantIndexer
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, insert, select, text
@@ -29,6 +28,15 @@ from worker.app.normalizer import normalize_extraction_response
 from worker.app.runner import run_once
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+class FixedEmbeddingService:
+    model_name = "BAAI/bge-small-zh-v1.5"
+    dimension = 512
+
+    def embed(self, text: str) -> list[float]:
+        value = 1.0 if text.strip() else 0.0
+        return [value for _ in range(self.dimension)]
 
 
 def _create_worker_job(
@@ -113,7 +121,7 @@ def _fetch_db_rows(query: str, params: dict[str, object]) -> list[dict[str, obje
 
 
 def _current_vector_metadata() -> dict[str, object]:
-    embedding = DeterministicEmbeddingService()
+    embedding = FixedEmbeddingService()
     return {
         "vector_collection": get_settings().qdrant_collection,
         "vector_store_id": hashlib.sha256(
@@ -521,9 +529,9 @@ def test_success_chunks_with_stale_vector_collection_are_reindexed(
         first_collection
     }
     assert {metadata["embedding_model"] for metadata in first_chunk_metadata} == {
-        "deterministic-hash-v1"
+        "BAAI/bge-small-zh-v1.5"
     }
-    assert {metadata["embedding_dimension"] for metadata in first_chunk_metadata} == {384}
+    assert {metadata["embedding_dimension"] for metadata in first_chunk_metadata} == {512}
 
     monkeypatch.setenv("QDRANT_COLLECTION", second_collection)
     get_settings.cache_clear()
@@ -561,9 +569,9 @@ def test_success_chunks_with_stale_vector_collection_are_reindexed(
         second_collection
     }
     assert {metadata["embedding_model"] for metadata in refreshed_chunk_metadata} == {
-        "deterministic-hash-v1"
+        "BAAI/bge-small-zh-v1.5"
     }
-    assert {metadata["embedding_dimension"] for metadata in refreshed_chunk_metadata} == {384}
+    assert {metadata["embedding_dimension"] for metadata in refreshed_chunk_metadata} == {512}
 
 
 def test_success_chunks_with_stale_vector_store_identity_are_reindexed(
@@ -647,9 +655,9 @@ def test_success_chunks_with_stale_vector_store_identity_are_reindexed(
         hashlib.sha256(second_url.encode("utf-8")).hexdigest()
     }
     assert {metadata["embedding_model"] for metadata in refreshed_chunk_metadata} == {
-        "deterministic-hash-v1"
+        "BAAI/bge-small-zh-v1.5"
     }
-    assert {metadata["embedding_dimension"] for metadata in refreshed_chunk_metadata} == {384}
+    assert {metadata["embedding_dimension"] for metadata in refreshed_chunk_metadata} == {512}
 
 
 async def test_success_chunks_with_stale_chunker_metadata_are_updated_and_reindexed() -> None:
@@ -677,7 +685,7 @@ async def test_success_chunks_with_stale_chunker_metadata_are_updated_and_reinde
         memory_indexer = QdrantIndexer(
             url=get_settings().qdrant_url,
             collection=get_settings().qdrant_collection,
-            embedding=DeterministicEmbeddingService(),
+            embedding=FixedEmbeddingService(),
         )
         memory_indexer.ensure_collection()
         assert memory_indexer.upsert_chunk(
@@ -783,7 +791,7 @@ async def test_chunk_sync_creates_missing_chunks_and_obsoletes_extra_chunks() ->
         memory_indexer = QdrantIndexer(
             url=get_settings().qdrant_url,
             collection=get_settings().qdrant_collection,
-            embedding=DeterministicEmbeddingService(),
+            embedding=FixedEmbeddingService(),
         )
         memory_indexer.ensure_collection()
         assert memory_indexer.upsert_chunk(
@@ -888,7 +896,7 @@ async def test_helper_commits_final_vector_status_and_events_before_return(
         backend_name = "memory"
         url = get_settings().qdrant_url
         collection = get_settings().qdrant_collection
-        embedding = DeterministicEmbeddingService()
+        embedding = FixedEmbeddingService()
 
         def __init__(self) -> None:
             self._delegate = QdrantIndexer(
@@ -996,7 +1004,7 @@ async def test_obsolete_vector_delete_failure_records_event_and_counts_failure(
         backend_name = "memory"
         url = "memory://worker-tests"
         collection = "content_chunks_worker_tests"
-        embedding = DeterministicEmbeddingService()
+        embedding = FixedEmbeddingService()
 
         def ensure_collection(self) -> None:
             return None
@@ -1019,7 +1027,7 @@ async def test_obsolete_vector_delete_failure_records_event_and_counts_failure(
         return QdrantIndexer(
             url=get_settings().qdrant_url,
             collection=get_settings().qdrant_collection,
-            embedding=DeterministicEmbeddingService(),
+            embedding=FixedEmbeddingService(),
         )
 
     monkeypatch.setattr(chunk_indexer_module, "_build_qdrant_indexer", DeleteFailingIndexer)
@@ -1047,7 +1055,7 @@ async def test_obsolete_vector_delete_failure_records_event_and_counts_failure(
         memory_indexer = QdrantIndexer(
             url=get_settings().qdrant_url,
             collection=get_settings().qdrant_collection,
-            embedding=DeterministicEmbeddingService(),
+            embedding=FixedEmbeddingService(),
         )
         memory_indexer.ensure_collection()
         assert memory_indexer.upsert_chunk(

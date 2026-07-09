@@ -14,9 +14,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     APP_ENV=prod \
     API_HOST=0.0.0.0 \
     API_PORT=8000 \
-    QDRANT_COLLECTION=content_chunks_v1 \
-    EMBEDDING_PROVIDER=deterministic \
-    EMBEDDING_MODEL=deterministic-hash-v1 \
+    QDRANT_COLLECTION=content_chunks_v2 \
+    EMBEDDING_PROVIDER=sentence-transformers \
+    EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5 \
+    EMBEDDING_DIMENSION=512 \
     LLM_PROVIDER=fake \
     AGENT_TIMEOUT_SECONDS=20 \
     WORKER_POLL_INTERVAL_SECONDS=2
@@ -32,11 +33,13 @@ COPY worker ./worker
 COPY scripts ./scripts
 COPY skills ./skills
 RUN python -m pip install --upgrade pip \
-    && python -m pip install .
+    && python -m pip install torch --index-url https://download.pytorch.org/whl/cpu \
+    && python -m pip install '.[local-embeddings]'
 
 COPY --from=frontend-builder /frontend/dist ./frontend/dist
 COPY docker/entrypoint.sh /usr/local/bin/intelligence-rag-entrypoint
-RUN chmod +x /usr/local/bin/intelligence-rag-entrypoint
+RUN sed -i 's/\r$//' /usr/local/bin/intelligence-rag-entrypoint \
+    && chmod +x /usr/local/bin/intelligence-rag-entrypoint
 
 EXPOSE 8000
 ENTRYPOINT ["intelligence-rag-entrypoint"]

@@ -12,13 +12,18 @@ services:
       DATABASE_URL: postgresql+psycopg://intelligence:intelligence@postgres:5432/intelligence_rag
       SYNC_DATABASE_URL: postgresql+psycopg://intelligence:intelligence@postgres:5432/intelligence_rag
       QDRANT_URL: http://qdrant:6333
-      QDRANT_COLLECTION: content_chunks_v1
-      EMBEDDING_PROVIDER: deterministic
-      EMBEDDING_MODEL: deterministic-hash-v1
+      QDRANT_COLLECTION: content_chunks_v2
+      EMBEDDING_PROVIDER: sentence-transformers
+      EMBEDDING_MODEL: BAAI/bge-small-zh-v1.5
+      EMBEDDING_DIMENSION: 512
+      HF_HOME: /models/huggingface
+      SENTENCE_TRANSFORMERS_HOME: /models/huggingface
       LLM_PROVIDER: fake
       AGENT_TIMEOUT_SECONDS: 20
       WORKER_POLL_INTERVAL_SECONDS: 2
       WAIT_TIMEOUT_SECONDS: 90
+    volumes:
+      - ${MODEL_CACHE_DIR:-./model-cache/huggingface}:/models/huggingface
     depends_on:
       postgres:
         condition: service_healthy

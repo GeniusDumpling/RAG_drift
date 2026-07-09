@@ -298,3 +298,106 @@ export type DatabaseTableRowsPage = {
   limit: number;
   offset: number;
 };
+export type LiteratureArtifact = {
+  id: string;
+  artifact_type: string;
+  byte_size?: number | null;
+  name?: string;
+  filename?: string;
+  path?: string;
+  url?: string;
+  download_url?: string;
+  content_type?: string;
+  size_bytes?: number | null;
+  created_at?: ISODateTime | null;
+  [key: string]: any;
+};
+export type LiteraturePaper = {
+  title: string;
+  url?: string;
+  abstract?: string | null;
+  authors?: string[];
+  venue?: string | null;
+  year?: number | string | null;
+  published_at?: string | null;
+  [key: string]: any;
+};
+
+export type LiteratureSelection = {
+  score?: number;
+  reason?: string;
+  rank?: number;
+  selected?: boolean;
+  [key: string]: any;
+};
+
+export type LiteratureEvidence = {
+  id?: string;
+  title?: string;
+  url?: string;
+  snippet?: string;
+  source?: string;
+  [key: string]: any;
+};
+
+export type LiteratureResultItem = {
+  id: string;
+  title: string;
+  url?: string;
+  abstract?: string | null;
+  authors: string[];
+  source?: string | null;
+  published_at?: string | null;
+  score?: number | null;
+  evidence: LiteratureEvidence[];
+  artifacts: LiteratureArtifact[];
+  paper: LiteraturePaper;
+  selection: LiteratureSelection;
+  [key: string]: any;
+};
+
+export type LiteratureRunEvent = {
+  id: UUID;
+  run_id?: UUID;
+  stage: string;
+  level: string;
+  event_type: string;
+  message: string;
+  created_at: ISODateTime;
+  [key: string]: any;
+};
+
+export type LiteratureRunResults = {
+  run_id?: UUID;
+  status: string;
+  run?: any;
+  items: LiteratureResultItem[];
+  artifacts: LiteratureArtifact[];
+  run_artifacts: LiteratureArtifact[];
+  final_report_markdown?: string;
+  summary?: string | null;
+  [key: string]: any;
+};
+
+export type LiteratureRun = {
+  id: UUID;
+  status: string;
+  topic?: string;
+  query?: string;
+  created_at: ISODateTime;
+  started_at?: ISODateTime | null;
+  finished_at?: ISODateTime | null;
+  error_message?: string | null;
+  results?: LiteratureRunResults | null;
+  events: LiteratureRunEvent[];
+  artifacts: LiteratureArtifact[];
+  [key: string]: any;
+};
+
+export type LiteratureRunCreate = {
+  topic?: string;
+  query?: string;
+  max_results?: number;
+  language?: string;
+  [key: string]: any;
+};

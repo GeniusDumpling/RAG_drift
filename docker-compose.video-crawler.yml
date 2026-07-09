@@ -1,0 +1,7 @@
+services:
+  app:
+    env_file:
+      - .env
+    volumes:
+      - ./skills/video-crawler/downloads:/app/skills/video-crawler/downloads
+      - ./skills/video-crawler/scripts/video_fetch.py:/app/skills/video-crawler/scripts/video_fetch.py:ro

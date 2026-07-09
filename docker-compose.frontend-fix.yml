@@ -1,0 +1,5 @@
+services:
+  app:
+    environment:
+      APP_ENV: dev
+      PYTHONPATH: /app/backend:/app

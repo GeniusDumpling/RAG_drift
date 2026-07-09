@@ -3,13 +3,14 @@ import { useState } from 'react';
 import { ContentDetailPage } from './pages/ContentDetailPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { DatabasePage } from './pages/DatabasePage';
+import { LiteratureResearchPanel } from './pages/LiteratureResearchPanel';
 import { RunDetailPage } from './pages/RunDetailPage';
 import { SearchPage } from './pages/SearchPage';
 import { SourcesPage } from './pages/SourcesPage';
 
-type View = 'Dashboard' | 'Sources' | 'Runs' | 'Search' | 'Content' | 'Database';
+type View = 'Dashboard' | 'Sources' | 'Runs' | 'Search' | 'Content' | 'Database' | 'Literature';
 
-const NAV_ITEMS: View[] = ['Dashboard', 'Sources', 'Runs', 'Search', 'Content', 'Database'];
+const NAV_ITEMS: View[] = ['Dashboard', 'Sources', 'Runs', 'Search', 'Content', 'Database', 'Literature'];
 
 const NAV_LABELS: Record<View, string> = {
   Dashboard: '总览',
@@ -18,6 +19,7 @@ const NAV_LABELS: Record<View, string> = {
   Search: '检索问答',
   Content: '内容详情',
   Database: '数据库',
+  Literature: '文献研究',
 };
 
 export function App() {
@@ -72,6 +74,7 @@ export function App() {
         {activeView === 'Search' ? <SearchPage initialQuery={searchSeed} onOpenContent={openContent} /> : null}
         {activeView === 'Content' ? <ContentDetailPage selectedContentId={selectedContentId} onOpenRun={openRun} /> : null}
         {activeView === 'Database' ? <DatabasePage /> : null}
+        {activeView === 'Literature' ? <LiteratureResearchPanel /> : null}
       </main>
     </div>
   );

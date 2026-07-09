@@ -12,6 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.models.content import ContentChunk, ContentItem, RawPage
 from app.models.control import CrawlJob, CrawlRun, CrawlRunEvent, SourceSite
+from app.models.literature import (
+    LiteratureArtifact,
+    LiteratureEvidence,
+    LiteraturePaper,
+    LiteratureRun as LiteratureRunModel,
+    LiteratureRunEvent,
+    LiteratureRunPaper,
+)
 from app.models.search import SearchQuery
 from app.schemas.database import (
     ChunkVectorStatus,
@@ -35,6 +43,12 @@ ModelType = (
     | type[RawPage]
     | type[ContentItem]
     | type[ContentChunk]
+    | type[LiteratureArtifact]
+    | type[LiteratureEvidence]
+    | type[LiteraturePaper]
+    | type[LiteratureRunModel]
+    | type[LiteratureRunEvent]
+    | type[LiteratureRunPaper]
     | type[SearchQuery]
 )
 JsonValue = dict[str, Any] | list[Any] | str | int | float | bool | None
@@ -233,6 +247,132 @@ TABLE_CONFIGS: tuple[TableConfig, ...] = (
             "query_trace_json",
         ),
         searchable_columns=("raw_query", "optimized_query_text", "mode"),
+        default_sort_column="created_at",
+    ),
+    TableConfig(
+        table_name="literature_runs",
+        label="文献任务 literature_runs",
+        description="IEEE 文献研究的异步任务记录。",
+        model=LiteratureRunModel,
+        preview_columns=("id", "query", "status", "current_stage", "progress_current", "created_at"),
+        detail_columns=(
+            "progress_total",
+            "progress_message",
+            "options_json",
+            "directions_json",
+            "error_message",
+            "started_at",
+            "finished_at",
+        ),
+        searchable_columns=("query", "status", "error_message"),
+        default_sort_column="created_at",
+    ),
+    TableConfig(
+        table_name="literature_run_events",
+        label="文献事件 literature_run_events",
+        description="文献研究任务的时间线事件。",
+        model=LiteratureRunEvent,
+        preview_columns=("id", "literature_run_id", "stage", "level", "event_type", "created_at"),
+        detail_columns=(
+            "message",
+            "counters_json",
+            "trace_json",
+        ),
+        searchable_columns=("stage", "level", "event_type", "message"),
+        default_sort_column="created_at",
+    ),
+    TableConfig(
+        table_name="literature_papers",
+        label="文献元数据 literature_papers",
+        description="IEEE 论文的元数据、摘要、作者。",
+        model=LiteraturePaper,
+        preview_columns=(
+            "id",
+            "title",
+            "publication_year",
+            "citation_count",
+            "access_type",
+            "created_at",
+        ),
+        detail_columns=(
+            "ieee_article_number",
+            "doi",
+            "authors_json",
+            "abstract",
+            "publication_title",
+            "document_url",
+            "pdf_url",
+            "raw_metadata_json",
+        ),
+        searchable_columns=("title", "ieee_article_number", "doi"),
+        default_sort_column="created_at",
+    ),
+    TableConfig(
+        table_name="literature_run_papers",
+        label="任务入选论文 literature_run_papers",
+        description="研究任务与论文的关系，含分析状态和结论。",
+        model=LiteratureRunPaper,
+        preview_columns=(
+            "id",
+            "literature_run_id",
+            "paper_id",
+            "direction_id",
+            "selected",
+            "analysis_status",
+            "created_at",
+        ),
+        detail_columns=(
+            "direction_title",
+            "search_query",
+            "candidate_rank",
+            "selected_rank",
+            "score",
+            "score_detail_json",
+            "abstract_zh",
+            "match_how",
+            "match_use",
+            "conclusion",
+            "analysis_json",
+        ),
+        searchable_columns=("direction_id", "analysis_status", "search_query"),
+        default_sort_column="created_at",
+    ),
+    TableConfig(
+        table_name="literature_artifacts",
+        label="文献制品 literature_artifacts",
+        description="论文的 PDF、JSON、全文、报告等制品。",
+        model=LiteratureArtifact,
+        preview_columns=("id", "literature_run_id", "paper_id", "artifact_type", "mime_type", "created_at"),
+        detail_columns=(
+            "byte_size",
+            "sha256",
+            "source_url",
+        ),
+        searchable_columns=("artifact_type", "mime_type", "source_url"),
+        default_sort_column="created_at",
+    ),
+    TableConfig(
+        table_name="literature_evidence",
+        label="文献证据 literature_evidence",
+        description="论文分析中抽取的原文证据子串和页码。",
+        model=LiteratureEvidence,
+        preview_columns=(
+            "id",
+            "literature_run_paper_id",
+            "matched_term",
+            "match_level",
+            "verified",
+            "created_at",
+        ),
+        detail_columns=(
+            "evidence_text",
+            "evidence_source",
+            "page_number",
+            "section_name",
+            "char_start",
+            "char_end",
+        ),
+        searchable_columns=("matched_term", "match_level", "evidence_text"),
         default_sort_column="created_at",
     ),
 )

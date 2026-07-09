@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -34,6 +35,28 @@ class Settings(BaseSettings):
     vlm_api_key: str | None = Field(default=None, alias="VLM_API_KEY")
     vlm_model: str = Field(
         default="Qwen/Qwen3-Omni-30B-A3B-Instruct", alias="VLM_MODEL"
+    )
+
+    # Literature research settings
+    literature_llm_provider: str = Field(default="deepseek", alias="LITERATURE_LLM_PROVIDER")
+    deepseek_api_key: str | None = Field(default=None, alias="DEEPSEEK_API_KEY")
+    deepseek_base_url: str = Field(
+        default="https://api.deepseek.com/v1", alias="DEEPSEEK_BASE_URL"
+    )
+    deepseek_model: str = Field(default="deepseek-chat", alias="DEEPSEEK_MODEL")
+    literature_browser_profile_dir: Path = Field(
+        default=Path("~/.intelligence-rag/ieee-profile").expanduser(),
+        alias="LITERATURE_BROWSER_PROFILE_DIR",
+    )
+    literature_headless: bool = Field(default=False, alias="LITERATURE_HEADLESS")
+    literature_login_timeout_seconds: int = Field(
+        default=300, alias="LITERATURE_LOGIN_TIMEOUT_SECONDS"
+    )
+    literature_pdf_max_bytes: int = Field(
+        default=50 * 1024 * 1024, alias="LITERATURE_PDF_MAX_BYTES"
+    )
+    literature_fulltext_max_chars: int = Field(
+        default=200_000, alias="LITERATURE_FULLTEXT_MAX_CHARS"
     )
 
 

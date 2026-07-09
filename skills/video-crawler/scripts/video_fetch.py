@@ -514,12 +514,28 @@ def ingest_video(
     settings: Settings,
     vlm_http: httpx.Client,
     cookies_path: str | None = None,
+    download_for_vlm: bool = False,
+    public_media_base_url: str | None = None,
 ) -> dict[str, Any]:
     """Ingest a single video: resolve URL -> VLM -> chunk -> embed -> store."""
-    video_input = resolve_video_input(video_url, cookies_path)
-    resolved_url = video_input.media_url
-    vlm_input_url = video_input.media_url
-    hint = f"{video_input.extractor.lower()}_resolved_media_url"
+    downloaded_input = None
+    if download_for_vlm:
+        if not public_media_base_url:
+            raise VideoResolutionError("--download-for-vlm 需要 --public-media-base-url")
+        downloaded_input = download_video_input_for_vlm(
+            video_url=video_url,
+            public_media_base_url=public_media_base_url,
+            cookies_path=cookies_path,
+        )
+        video_input = downloaded_input.video
+        resolved_url = downloaded_input.public_url
+        vlm_input_url = downloaded_input.public_url
+        hint = "downloaded_public_media"
+    else:
+        video_input = resolve_video_input(video_url, cookies_path)
+        resolved_url = video_input.media_url
+        vlm_input_url = video_input.media_url
+        hint = f"{video_input.extractor.lower()}_resolved_media_url"
     logger.info(
         "yt-dlp 已解析入库视频: extractor=%s id=%s duration=%s",
         video_input.extractor,
@@ -783,6 +799,8 @@ def main() -> None:
         source_page_url=args.source_page_url or args.video_url,
         settings=settings,
         vlm_http=vlm_http,
+        download_for_vlm=args.download_for_vlm,
+        public_media_base_url=args.public_media_base_url,
     )
 
     print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -9,6 +9,11 @@ import type {
   DatabaseTableRowsPage,
   CrawlRun,
   CrawlRunEvent,
+  LiteratureArtifact,
+  LiteratureRun,
+  LiteratureRunCreate,
+  LiteratureRunEvent,
+  LiteratureRunResults,
   Page,
   SearchRequest,
   SearchResponse,
@@ -129,6 +134,30 @@ export function search(requestBody: SearchRequest): Promise<SearchResponse> {
   });
 }
 
+export function createLiteratureRun(requestBody: LiteratureRunCreate): Promise<LiteratureRun> {
+  return jsonPost<LiteratureRun>('/literature-runs', requestBody);
+}
+
+export function listLiteratureRuns(limit = 20, offset = 0): Promise<Page<LiteratureRun>> {
+  return request<Page<LiteratureRun>>(buildPath('/literature-runs', { limit, offset }));
+}
+
+export function getLiteratureRun(id: UUID): Promise<LiteratureRun> {
+  return request<LiteratureRun>(`/literature-runs/${id}`);
+}
+
+export function getLiteratureRunEvents(id: UUID, limit = 100, offset = 0): Promise<Page<LiteratureRunEvent>> {
+  return request<Page<LiteratureRunEvent>>(buildPath(`/literature-runs/${id}/events`, { limit, offset }));
+}
+
+export function getLiteratureRunResults(id: UUID): Promise<LiteratureRunResults> {
+  return request<LiteratureRunResults>(`/literature-runs/${id}/results`);
+}
+
+export function cancelLiteratureRun(id: UUID): Promise<LiteratureRun> {
+  return jsonPost<LiteratureRun>(`/literature-runs/${id}/cancel`, {});
+}
+
 export function answer(requestBody: SearchRequest): Promise<AnswerResponse> {
   return jsonPost<AnswerResponse>('/answer', {
     ...requestBody,
@@ -136,4 +165,19 @@ export function answer(requestBody: SearchRequest): Promise<AnswerResponse> {
     filters: requestBody.filters ?? {},
     top_k: requestBody.top_k ?? 10,
   });
+}
+export function getLiteratureArtifactUrl(artifact: string | LiteratureArtifact): string {
+  if (typeof artifact !== 'string') {
+    if (artifact.download_url || artifact.url) {
+      return artifact.download_url || artifact.url || '';
+    }
+  }
+
+  const artifactId =
+    typeof artifact === 'string'
+      ? artifact
+      : artifact.id || artifact.path || artifact.filename || artifact.name || '';
+
+  const base = API_BASE_URL.replace(/\/+$/, '');
+  return `${base}/literature/artifacts/${encodeURIComponent(artifactId)}`;
 }

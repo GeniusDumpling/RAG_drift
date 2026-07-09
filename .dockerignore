@@ -23,6 +23,8 @@ build/
 logs/
 *.log
 .api-*.pid
+skills/video-crawler/downloads/
+skills/video-crawler/cookies*.txt
 .worktrees/
 .superpowers/
 .DS_Store

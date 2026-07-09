@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session, sessionmaker
 import app.models  # noqa: F401 — register ORM metadata
 from app.core.config import Settings, get_settings
 from app.db.base import utcnow
-from app.models.content import ContentChunk, ContentItem
+from app.models.content import ContentChunk, ContentItem, RawPage
 from app.models.control import CrawlJob, CrawlRun, CrawlRunEvent, SourceSite
 from app.services.chunking import build_chunks
 from app.services.embeddings import build_embedding_service
@@ -516,13 +516,16 @@ def ingest_video(
     cookies_path: str | None = None,
 ) -> dict[str, Any]:
     """Ingest a single video: resolve URL -> VLM -> chunk -> embed -> store."""
-    resolved_url, vlm_ok, hint = resolve_video_url(video_url, cookies_path)
-    logger.info("resolve result: vlm_ok=%s hint=%s resolved=%s …", vlm_ok, hint, resolved_url[:80])
-
-    # 决定送给 VLM 的 URL：优先用解析后的直链，否则退回原 URL
-    vlm_input_url = resolved_url if vlm_ok else video_url
-    if not vlm_ok:
-        logger.warning("VLM 可能无法处理该视频 URL: %s", video_url)
+    video_input = resolve_video_input(video_url, cookies_path)
+    resolved_url = video_input.media_url
+    vlm_input_url = video_input.media_url
+    hint = f"{video_input.extractor.lower()}_resolved_media_url"
+    logger.info(
+        "yt-dlp 已解析入库视频: extractor=%s id=%s duration=%s",
+        video_input.extractor,
+        video_input.video_id,
+        video_input.duration_seconds,
+    )
 
     # VLM description
     description = describe_video(
@@ -552,7 +555,7 @@ def ingest_video(
         session.flush()
 
         # Create content item
-        canonical_url = source_page_url or video_url
+        canonical_url = source_page_url or video_input.page_url
         dedup_key = stable_hash(f"{source.id}:{video_url}:video_description:{description[:100]}")
         existing = session.scalar(select(ContentItem).where(ContentItem.dedup_key == dedup_key).limit(1))
         if existing is not None:
@@ -562,13 +565,49 @@ def ingest_video(
             session.commit()
             return {"status": "skipped", "reason": "duplicate"}
 
-        content = ContentItem(
+        raw_snapshot = {
+            "kind": "video_crawler_vlm_analysis",
+            "video_url": video_url,
+            "video_page_url": video_input.page_url,
+            "video_id": video_input.video_id,
+            "video_title": video_input.title,
+            "video_duration_seconds": video_input.duration_seconds,
+            "video_extractor": video_input.extractor,
+            "resolve_hint": hint,
+            "vlm_model": settings.vlm_model,
+            "description": description,
+        }
+        raw_page = RawPage(
             source_site_id=source.id,
             crawl_run_id=run.id,
+            requested_url=video_url,
+            final_url=video_input.page_url,
+            http_status=200,
+            content_type="application/vnd.video-crawler+json",
+            response_headers_json={},
+            raw_html=None,
+            raw_text=description,
+            raw_json=raw_snapshot,
+            fetched_at=utcnow(),
+            fetch_error=None,
+            parser_profile="video_crawler",
+            extraction_method="vlm_video_analysis",
+            extraction_confidence=None,
+            parse_status="parsed",
+            parse_error=None,
+            body_hash=stable_hash(json.dumps(raw_snapshot, ensure_ascii=False, sort_keys=True)),
+        )
+        session.add(raw_page)
+        session.flush()
+
+        content = ContentItem(
+            source_site_id=source.id,
+            raw_page_id=raw_page.id,
+            crawl_run_id=run.id,
             item_type="video_description",
-            title=title,
+            title=title or video_input.title,
             canonical_url=canonical_url,
-            source_url=video_url,
+            source_url=video_input.page_url,
             language="zh",
             cleaned_text=description,
             summary_text=description[:240],
@@ -576,6 +615,10 @@ def ingest_video(
             structured_by="qwen3_omni_video_crawler",
             metadata_json={
                 "video_url": video_url,
+                "video_page_url": video_input.page_url,
+                "video_id": video_input.video_id,
+                "video_duration_seconds": video_input.duration_seconds,
+                "video_extractor": video_input.extractor,
                 "resolved_url": resolved_url,
                 "resolve_hint": hint,
                 "vlm_input_url": vlm_input_url,
@@ -627,9 +670,8 @@ def ingest_video(
         try:
             indexer.ensure_collection()
             for chunk in chunks:
-                point_id = indexer.index_chunk(
-                    chunk_id=str(chunk.id),
-                    content_item_id=str(content.id),
+                point_id = indexer.upsert_chunk(
+                    chunk_id=chunk.id,
                     embed_text=chunk.embed_text,
                     payload={
                         "chunk_id": str(chunk.id),
@@ -660,7 +702,7 @@ def ingest_video(
             "status": "success",
             "content_id": str(content.id),
             "chunks": len(chunks),
-            "video_url": video_url,
+            "video_url": video_input.page_url,
             "resolve_hint": hint,
         }
 

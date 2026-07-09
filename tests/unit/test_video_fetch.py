@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import uuid
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from types import SimpleNamespace
@@ -337,3 +338,239 @@ def test_analysis_result_is_json_serializable_without_media_url(
     serialized = json.dumps(result, ensure_ascii=False)
     assert "googlevideo" not in serialized
     assert "secret" not in serialized
+
+
+def test_ingest_video_calls_vlm_with_resolved_media_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = load_module()
+    video_input = module.VideoInput(
+        page_url="https://mixkit.co/free-stock-video/flythrough-the-winter-forest-9815/",
+        video_id="flythrough-the-winter-forest-9815",
+        title="Flythrough the winter forest",
+        media_url="https://cdn.example.com/flythrough.mp4",
+        duration_seconds=120,
+        extractor="Generic",
+    )
+    monkeypatch.setattr(module, "resolve_video_input", lambda *args, **kwargs: video_input)
+    monkeypatch.setattr(
+        module,
+        "resolve_video_url",
+        lambda *args, **kwargs: (video_input.page_url, False, "failed"),
+    )
+    captured: dict[str, object] = {}
+
+    def fake_describe_video(**kwargs: object) -> str:
+        captured.update(kwargs)
+        raise RuntimeError("stop before persistence")
+
+    monkeypatch.setattr(module, "describe_video", fake_describe_video)
+
+    with pytest.raises(RuntimeError, match="stop before persistence"):
+        module.ingest_video(
+            video_url=video_input.page_url,
+            title="Drone ingest test",
+            source_name="other",
+            source_page_url=video_input.page_url,
+            settings=SimpleNamespace(
+                vlm_base_url="https://api.siliconflow.cn/v1",
+                vlm_api_key="not-printed",
+                vlm_model="Qwen/Qwen3-VL-30B-A3B-Instruct",
+            ),
+            vlm_http=object(),
+        )
+
+    assert captured["video_url"] == video_input.media_url
+
+
+def test_ingest_video_creates_raw_page_for_content_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = load_module()
+    video_input = module.VideoInput(
+        page_url="https://mixkit.co/free-stock-video/drone-view-over-trees-613/",
+        video_id="drone-view-over-trees-613",
+        title="Drone view over trees",
+        media_url="https://cdn.example.com/drone.mp4",
+        duration_seconds=35,
+        extractor="Generic",
+    )
+    monkeypatch.setattr(module, "resolve_video_input", lambda *args, **kwargs: video_input)
+    monkeypatch.setattr(module, "describe_video", lambda **kwargs: "中文视频描述")
+    monkeypatch.setattr(module, "create_engine", lambda url: object())
+    monkeypatch.setattr(
+        module,
+        "_get_or_create_source",
+        lambda session, settings: SimpleNamespace(id=uuid.uuid4()),
+    )
+    monkeypatch.setattr(
+        module,
+        "_get_or_create_job",
+        lambda session, source: SimpleNamespace(id=uuid.uuid4()),
+    )
+    monkeypatch.setattr(module, "build_chunks", lambda **kwargs: [])
+    monkeypatch.setattr(module, "build_embedding_service", lambda settings: object())
+
+    class FakeIndexer:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+        def ensure_collection(self) -> None:
+            pass
+
+    monkeypatch.setattr(module, "QdrantIndexer", FakeIndexer)
+    added: list[object] = []
+
+    class FakeSession:
+        def __init__(self, engine: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeSession:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def add(self, item: object) -> None:
+            if getattr(item, "id", None) is None:
+                item.id = uuid.uuid4()  # type: ignore[attr-defined]
+            added.append(item)
+
+        def flush(self) -> None:
+            pass
+
+        def scalar(self, statement: object) -> object | None:
+            return None
+
+        def commit(self) -> None:
+            pass
+
+    monkeypatch.setattr(module, "Session", FakeSession)
+
+    module.ingest_video(
+        video_url=video_input.page_url,
+        title="Drone ingest test",
+        source_name="other",
+        source_page_url=video_input.page_url,
+        settings=SimpleNamespace(
+            sync_database_url="postgresql://example",
+            vlm_base_url="https://api.siliconflow.cn/v1",
+            vlm_api_key="not-printed",
+            vlm_model="Qwen/Qwen3-VL-30B-A3B-Instruct",
+            qdrant_url="http://localhost:6333",
+            qdrant_collection="content_chunks_v2",
+        ),
+        vlm_http=object(),
+    )
+
+    raw_pages = [item for item in added if item.__class__.__name__ == "RawPage"]
+    content_items = [item for item in added if item.__class__.__name__ == "ContentItem"]
+    assert len(raw_pages) == 1
+    assert len(content_items) == 1
+    assert content_items[0].raw_page_id == raw_pages[0].id
+
+
+def test_ingest_video_upserts_chunks_into_qdrant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = load_module()
+    video_input = module.VideoInput(
+        page_url="https://mixkit.co/free-stock-video/drone-view-over-trees-613/",
+        video_id="drone-view-over-trees-613",
+        title="Drone view over trees",
+        media_url="https://cdn.example.com/drone.mp4",
+        duration_seconds=35,
+        extractor="Generic",
+    )
+    monkeypatch.setattr(module, "resolve_video_input", lambda *args, **kwargs: video_input)
+    monkeypatch.setattr(module, "describe_video", lambda **kwargs: "中文视频描述")
+    monkeypatch.setattr(module, "create_engine", lambda url: object())
+    monkeypatch.setattr(
+        module,
+        "_get_or_create_source",
+        lambda session, settings: SimpleNamespace(id=uuid.uuid4()),
+    )
+    monkeypatch.setattr(
+        module,
+        "_get_or_create_job",
+        lambda session, source: SimpleNamespace(id=uuid.uuid4()),
+    )
+    monkeypatch.setattr(
+        module,
+        "build_chunks",
+        lambda **kwargs: [
+            SimpleNamespace(
+                chunk_index=0,
+                start_char=0,
+                end_char=6,
+                display_text="中文视频描述",
+                embed_text="中文视频描述",
+                token_count=6,
+                chunk_metadata_json={},
+            )
+        ],
+    )
+    monkeypatch.setattr(module, "build_embedding_service", lambda settings: object())
+    upserted: list[dict[str, object]] = []
+
+    class FakeIndexer:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+        def ensure_collection(self) -> None:
+            pass
+
+        def upsert_chunk(self, **kwargs: object) -> str:
+            upserted.append(kwargs)
+            return "point-1"
+
+    monkeypatch.setattr(module, "QdrantIndexer", FakeIndexer)
+    added: list[object] = []
+
+    class FakeSession:
+        def __init__(self, engine: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeSession:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def add(self, item: object) -> None:
+            if getattr(item, "id", None) is None:
+                item.id = uuid.uuid4()  # type: ignore[attr-defined]
+            added.append(item)
+
+        def flush(self) -> None:
+            pass
+
+        def scalar(self, statement: object) -> object | None:
+            return None
+
+        def commit(self) -> None:
+            pass
+
+    monkeypatch.setattr(module, "Session", FakeSession)
+
+    module.ingest_video(
+        video_url=video_input.page_url,
+        title="Drone ingest test",
+        source_name="other",
+        source_page_url=video_input.page_url,
+        settings=SimpleNamespace(
+            sync_database_url="postgresql://example",
+            vlm_base_url="https://api.siliconflow.cn/v1",
+            vlm_api_key="not-printed",
+            vlm_model="Qwen/Qwen3-VL-30B-A3B-Instruct",
+            qdrant_url="http://localhost:6333",
+            qdrant_collection="content_chunks_v2",
+        ),
+        vlm_http=object(),
+    )
+
+    chunks = [item for item in added if item.__class__.__name__ == "ContentChunk"]
+    assert len(upserted) == 1
+    assert len(chunks) == 1
+    assert chunks[0].embed_status == "success"
+    assert chunks[0].vector_point_id == "point-1"

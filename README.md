@@ -139,7 +139,8 @@ python3 scripts/reindex_embeddings.py --reset-collection
 
 ```bash
 # 设置环境变量（替换 <set-locally> 为真实 API key）
-export SILICONFLOW_API_KEY='<set-locally>'
+export VLM_API_KEY='<set-locally>'
+export VLM_BASE_URL=https://api.siliconflow.cn/v1
 export EMBEDDING_PROVIDER=sentence-transformers
 export EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
 export EMBEDDING_DIMENSION=512
@@ -153,15 +154,9 @@ docker compose up -d postgres qdrant
 alembic upgrade head
 ```
 
-### 手动创建 Qdrant 1024 维 collection
+### Qdrant collection
 
-视频 demo 使用 1024 维 BGE-M3 embedding，需要在 Qdrant 中创建独立 collection：
-
-```bash
-curl -s -X PUT 'http://localhost:6333/collections/flyforum_video_bge_m3' \
-  -H 'Content-Type: application/json' \
-  -d '{"vectors": {"size": 1024, "distance": "Cosine"}}'
-```
+视频 demo 统一使用本地 `BAAI/bge-small-zh-v1.5` 512 维 embedding，并写入 `content_chunks_v2`。无需手动创建 1024 维 collection；导入脚本会通过当前 embedding 配置确保目标 collection 存在。
 
 ### 运行导入脚本
 
@@ -235,8 +230,8 @@ psql -h 127.0.0.1 -p 54329 -U intelligence -d intelligence_rag -c "
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `SILICONFLOW_API_KEY` | — | 硅基流动 API key（必填） |
-| `SILICONFLOW_BASE_URL` | `https://api.siliconflow.cn/v1` | API 地址 |
+| `VLM_API_KEY` | — | 硅基流动兼容 VLM API key（必填） |
+| `VLM_BASE_URL` | `https://api.siliconflow.cn/v1` | VLM API 地址 |
 | `EMBEDDING_PROVIDER` | `sentence-transformers` | 仅支持本地 sentence-transformers embedding |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-zh-v1.5` | 本地向量模型 |
 | `EMBEDDING_DIMENSION` | `512` | 向量维度 |

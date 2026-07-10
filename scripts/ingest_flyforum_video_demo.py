@@ -750,14 +750,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--page-limit",
         type=int,
-        default=200,
-        help="Maximum pages to visit (default: 100)",
+        default=3,
+        help="Maximum pages to visit (default: 3)",
     )
     parser.add_argument(
         "--video-limit",
         type=int,
-        default=200,
-        help="Maximum videos to describe (default: 100)",
+        default=1,
+        help="Maximum videos to describe (default: 1)",
     )
     parser.add_argument(
         "--delay-min",

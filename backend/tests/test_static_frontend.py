@@ -1,8 +1,15 @@
+from collections.abc import Iterator
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
-from app.main import create_app
+from app.main import create_app, get_default_frontend_dist_dir
+
+
+@pytest.fixture(autouse=True)
+def override_session() -> Iterator[None]:
+    yield
 
 
 def _write_frontend_dist(tmp_path: Path) -> Path:
@@ -57,3 +64,18 @@ def test_create_app_skips_frontend_when_dist_is_missing(tmp_path: Path) -> None:
     response = client.get("/")
 
     assert response.status_code == 404
+
+
+def test_default_frontend_dist_dir_can_be_overridden_with_env(
+    tmp_path: Path, monkeypatch
+) -> None:
+    dist_dir = _write_frontend_dist(tmp_path)
+    monkeypatch.setenv("FRONTEND_DIST_DIR", str(dist_dir))
+
+    assert get_default_frontend_dist_dir() == dist_dir
+
+    client = TestClient(create_app())
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "frontend shell" in response.text

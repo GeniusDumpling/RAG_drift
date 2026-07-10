@@ -16,7 +16,8 @@ import type {
   UUID,
 } from './types';
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
+export const API_BASE_URL =
+  import.meta.env.MODE === 'test' ? '' : (import.meta.env.VITE_API_BASE_URL ?? '');
 
 function buildPath(path: string, params: Record<string, unknown> = {}): string {
   const query = new URLSearchParams();

@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -27,6 +28,16 @@ API_PATH_PREFIXES = (
 
 def _is_api_like_path(path: str) -> bool:
     return any(path == prefix or path.startswith(f"{prefix}/") for prefix in API_PATH_PREFIXES)
+
+
+def get_default_frontend_dist_dir() -> Path:
+    override = os.environ.get("FRONTEND_DIST_DIR")
+    if override:
+        return Path(override)
+    container_dist_dir = Path("/app/frontend/dist")
+    if container_dist_dir.is_dir():
+        return container_dist_dir
+    return DEFAULT_FRONTEND_DIST_DIR
 
 
 def _add_frontend_static_routes(app: FastAPI, frontend_dist_dir: Path) -> None:
@@ -64,7 +75,7 @@ def create_app(frontend_dist_dir: Path | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(api_router)
-    _add_frontend_static_routes(app, frontend_dist_dir or DEFAULT_FRONTEND_DIST_DIR)
+    _add_frontend_static_routes(app, frontend_dist_dir or get_default_frontend_dist_dir())
     return app
 
 

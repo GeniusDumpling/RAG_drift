@@ -14,6 +14,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     APP_ENV=prod \
     API_HOST=0.0.0.0 \
     API_PORT=8000 \
+    FRONTEND_DIST_DIR=/app/frontend/dist \
     QDRANT_COLLECTION=content_chunks_v2 \
     EMBEDDING_PROVIDER=sentence-transformers \
     EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5 \

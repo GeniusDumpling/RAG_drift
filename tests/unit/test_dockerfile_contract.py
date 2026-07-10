@@ -16,6 +16,7 @@ def test_runtime_image_includes_video_crawler_dependencies() -> None:
     assert "EMBEDDING_PROVIDER=sentence-transformers" in dockerfile
     assert "EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5" in dockerfile
     assert "EMBEDDING_DIMENSION=512" in dockerfile
+    assert "FRONTEND_DIST_DIR=/app/frontend/dist" in dockerfile
     assert "sed -i 's/\\r$//'" in dockerfile
     assert "EMBEDDING_PROVIDER=deterministic" not in dockerfile
     assert "EMBEDDING_MODEL=deterministic-hash-v1" not in dockerfile

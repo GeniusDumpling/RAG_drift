@@ -16,3 +16,5 @@ frontend/dist/
 .superpowers/
 .api-18000.pid
 .DS_Store
+model-cache/
+skills/video-crawler/downloads/

@@ -65,6 +65,25 @@ def _require_http_url(url: str, *, label: str) -> None:
         raise VideoResolutionError(f"{label}必须是有效的 HTTP(S) URL")
 
 
+def _duration_from_info(info: dict[str, Any]) -> int:
+    raw_duration = info.get("duration")
+    if not isinstance(raw_duration, int | float):
+        raise VideoResolutionError("视频时长未知，拒绝处理")
+    duration = int(raw_duration)
+    if duration > 300:
+        raise VideoResolutionError("视频时长超过 5 分钟，拒绝处理")
+    return duration
+
+
+def _duration_match_filter(info: dict[str, Any], *, incomplete: bool) -> str | None:
+    raw_duration = info.get("duration")
+    if not isinstance(raw_duration, int | float):
+        return "视频时长未知，拒绝下载"
+    if int(raw_duration) > 300:
+        return "视频超过 5 分钟，拒绝下载"
+    return None
+
+
 def build_public_media_url(public_media_base_url: str, local_path: pathlib.Path) -> str:
     """Build the stable media URL that the remote VLM service can fetch."""
     _require_http_url(public_media_base_url, label="公网媒体基础地址")
@@ -121,8 +140,7 @@ def resolve_video_input(
 
     extractor = str(info.get("extractor_key") or info.get("extractor") or "unknown")
     page_url = _normalize_youtube_page_url(video_url, extractor, video_id)
-    raw_duration = info.get("duration")
-    duration = int(raw_duration) if isinstance(raw_duration, int | float) else None
+    duration = _duration_from_info(info)
     logger.info(
         "yt-dlp 已解析视频: extractor=%s id=%s duration=%s",
         extractor,
@@ -173,6 +191,7 @@ def download_video_input_for_vlm(
             "restrictfilenames": True,
             "overwrites": True,
             "max_filesize": 200_000_000,
+            "match_filter": _duration_match_filter,
             "js_runtimes": {"node": {"path": None}},
             "remote_components": ["ejs:github"],
         }
@@ -203,8 +222,7 @@ def download_video_input_for_vlm(
         raise VideoResolutionError("yt-dlp 未返回视频 ID")
     title = str(info.get("title") or video_id).strip()
     extractor = str(info.get("extractor_key") or info.get("extractor") or "unknown")
-    raw_duration = info.get("duration")
-    duration = int(raw_duration) if isinstance(raw_duration, int | float) else None
+    duration = _duration_from_info(info)
     format_id = str(info.get("format_id") or "").strip()
     video = VideoInput(
         page_url=_normalize_youtube_page_url(video_url, extractor, video_id),
@@ -422,6 +440,10 @@ def describe_video(
                             "   - 是否容易受到 GPS 干扰/欺骗（GPS Jamming/Spoofing）？\n"
                             "   - 无线通信链路（如 MAVlink）是否存在被监听（Eavesdropping）或信号注入（Injection）的风险？\n"
                             "   - 是否存在容易被物理捕获或近距离物理接触的脆弱性？\n"
+                            "\n"
+                            "# 证据要求\n"
+                            "- 明确区分视觉证据与音频证据：视觉证据来自画面，音频证据来自旁白、告警声、电机异响或环境声。\n"
+                            "- 如果没有听到旁白或电机异响，请说明音频证据不足，不要编造。\n"
                             "\n"
                             "# 输出要求\n"
                             "- 用中文回答，500字以内。\n"

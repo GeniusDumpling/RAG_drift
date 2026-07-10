@@ -11,7 +11,6 @@ from app.repositories.contents import ContentsRepository, CreatedContent, stable
 from app.repositories.sources import SourcesRepository
 from app.schemas.search import SearchFilters, SearchRequest
 from app.services import search as search_service_module
-from app.services.embeddings import DeterministicEmbeddingService
 from app.services.retrieval import (
     _MEMORY_COLLECTIONS,
     QdrantIndexer,
@@ -120,6 +119,15 @@ class _ControlledEmbeddingService:
 
     def embed(self, text: str) -> list[float]:
         return list(self._vectors.get(text, [0.0, 1.0]))
+
+
+class _FixedEmbeddingService:
+    model_name = "fixed-local-test-embedding"
+    dimension = 16
+
+    def embed(self, text: str) -> list[float]:
+        value = 1.0 if text.strip() else 0.0
+        return [value for _ in range(self.dimension)]
 
 
 async def _create_retrieval_source_run(
@@ -324,7 +332,7 @@ def _index_memory_chunk(
     indexer = QdrantIndexer(
         url=settings.qdrant_url,
         collection=settings.qdrant_collection,
-        embedding=DeterministicEmbeddingService(),
+        embedding=_FixedEmbeddingService(),
     )
     indexer.ensure_collection()
     payload = {
@@ -507,7 +515,7 @@ async def test_keyword_fallback_scores_candidates_before_truncating_more_than_10
         top_k=1,
         qdrant_url=settings.qdrant_url,
         qdrant_collection=settings.qdrant_collection,
-        embedding=DeterministicEmbeddingService(),
+        embedding=_FixedEmbeddingService(),
     )
 
     assert result.evidence != []
@@ -701,7 +709,7 @@ async def test_keyword_retrieval_excludes_obsolete_chunk(
         top_k=5,
         qdrant_url=settings.qdrant_url,
         qdrant_collection=settings.qdrant_collection,
-        embedding=DeterministicEmbeddingService(),
+        embedding=_FixedEmbeddingService(),
     )
 
     assert result.evidence == []
@@ -743,7 +751,7 @@ async def test_stale_vector_hit_for_obsolete_chunk_is_not_hydrated(
         top_k=3,
         qdrant_url=settings.qdrant_url,
         qdrant_collection=settings.qdrant_collection,
-        embedding=DeterministicEmbeddingService(),
+        embedding=_FixedEmbeddingService(),
     )
 
     assert result.trace["vector"]["hit_count"] == 1

@@ -3,12 +3,22 @@ import uuid
 import app.services.chunking as chunking_service
 import pytest
 from app.services.chunking import build_chunks
-from app.services.embeddings import DeterministicEmbeddingService
 from app.services.retrieval import (
     _MEMORY_COLLECTIONS,
     DEFAULT_VECTOR_SCORE_THRESHOLD,
     QdrantIndexer,
 )
+
+
+class FixedEmbeddingService:
+    model_name = "fixed-local-test-embedding"
+
+    def __init__(self, dimension: int = 16) -> None:
+        self.dimension = dimension
+
+    def embed(self, text: str) -> list[float]:
+        value = 1.0 if text.strip() else 0.0
+        return [value for _ in range(self.dimension)]
 
 
 def test_article_chunking_produces_stable_embed_text() -> None:
@@ -184,8 +194,8 @@ def test_long_comment_chunking_splits_comment_text_by_max_chars() -> None:
     ]
 
 
-def test_deterministic_embedding_has_fixed_dimension_and_repeatability() -> None:
-    service = DeterministicEmbeddingService(dimension=32)
+def test_fixed_embedding_has_fixed_dimension_and_repeatability() -> None:
+    service = FixedEmbeddingService(dimension=32)
     first = service.embed("telemetry settings")
     second = service.embed("telemetry settings")
     assert len(first) == 32
@@ -197,7 +207,7 @@ def test_memory_indexer_returns_deterministic_point_id() -> None:
     indexer = QdrantIndexer(
         url="memory://unit-test",
         collection="content_chunks_test",
-        embedding=DeterministicEmbeddingService(dimension=16),
+        embedding=FixedEmbeddingService(dimension=16),
     )
 
     indexer.ensure_collection()
@@ -250,7 +260,7 @@ def test_qdrant_indexer_passes_score_threshold_to_supported_client(
     indexer = QdrantIndexer(
         url="http://qdrant.example.test:6333",
         collection="content_chunks_threshold_test",
-        embedding=DeterministicEmbeddingService(dimension=16),
+        embedding=FixedEmbeddingService(dimension=16),
     )
 
     hits = indexer.search_chunks(query_text="telemetry settings", filters={}, top_k=3)
@@ -266,7 +276,7 @@ def test_memory_indexer_delete_chunk_removes_existing_point_and_ignores_missing(
     indexer = QdrantIndexer(
         url="memory://unit-test-delete",
         collection="content_chunks_delete_test",
-        embedding=DeterministicEmbeddingService(dimension=16),
+        embedding=FixedEmbeddingService(dimension=16),
     )
 
     indexer.ensure_collection()
@@ -290,7 +300,7 @@ def test_memory_indexer_recreate_collection_clears_existing_points() -> None:
     indexer = QdrantIndexer(
         url="memory://unit-test-reset",
         collection="content_chunks_reset_test",
-        embedding=DeterministicEmbeddingService(dimension=16),
+        embedding=FixedEmbeddingService(dimension=16),
     )
     indexer.ensure_collection()
     indexer.upsert_chunk(
@@ -329,7 +339,7 @@ def test_qdrant_indexer_recreate_collection_deletes_then_creates_remote_collecti
     indexer = QdrantIndexer(
         url="http://qdrant.example.test:6333",
         collection="content_chunks_reset_remote_test",
-        embedding=DeterministicEmbeddingService(dimension=16),
+        embedding=FixedEmbeddingService(dimension=16),
     )
 
     indexer.recreate_collection()

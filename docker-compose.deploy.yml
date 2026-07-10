@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
     container_name: intelligence-rag-app
     environment:
-      APP_ENV: prod
+      APP_ENV: dev
       API_HOST: 0.0.0.0
       API_PORT: 8000
       DATABASE_URL: postgresql+psycopg://intelligence:intelligence@postgres:5432/intelligence_rag

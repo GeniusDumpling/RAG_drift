@@ -1,0 +1,7 @@
+interface:
+  display_name: "YouTube 无人机视频采集"
+  short_description: "搜索 YouTube 视频并完成下载、VLM 摘要和 RAG 入库"
+  default_prompt: "使用 $video-crawler 搜索并入库指定数量的无人机 YouTube 视频。"
+
+policy:
+  allow_implicit_invocation: true

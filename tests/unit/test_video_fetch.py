@@ -100,6 +100,38 @@ def test_resolve_video_input_rejects_missing_media_url(
         module.resolve_video_input("https://www.youtube.com/watch?v=fAZZLPwbPyg")
 
 
+@pytest.mark.parametrize("duration", [301, None])
+def test_resolve_video_input_rejects_video_over_five_minutes_or_unknown_duration(
+    monkeypatch: pytest.MonkeyPatch,
+    duration: int | None,
+) -> None:
+    module = load_module()
+
+    class FakeYoutubeDL:
+        def __init__(self, options: dict[str, object]) -> None:
+            pass
+
+        def __enter__(self) -> FakeYoutubeDL:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def extract_info(self, url: str, download: bool) -> dict[str, object]:
+            return {
+                "id": "fAZZLPwbPyg",
+                "title": "Drone test",
+                "url": "https://rr.example.googlevideo.com/videoplayback",
+                "duration": duration,
+                "extractor_key": "Youtube",
+            }
+
+    monkeypatch.setitem(sys.modules, "yt_dlp", SimpleNamespace(YoutubeDL=FakeYoutubeDL))
+
+    with pytest.raises(module.VideoResolutionError, match="时长"):
+        module.resolve_video_input("https://www.youtube.com/watch?v=fAZZLPwbPyg")
+
+
 def test_analyze_video_only_calls_vlm_with_resolved_media(monkeypatch: pytest.MonkeyPatch) -> None:
     module = load_module()
     video_input = module.VideoInput(
@@ -188,6 +220,11 @@ def test_download_format_prefers_browser_compatible_progressive_mp4(
     assert str(captured_options["format"]).startswith("18/")
     assert captured_options["js_runtimes"] == {"node": {"path": None}}
     assert captured_options["remote_components"] == ["ejs:github"]
+    duration_filter = captured_options["match_filter"]
+    assert callable(duration_filter)
+    assert duration_filter({"duration": 300}, incomplete=False) is None
+    assert "5 分钟" in duration_filter({"duration": 301}, incomplete=False)
+    assert "时长" in duration_filter({}, incomplete=False)
     assert result.format_id == "18"
     assert result.public_url == "https://media.example.com/videos/abc123.mp4"
 
@@ -273,6 +310,11 @@ def test_describe_video_sends_siliconflow_video_url() -> None:
     body = client.request["json"]
     assert isinstance(body, dict)
     content = body["messages"][0]["content"]
+    prompt = content[0]["text"]
+    assert "视觉证据" in prompt
+    assert "音频证据" in prompt
+    assert "旁白" in prompt
+    assert "电机异响" in prompt
     assert content[-1] == {
         "type": "video_url",
         "video_url": {

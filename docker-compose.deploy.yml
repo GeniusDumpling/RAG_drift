@@ -7,6 +7,7 @@ services:
     container_name: intelligence-rag-app
     environment:
       APP_ENV: prod
+      DATABASE_BROWSER_ENABLED: "true"
       API_HOST: 0.0.0.0
       API_PORT: 8000
       DATABASE_URL: postgresql+psycopg://intelligence:intelligence@postgres:5432/intelligence_rag
@@ -44,6 +45,8 @@ services:
     restart: unless-stopped
 
   postgres:
+    ports:
+      - "127.0.0.1:54329:5432"
     image: postgres:16-alpine
     container_name: intelligence-rag-postgres-deploy
     environment:

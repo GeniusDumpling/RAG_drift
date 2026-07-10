@@ -9,7 +9,6 @@ import {
   getLiteratureRunResults,
 } from '../api/client';
 import type {
-  LiteratureArtifact,
   LiteratureResultItem,
   LiteratureRun,
   LiteratureRunEvent,
@@ -135,7 +134,7 @@ export function LiteratureResearchPanel({ initialQuery = '' }: LiteratureResearc
       setRun(loaded);
       setEvents(eventPage.items);
       setResults(loadedResults);
-      setQuery(loaded.query ?? "");
+      setQuery(loaded.query);
     } catch (caught) {
       setError(formatErrorMessage('加载文献任务失败', caught));
     } finally {
@@ -294,8 +293,8 @@ function ArtifactLinks({ artifacts }: { artifacts: LiteratureRunResults['run_art
   return (
     <div className="artifact-links">
       <h3>可溯源制品</h3>
-      {artifacts.map((artifact: LiteratureArtifact) => (
-        <a href={getLiteratureArtifactUrl(artifact)} key={artifact.id}>
+      {artifacts.map((artifact) => (
+        <a href={getLiteratureArtifactUrl(artifact.id)} key={artifact.id}>
           {artifact.artifact_type} {artifact.byte_size ? `(${artifact.byte_size} bytes)` : ''}
         </a>
       ))}

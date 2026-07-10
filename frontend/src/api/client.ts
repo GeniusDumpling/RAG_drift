@@ -9,7 +9,6 @@ import type {
   DatabaseTableRowsPage,
   CrawlRun,
   CrawlRunEvent,
-  LiteratureArtifact,
   LiteratureRun,
   LiteratureRunCreate,
   LiteratureRunEvent,
@@ -166,18 +165,7 @@ export function answer(requestBody: SearchRequest): Promise<AnswerResponse> {
     top_k: requestBody.top_k ?? 10,
   });
 }
-export function getLiteratureArtifactUrl(artifact: string | LiteratureArtifact): string {
-  if (typeof artifact !== 'string') {
-    if (artifact.download_url || artifact.url) {
-      return artifact.download_url || artifact.url || '';
-    }
-  }
-
-  const artifactId =
-    typeof artifact === 'string'
-      ? artifact
-      : artifact.id || artifact.path || artifact.filename || artifact.name || '';
-
+export function getLiteratureArtifactUrl(id: UUID): string {
   const base = API_BASE_URL.replace(/\/+$/, '');
-  return `${base}/literature/artifacts/${encodeURIComponent(artifactId)}`;
+  return `${base}/literature-artifacts/${id}/download`;
 }

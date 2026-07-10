@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_env: str = Field(default="dev", alias="APP_ENV")
+    database_browser_enabled: bool = Field(
+        default=False, alias="DATABASE_BROWSER_ENABLED"
+    )
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
     api_port: int = Field(default=8000, alias="API_PORT")
     database_url: str = Field(

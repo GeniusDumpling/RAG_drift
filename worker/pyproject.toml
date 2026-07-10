@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "intelligence-rag"
+version = "0.1.0"
+description = "Observable open-source intelligence RAG prototype"
+requires-python = ">=3.11"
+dependencies = [
+  "alembic==1.13.2",
+  "beautifulsoup4>=4.15.0",
+  "fastapi==0.115.6",
+  "httpx==0.28.1",
+  "lxml>=6.1.1",
+  "psycopg[binary,pool]==3.2.3",
+  "pydantic==2.10.4",
+  "pydantic-settings==2.7.1",
+  "qdrant-client==1.12.1",
+  "requests>=2.34.2",
+  "sqlalchemy[asyncio]==2.0.36",
+  "tenacity==9.0.0",
+  "uvicorn[standard]==0.34.0",
+  "yt-dlp>=2025.6.30",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy==1.14.1",
+  "pytest==8.3.4",
+  "pytest-asyncio==0.25.2",
+  "ruff==0.8.4"
+]
+local-embeddings = [
+  "sentence-transformers==3.3.1"
+]
+literature = [
+  "pdfminer.six>=20240706",
+  "playwright>=1.45.0"
+]
+
+[tool.setuptools.packages.find]
+where = ["backend", "."]
+include = ["app*", "worker*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["backend/tests", "worker/tests", "tests/unit"]
+pythonpath = [".", "backend", "worker", "tests/unit"]
+markers = [
+  "no_db: test does not require the PostgreSQL fixture"
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["app", "worker"]

@@ -8,7 +8,26 @@ from fastapi.staticfiles import StaticFiles
 from app.api.router import api_router
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_FRONTEND_DIST_DIR = PROJECT_ROOT / "frontend" / "dist"
+
+
+def _default_frontend_dist_dir() -> Path:
+    """Locate frontend build output for source and installed-package deployments.
+
+    In Docker the Python package is installed into site-packages, so deriving the
+    project root solely from ``__file__`` points outside the runtime workspace.
+    Prefer the current workspace and Docker's conventional ``/app`` location;
+    retain the source-tree location for local development.
+    """
+
+    candidates = (
+        Path.cwd() / "frontend" / "dist",
+        Path("/app/frontend/dist"),
+        PROJECT_ROOT / "frontend" / "dist",
+    )
+    return next((candidate for candidate in candidates if candidate.is_dir()), candidates[-1])
+
+
+DEFAULT_FRONTEND_DIST_DIR = _default_frontend_dist_dir()
 API_PATH_PREFIXES = (
     "/health",
     "/sources",

@@ -298,106 +298,125 @@ export type DatabaseTableRowsPage = {
   limit: number;
   offset: number;
 };
-export type LiteratureArtifact = {
-  id: string;
-  artifact_type: string;
-  byte_size?: number | null;
-  name?: string;
-  filename?: string;
-  path?: string;
-  url?: string;
-  download_url?: string;
-  content_type?: string;
-  size_bytes?: number | null;
-  created_at?: ISODateTime | null;
-  [key: string]: any;
-};
-export type LiteraturePaper = {
-  title: string;
-  url?: string;
-  abstract?: string | null;
-  authors?: string[];
-  venue?: string | null;
-  year?: number | string | null;
-  published_at?: string | null;
-  [key: string]: any;
-};
 
-export type LiteratureSelection = {
-  score?: number;
-  reason?: string;
-  rank?: number;
-  selected?: boolean;
-  [key: string]: any;
-};
-
-export type LiteratureEvidence = {
-  id?: string;
-  title?: string;
-  url?: string;
-  snippet?: string;
-  source?: string;
-  [key: string]: any;
-};
-
-export type LiteratureResultItem = {
-  id: string;
-  title: string;
-  url?: string;
-  abstract?: string | null;
-  authors: string[];
-  source?: string | null;
-  published_at?: string | null;
-  score?: number | null;
-  evidence: LiteratureEvidence[];
-  artifacts: LiteratureArtifact[];
-  paper: LiteraturePaper;
-  selection: LiteratureSelection;
-  [key: string]: any;
-};
-
-export type LiteratureRunEvent = {
-  id: UUID;
-  run_id?: UUID;
-  stage: string;
-  level: string;
-  event_type: string;
-  message: string;
-  created_at: ISODateTime;
-  [key: string]: any;
-};
-
-export type LiteratureRunResults = {
-  run_id?: UUID;
-  status: string;
-  run?: any;
-  items: LiteratureResultItem[];
-  artifacts: LiteratureArtifact[];
-  run_artifacts: LiteratureArtifact[];
-  final_report_markdown?: string;
-  summary?: string | null;
-  [key: string]: any;
+export type LiteratureRunCreate = {
+  query: string;
+  year_from: number;
+  direction_count: number;
+  candidates_per_direction: number;
+  top_n_per_direction: number;
+  include_fulltext: boolean;
 };
 
 export type LiteratureRun = {
   id: UUID;
+  query: string;
   status: string;
-  topic?: string;
-  query?: string;
+  current_stage: string;
+  progress_current: number;
+  progress_total: number;
+  progress_message: string | null;
+  options_json: JsonObject;
+  directions_json: JsonObject[];
+  raw_search_results_json: JsonObject;
+  picks_json: JsonObject[];
+  analyses_json: JsonObject[];
+  final_report_markdown: string | null;
+  error_message: string | null;
+  started_at: ISODateTime | null;
+  finished_at: ISODateTime | null;
   created_at: ISODateTime;
-  started_at?: ISODateTime | null;
-  finished_at?: ISODateTime | null;
-  error_message?: string | null;
-  results?: LiteratureRunResults | null;
-  events: LiteratureRunEvent[];
-  artifacts: LiteratureArtifact[];
-  [key: string]: any;
+  updated_at: ISODateTime;
 };
 
-export type LiteratureRunCreate = {
-  topic?: string;
-  query?: string;
-  max_results?: number;
-  language?: string;
-  [key: string]: any;
+export type LiteratureRunEvent = {
+  id: UUID;
+  literature_run_id: UUID;
+  stage: string;
+  level: string;
+  event_type: string;
+  message: string;
+  counters_json: JsonObject;
+  trace_json: JsonObject;
+  created_at: ISODateTime;
+};
+
+export type LiteratureArtifact = {
+  id: UUID;
+  literature_run_id: UUID;
+  paper_id: UUID | null;
+  artifact_type: string;
+  mime_type: string | null;
+  byte_size: number | null;
+  sha256: string | null;
+  source_url: string | null;
+  created_at: ISODateTime;
+};
+
+export type LiteraturePaper = {
+  id: UUID;
+  ieee_article_number: string | null;
+  doi: string | null;
+  title: string;
+  authors_json: JsonObject[];
+  abstract: string | null;
+  publication_title: string | null;
+  publication_year: number | null;
+  citation_count: number;
+  access_type: string | null;
+  document_url: string | null;
+  pdf_url: string | null;
+  raw_metadata_json: JsonObject;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+};
+
+export type LiteratureEvidence = {
+  id: UUID;
+  literature_run_paper_id: UUID;
+  matched_term: string;
+  match_level: string;
+  evidence_text: string;
+  evidence_source: string;
+  page_number: number | null;
+  section_name: string | null;
+  char_start: number | null;
+  char_end: number | null;
+  verified: boolean;
+  created_at: ISODateTime;
+};
+
+export type LiteratureRunPaper = {
+  id: UUID;
+  literature_run_id: UUID;
+  paper_id: UUID;
+  direction_id: string;
+  direction_title: string | null;
+  search_query: string;
+  candidate_rank: number | null;
+  selected_rank: number | null;
+  score: number | null;
+  score_detail_json: JsonObject;
+  selected: boolean;
+  analysis_status: string;
+  abstract_zh: string | null;
+  match_how: string | null;
+  match_use: string | null;
+  conclusion: string | null;
+  analysis_json: JsonObject;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+};
+
+export type LiteratureResultItem = {
+  selection: LiteratureRunPaper;
+  paper: LiteraturePaper;
+  evidence: LiteratureEvidence[];
+  artifacts: LiteratureArtifact[];
+};
+
+export type LiteratureRunResults = {
+  run: LiteratureRun;
+  items: LiteratureResultItem[];
+  run_artifacts: LiteratureArtifact[];
 };

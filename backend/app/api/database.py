@@ -23,15 +23,16 @@ from app.schemas.database import (
 )
 
 
-def _require_dev_database_api() -> None:
-    if get_settings().app_env != "dev":
+def _require_database_browser_api() -> None:
+    settings = get_settings()
+    if settings.app_env != "dev" and not settings.database_browser_enabled:
         raise HTTPException(status_code=404, detail="Not found")
 
 
 router = APIRouter(
     prefix="/database",
     tags=["database"],
-    dependencies=[Depends(_require_dev_database_api)],
+    dependencies=[Depends(_require_database_browser_api)],
 )
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 LimitQuery = Annotated[int, Query(ge=1, le=100)]

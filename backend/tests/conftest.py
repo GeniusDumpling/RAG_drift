@@ -55,7 +55,13 @@ async def db_session() -> AsyncIterator[AsyncSession]:
 
 
 @pytest.fixture(autouse=True)
-def override_session(db_session: AsyncSession) -> Iterator[None]:
+def override_session(request: pytest.FixtureRequest) -> Iterator[None]:
+    if request.node.get_closest_marker("no_db") is not None:
+        yield
+        return
+
+    db_session = request.getfixturevalue("db_session")
+
     async def _override() -> AsyncIterator[AsyncSession]:
         yield db_session
 

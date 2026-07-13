@@ -26,14 +26,12 @@ from app.services.chunking import build_chunks
 from app.services.embeddings import build_embedding_service
 from app.services.retrieval import QdrantIndexer
 
-FILE_SERVER_BASE = "http://127.0.0.1:18999"
 COOKIES_PATH_DEFAULT = str(pathlib.Path(__file__).resolve().parent.parent / "cookies_www.youtube.com.txt")
 
 logger = logging.getLogger(__name__)
 
 VLM_TIMEOUT = 120
 DOWNLOAD_DIR = pathlib.Path(__file__).resolve().parent.parent / "downloads"
-_VIDEO_EXTENSIONS = (".mp4", ".webm", ".mov", ".m3u8", ".flv")
 
 
 class VideoResolutionError(RuntimeError):
@@ -232,118 +230,6 @@ def download_video_input_for_vlm(
 
 def stable_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def _is_direct_video_url(url: str) -> bool:
-    """Check if the URL points directly to a playable video file."""
-    try:
-        path = urlparse(url).path.lower()
-    except Exception:
-        return False
-    return any(path.endswith(ext) for ext in _VIDEO_EXTENSIONS)
-
-def _build_ytdlp_opts(cookies_path: str | None = None) -> dict[str, object]:
-    """Build yt-dlp options dict with optional cookies."""
-    opts: dict[str, object] = {
-        "format": "best[height<=720]",
-        "quiet": True,
-        "no_warnings": True,
-        "extract_flat": False,
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-        },
-    }
-    if cookies_path and pathlib.Path(cookies_path).is_file():
-        opts["cookiefile"] = cookies_path
-    return opts
-
-
-
-def _resolve_via_ytdlp_extract(video_url: str, cookies_path: str | None = None) -> str | None:
-    """Try yt-dlp extract_info to get the best direct streaming URL (no download)."""
-    try:
-        import yt_dlp
-
-        ydl_opts = {
-            "format": "best[height<=720]",
-            "quiet": True,
-            "no_warnings": True,
-            "extract_flat": False,
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            url = info.get("url")
-            if url:
-                logger.info("yt-dlp resolved direct URL: %s …", url[:80])
-                return url
-    except Exception as exc:
-        logger.warning("yt-dlp extract failed for %s: %s", video_url, exc)
-    return None
-
-
-def _resolve_via_ytdlp_download(video_url: str, cookies_path: str | None = None) -> str | None:
-    """
-    Fallback: download the video to local disk via yt-dlp and return the local
-    file path (as a ``file://`` URL).  The VLM must be able to read local files
-    or a local HTTP file server must be running to serve them.
-    """
-    DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        import yt_dlp
-
-        safe_name = hashlib.md5(video_url.encode()).hexdigest()[:16]
-        output_template = str(DOWNLOAD_DIR / f"{safe_name}.%(ext)s")
-
-        opts = _build_ytdlp_opts(cookies_path)
-        opts["format"] = "best[height<=480]"
-        opts["outtmpl"] = output_template
-        opts["max_filesize"] = 200_000_000  # 200 MB
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(video_url, download=True)
-            downloaded_path = ydl.prepare_filename(info)
-            # yt-dlp may add an extra extension; find the actual file
-            actual = next(DOWNLOAD_DIR.glob(f"{safe_name}.*"), None)
-            if actual and actual.is_file():
-                # 替换为文件服务器的 HTTP URL（VLM 无法访问 file://）
-                file_server_url = f"{FILE_SERVER_BASE}/{actual.name}"
-                logger.info("yt-dlp downloaded to %s, server URL: %s", actual, file_server_url)
-                return file_server_url
-    except Exception as exc:
-        logger.warning("yt-dlp download failed for %s: %s", video_url, exc)
-    return None
-
-
-def resolve_video_url(video_url: str, cookies_path: str | None = None) -> tuple[str, bool, str]:
-    """
-    Return (resolved_or_fallback_url, can_be_used_by_vlm, hint).
-
-    Three-tier fallback:
-      1. Direct video URL (.mp4/.webm/…)              → VLM 可直接访问 ✅
-      2. yt-dlp extract (no download)                  → VLM 可直接访问 ✅
-      3. yt-dlp download to local file                 → VLM 需要本地文件服务 ⚠️
-      4. All failed                                    → 原 URL, VLM 很可能不可用 ❌
-    """
-    # Tier 1: 已经是直接视频 URL
-    if _is_direct_video_url(video_url):
-        logger.info("Tier 1: 直接视频 URL")
-        return video_url, True, "direct"
-
-    # Tier 2: yt-dlp 解析直链（不下）
-    logger.info("Tier 2: yt-dlp 解析直链 …")
-    direct = _resolve_via_ytdlp_extract(video_url, cookies_path)
-    if direct:
-        return direct, True, "ytdlp_extracted"
-
-    # Tier 3: yt-dlp 下载到本地
-    logger.info("Tier 3: yt-dlp 下载到本地 …")
-    local = _resolve_via_ytdlp_download(video_url, cookies_path)
-    if local:
-        return local, True, "ytdlp_downloaded"
-
-    # Tier 4: 全部失败，返回原 URL
-    logger.warning("所有解析方式均失败，返回原始 URL")
-    return video_url, False, "failed"
 
 
 def _get_or_create_source(session: Session, settings: Settings) -> SourceSite:

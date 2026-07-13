@@ -353,11 +353,6 @@ def test_ingest_video_calls_vlm_with_resolved_media_url(
         extractor="Generic",
     )
     monkeypatch.setattr(module, "resolve_video_input", lambda *args, **kwargs: video_input)
-    monkeypatch.setattr(
-        module,
-        "resolve_video_url",
-        lambda *args, **kwargs: (video_input.page_url, False, "failed"),
-    )
     captured: dict[str, object] = {}
 
     def fake_describe_video(**kwargs: object) -> str:
@@ -468,6 +463,15 @@ def test_ingest_video_creates_raw_page_for_content_item(
     assert len(raw_pages) == 1
     assert len(content_items) == 1
     assert content_items[0].raw_page_id == raw_pages[0].id
+
+
+def test_module_does_not_expose_legacy_local_file_server_fallback() -> None:
+    module = load_module()
+
+    assert not hasattr(module, "resolve_video_url")
+    assert not hasattr(module, "_resolve_via_ytdlp_download")
+    assert not hasattr(module, "FILE_SERVER_BASE")
+    assert not hasattr(module, "_VIDEO_EXTENSIONS")
 
 
 def test_ingest_video_upserts_chunks_into_qdrant(

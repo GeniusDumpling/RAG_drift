@@ -19,6 +19,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     EMBEDDING_PROVIDER=sentence-transformers \
     EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5 \
     EMBEDDING_DIMENSION=512 \
+    HF_HOME=/models/huggingface \
+    SENTENCE_TRANSFORMERS_HOME=/models/huggingface \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
     LLM_PROVIDER=fake \
     AGENT_TIMEOUT_SECONDS=20 \
     WORKER_POLL_INTERVAL_SECONDS=2
@@ -33,6 +37,7 @@ COPY backend ./backend
 COPY worker ./worker
 COPY scripts ./scripts
 COPY skills ./skills
+COPY model-cache/huggingface /models/huggingface
 RUN python -m pip install --upgrade pip \
     && python -m pip install torch --index-url https://download.pytorch.org/whl/cpu \
     && python -m pip install '.[local-embeddings]'

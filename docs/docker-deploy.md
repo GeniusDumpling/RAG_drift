@@ -150,7 +150,7 @@ QDRANT_COLLECTION=content_chunks_v2
 LLM_PROVIDER=fake
 ```
 
-部署镜像只使用本地 `BAAI/bge-small-zh-v1.5` embedding，维度为 512。服务器可通过 `MODEL_CACHE_DIR` 挂载 HuggingFace/SentenceTransformers 模型缓存，避免每次启动重新下载模型。切换模型或维度时需要重建 Qdrant collection。
+部署镜像只使用本地 `BAAI/bge-small-zh-v1.5` embedding，维度为 512。构建镜像前，`scripts/docker_build.sh` 会要求本机存在 `model-cache/huggingface/models--BAAI--bge-small-zh-v1.5`；Dockerfile 会把该缓存打进镜像的 `/models/huggingface`，并设置 `HF_HUB_OFFLINE=1` / `TRANSFORMERS_OFFLINE=1`。因此把镜像 tar 拷贝到其他机器后，目标机器无需访问 HuggingFace，也不需要额外挂载模型目录即可直接使用本地 embedding。切换模型或维度时需要重建镜像和 Qdrant collection。
 
 ## 11. 注意事项
 

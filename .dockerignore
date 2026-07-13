@@ -20,7 +20,9 @@ frontend/node_modules/
 frontend/dist/
 dist/
 build/
-model-cache/
+model-cache/*
+!model-cache/huggingface/
+!model-cache/huggingface/**
 logs/
 *.log
 .api-*.pid

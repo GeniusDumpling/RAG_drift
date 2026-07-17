@@ -5,9 +5,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from app.models.control import CrawlJob, CrawlRun, SourceSite
 from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session
+
+from app.models.control import CrawlJob, CrawlRun, SourceSite
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEMO_SOURCE_NAME = "Demo Docs"

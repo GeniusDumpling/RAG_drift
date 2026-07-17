@@ -7,8 +7,17 @@ import uuid
 from pathlib import Path
 from typing import Any, cast
 
-import app.db.session as db_session_module
 import pytest
+import worker.app.chunk_indexer as chunk_indexer_module
+import worker.app.runner as runner_module
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, event, insert, select, text
+from sqlalchemy.orm import Session
+from worker.app.adapters import DiscoveredPage, FetchedPage, OfficialSiteAdapter
+from worker.app.normalizer import normalize_extraction_response
+from worker.app.runner import run_once
+
+import app.db.session as db_session_module
 from app.agents.contracts import ExtractionAgentRequest, ExtractionAgentResponse, ExtractionItem
 from app.core.config import get_settings
 from app.db.base import utcnow
@@ -17,15 +26,6 @@ from app.models.content import ContentChunk, ContentItem, RawPage
 from app.models.control import CrawlJob, CrawlRun, CrawlRunEvent, SourceSite
 from app.services.chunking import build_chunks
 from app.services.retrieval import _MEMORY_COLLECTIONS, QdrantIndexer
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, insert, select, text
-from sqlalchemy.orm import Session
-
-import worker.app.chunk_indexer as chunk_indexer_module
-import worker.app.runner as runner_module
-from worker.app.adapters import DiscoveredPage, FetchedPage, OfficialSiteAdapter
-from worker.app.normalizer import normalize_extraction_response
-from worker.app.runner import run_once
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

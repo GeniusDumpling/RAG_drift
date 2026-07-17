@@ -16,9 +16,11 @@ from app.models.literature import (
     LiteratureArtifact,
     LiteratureEvidence,
     LiteraturePaper,
-    LiteratureRun as LiteratureRunModel,
     LiteratureRunEvent,
     LiteratureRunPaper,
+)
+from app.models.literature import (
+    LiteratureRun as LiteratureRunModel,
 )
 from app.models.search import SearchQuery
 from app.schemas.database import (

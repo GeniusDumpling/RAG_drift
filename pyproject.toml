@@ -34,6 +34,9 @@ dev = [
 local-embeddings = [
   "sentence-transformers==3.3.1"
 ]
+video-asr = [
+  "faster-whisper>=1.1,<2"
+]
 literature = [
   "pdfminer.six>=20240706",
   "playwright>=1.45.0"
@@ -48,6 +51,9 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["backend/tests", "worker/tests", "tests/unit"]
 pythonpath = [".", "backend", "worker", "tests/unit"]
+markers = [
+  "no_db: skip the autouse database-session override for tests that do not access persistence",
+]
 
 [tool.ruff]
 line-length = 100

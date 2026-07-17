@@ -76,6 +76,40 @@ class LiteratureLLM:
                 "缺少 DEEPSEEK_API_KEY；请配置密钥，或将 LITERATURE_LLM_PROVIDER=fake "
                 "用于仅验证任务链路。"
             )
+        content = await self._request_json_content(
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            temperature=temperature,
+        )
+        try:
+            parsed = _parse_json_object(content)
+        except json.JSONDecodeError:
+            repaired_content = await self._request_json_content(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是 JSON 修复器。将用户提供的内容修复为严格合法的 JSON 对象。"
+                            "只输出 JSON 对象，不要 Markdown、解释或新增事实。"
+                        ),
+                    },
+                    {"role": "user", "content": content},
+                ],
+                temperature=0,
+            )
+            try:
+                parsed = _parse_json_object(repaired_content)
+            except json.JSONDecodeError as repair_exc:
+                raise RuntimeError("DeepSeek 连续两次返回无效 JSON。") from repair_exc
+        if not isinstance(parsed, dict):
+            raise RuntimeError("DeepSeek 返回的内容不是 JSON 对象。")
+        return parsed
+
+    async def _request_json_content(
+        self, *, messages: list[dict[str, str]], temperature: float
+    ) -> str:
         url = f"{self.settings.deepseek_base_url.rstrip('/')}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.settings.deepseek_api_key}",
@@ -83,10 +117,7 @@ class LiteratureLLM:
         }
         body = {
             "model": self.settings.deepseek_model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            "messages": messages,
             "temperature": temperature,
             "response_format": {"type": "json_object"},
         }
@@ -96,13 +127,9 @@ class LiteratureLLM:
             response.raise_for_status()
             payload = response.json()
         try:
-            content = payload["choices"][0]["message"]["content"]
+            return str(payload["choices"][0]["message"]["content"])
         except (KeyError, IndexError, TypeError) as exc:
             raise RuntimeError("DeepSeek 响应缺少 choices[0].message.content。") from exc
-        parsed = _parse_json_object(str(content))
-        if not isinstance(parsed, dict):
-            raise RuntimeError("DeepSeek 返回的内容不是 JSON 对象。")
-        return parsed
 
 
 def verify_analysis(

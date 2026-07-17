@@ -3,6 +3,10 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import get_settings
 from app.db.base import utcnow
 from app.models.content import ContentChunk, ContentItem
@@ -10,9 +14,6 @@ from app.models.control import CrawlRunEvent
 from app.services.chunking import BuiltChunk, build_chunks
 from app.services.embeddings import build_embedding_service
 from app.services.retrieval import QdrantIndexer
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @dataclass(frozen=True)

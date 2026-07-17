@@ -5,6 +5,9 @@ import uuid
 from dataclasses import dataclass
 from typing import Literal
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 import app.db.session as db_session_module
 from app.agents.client import AgentClient
 from app.agents.contracts import ExtractionAgentRequest, ExtractionAgentResponse
@@ -13,9 +16,6 @@ from app.db.base import utcnow
 from app.models.content import RawPage
 from app.models.control import CrawlJob, CrawlRun, CrawlRunEvent, SourceSite
 from app.repositories.search import create_agent_call
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from worker.app.adapters import DiscoveredPage, FetchedPage, get_adapter
 from worker.app.chunk_indexer import chunk_and_index_content_items
 from worker.app.normalizer import normalize_extraction_response, stable_hash

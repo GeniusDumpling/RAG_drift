@@ -1,8 +1,10 @@
 from pathlib import Path
 
+import pytest
+from app.main import create_app
 from fastapi.testclient import TestClient
 
-from app.main import create_app
+pytestmark = pytest.mark.no_db
 
 
 def _write_frontend_dist(tmp_path: Path) -> Path:

@@ -93,6 +93,21 @@ YouTube 页面 URL、视频元数据和中文描述，不连接 PostgreSQL 或 Q
 再回退到不高于 480p/720p、音视频同文件的媒体。JSON 输出包含本地文件名、
 公网媒体 URL、视频元数据和中文描述；仍然不连接 PostgreSQL 或 Qdrant。
 
+## 无完整视频下载的 YouTube 字幕证据采集
+
+`youtube_transcript_evidence.py` 是新的轻量第一阶段：只读取公开 YouTube 元数据和公开字幕，**不会请求、下载或保存视频/音频媒体**，也不会生成公网媒体 URL 或写入 PostgreSQL/Qdrant。
+
+```bash
+.venv/bin/python skills/video-crawler/scripts/youtube_transcript_evidence.py \
+  --video-url "https://www.youtube.com/watch?v=xxx" \
+  --language zh \
+  --json
+```
+
+输出包含稳定的 YouTube 页面 URL、视频 ID、标题、简介、频道、时长、人工/自动字幕来源、带时间戳字幕段，以及设计规定的关键帧数量上限。公开人工字幕优先于自动字幕；没有公开字幕时会输出 `status=no_public_captions`，明确要求后续配置本地 Whisper，不会用标题/简介伪造转写结果。
+
+该脚本是“字幕优先 + 后续内联关键帧/本地 Whisper”的证据采集入口；当前不将媒体 URL 发送给远端 VLM。
+
 ## 环境变量
 
 | 变量 | 默认值 | 说明 |

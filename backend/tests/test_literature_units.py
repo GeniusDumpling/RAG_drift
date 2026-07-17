@@ -1,11 +1,11 @@
-import pytest
+from unittest.mock import AsyncMock
 
+import pytest
 from app.core.config import Settings
 from app.literature.llm import LiteratureLLM, verify_analysis
 from app.literature.ranking import pick_top
 from app.main import create_app
 from app.schemas.literature import LiteratureRunCreate
-
 
 pytestmark = pytest.mark.no_db
 
@@ -94,3 +94,22 @@ def test_literature_routes_are_in_openapi_contract() -> None:
     assert "/literature-runs/{run_id}/events" in paths
     assert "/literature-runs/{run_id}/results" in paths
     assert "/literature-artifacts/{artifact_id}/download" in paths
+
+
+@pytest.mark.asyncio
+async def test_llm_repairs_one_malformed_json_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    llm = LiteratureLLM(Settings(DEEPSEEK_API_KEY="test-key"))
+    request_json = AsyncMock(
+        side_effect=[
+            '{"directions":[{"id":"D1" "query":"UAV lidar"}]}',
+            '{"directions":[{"id":"D1","query":"UAV lidar"}]}',
+        ]
+    )
+    monkeypatch.setattr(llm, "_request_json_content", request_json)
+
+    response = await llm._chat_json(system="Return JSON.", user="UAV lidar", temperature=0.2)
+
+    assert response == {"directions": [{"id": "D1", "query": "UAV lidar"}]}
+    assert request_json.await_count == 2
+    assert request_json.await_args_list[1].kwargs["temperature"] == 0
+    assert "JSON 修复器" in request_json.await_args_list[1].kwargs["messages"][0]["content"]

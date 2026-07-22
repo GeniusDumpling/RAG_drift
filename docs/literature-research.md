@@ -10,8 +10,9 @@ only, because concurrent workers cannot safely share one Chromium browser profil
    python -m playwright install chromium
    ```
 
-2. Copy `.env.literature.example` values into the untracked `.env` file and set the database,
-   LLM, and browser-profile values locally. Never commit API keys, browser cookies, or profiles.
+2. Copy `.env.example` to the untracked `.env` file, then enable and set the literature-research
+   variables for the database, LLM, and browser profile locally. Never commit API keys, browser
+   cookies, or profiles.
 
 3. Apply migrations and start the API, literature worker, and frontend in separate terminals:
 

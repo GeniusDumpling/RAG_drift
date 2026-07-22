@@ -95,18 +95,21 @@ YouTube 页面 URL、视频元数据和中文描述，不连接 PostgreSQL 或 Q
 
 ## 无完整视频下载的 YouTube 字幕证据采集
 
-`youtube_transcript_evidence.py` 是新的轻量第一阶段：只读取公开 YouTube 元数据和公开字幕，**不会请求、下载或保存视频/音频媒体**，也不会生成公网媒体 URL 或写入 PostgreSQL/Qdrant。
+`youtube_transcript_evidence.py` 是新的轻量第一阶段：读取公开 YouTube 元数据和公开字幕，不会保存完整视频或暴露公网媒体 URL，也不会写入 PostgreSQL/Qdrant。无公开字幕时，默认用 `yt-dlp` 解析临时音频流、由 `ffmpeg` 创建处理后自动删除的单声道音频，再交给本地 `faster-whisper` 转写；标题和简介绝不作为转写替代品。
 
 ```bash
 .venv/bin/python skills/video-crawler/scripts/youtube_transcript_evidence.py \
   --video-url "https://www.youtube.com/watch?v=xxx" \
   --language zh \
+  --extract-keyframes \
   --json
 ```
 
-输出包含稳定的 YouTube 页面 URL、视频 ID、标题、简介、频道、时长、人工/自动字幕来源、带时间戳字幕段，以及设计规定的关键帧数量上限。公开人工字幕优先于自动字幕；没有公开字幕时会输出 `status=no_public_captions`，明确要求后续配置本地 Whisper，不会用标题/简介伪造转写结果。
+输出包含稳定的 YouTube 页面 URL、视频 ID、标题、简介、频道、时长、人工/自动字幕或 `local_whisper` 来源、带时间戳字幕段，以及设计规定的关键帧数量上限。公开视频人工字幕优先于自动字幕。
 
-该脚本是“字幕优先 + 后续内联关键帧/本地 Whisper”的证据采集入口；当前不将媒体 URL 发送给远端 VLM。
+`--extract-keyframes` 使用 `yt-dlp` 的临时不高于 480p 视频流，并让 `ffmpeg` 将均匀分布的帧直接输出为**内存 JPEG**；不会将视频或 JPEG 写入磁盘。JSON 仅返回每帧的时间戳和字节数，避免把图像二进制或临时媒体 URL 写入输出。
+
+`--summarize-with-vlm` 会隐式提取关键帧，加载 `.env` 中的 `VLM_BASE_URL`、`VLM_API_KEY`、`VLM_MODEL`，以 OpenAI 兼容的 `/chat/completions` 请求将真实字幕/ASR 文本和内联 `data:image/jpeg;base64,...` 关键帧共同发送给 VLM。输出的 `video_summary` 只要求基于转写与画面直接支持的信息；不会发送本机或公网视频 URL。
 
 ## 环境变量
 

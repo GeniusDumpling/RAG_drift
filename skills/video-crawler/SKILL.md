@@ -101,13 +101,12 @@ YouTube 页面 URL、视频元数据和中文描述，不连接 PostgreSQL 或 Q
 .venv/bin/python skills/video-crawler/scripts/youtube_transcript_evidence.py \
   --video-url "https://www.youtube.com/watch?v=xxx" \
   --language zh \
-  --extract-keyframes \
   --json
 ```
 
 输出包含稳定的 YouTube 页面 URL、视频 ID、标题、简介、频道、时长、人工/自动字幕或 `local_whisper` 来源、带时间戳字幕段，以及设计规定的关键帧数量上限。公开视频人工字幕优先于自动字幕。
 
-`--extract-keyframes` 使用 `yt-dlp` 的临时不高于 480p 视频流，并让 `ffmpeg` 将均匀分布的帧直接输出为**内存 JPEG**；不会将视频或 JPEG 写入磁盘。JSON 仅返回每帧的时间戳和字节数，避免把图像二进制或临时媒体 URL 写入输出。
+脚本默认使用 `yt-dlp` 的临时不高于 480p 视频流，并让 `ffmpeg` 将均匀分布的帧先输出为**内存 JPEG**，再保存到 `skills/video-crawler/downloads/<video_id>/keyframes/`。每帧文件名包含抽帧序号和时间戳；JSON 返回时间戳、字节数和本地路径，不输出图像二进制或临时媒体 URL。可用 `--keyframes-dir <目录>` 覆盖保存根目录；`--extract-keyframes` 保留为兼容旧调用的无操作参数。
 
 `--summarize-with-vlm` 会隐式提取关键帧，加载 `.env` 中的 `VLM_BASE_URL`、`VLM_API_KEY`、`VLM_MODEL`，以 OpenAI 兼容的 `/chat/completions` 请求将真实字幕/ASR 文本和内联 `data:image/jpeg;base64,...` 关键帧共同发送给 VLM。输出的 `video_summary` 只要求基于转写与画面直接支持的信息；不会发送本机或公网视频 URL。
 

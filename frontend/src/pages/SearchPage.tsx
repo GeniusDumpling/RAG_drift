@@ -12,9 +12,11 @@ const ANSWER_LOADING_COPY = '正在生成答案...';
 type SearchPageProps = {
   initialQuery?: string;
   onOpenContent?: (contentItemId: string) => void;
+  mode?: 'search' | 'answer';
 };
 
-export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps) {
+export function SearchPage({ initialQuery = '', onOpenContent, mode = 'search' }: SearchPageProps) {
+  const isAnswerMode = mode === 'answer';
   const [query, setQuery] = useState(initialQuery);
   const [sourceSiteId, setSourceSiteId] = useState('');
   const [itemType, setItemType] = useState('');
@@ -127,9 +129,11 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
   return (
     <section>
       <div className="page-title">
-        <p className="eyebrow">检索</p>
-        <h1>检索问答</h1>
-        <p className="muted">执行关键词/向量检索，查看查询追踪，引用证据。</p>
+        <p className="eyebrow">{isAnswerMode ? 'AI 问答' : '检索'}</p>
+        <h1>{isAnswerMode ? 'AI 问答' : '检索'}</h1>
+        <p className="muted">
+          {isAnswerMode ? '基于检索证据生成带引用的自然语言答案。' : '执行关键词/向量检索，查看查询追踪与证据。'}
+        </p>
       </div>
 
       <section className="card">
@@ -172,11 +176,8 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
           />
         </div>
         <div className="button-row">
-          <button type="button" onClick={() => void runSearch()} disabled={loading}>
-            检索
-          </button>
-          <button type="button" onClick={() => void runAnswer()} disabled={loading}>
-            生成答案
+          <button type="button" onClick={() => void (isAnswerMode ? runAnswer() : runSearch())} disabled={loading}>
+            {isAnswerMode ? '生成回答' : '检索'}
           </button>
         </div>
         {error ? (
@@ -218,9 +219,23 @@ export function SearchPage({ initialQuery = '', onOpenContent }: SearchPageProps
       ) : null}
 
       {answerText ? (
-        <section className="card answer-card">
-          <h2>答案</h2>
-          <p>{answerText}</p>
+        <section className="qa-card" aria-label="问答结果">
+          <header className="qa-card-header">
+            <div>
+              <p className="eyebrow">RAG ANSWER</p>
+              <h2>问答</h2>
+            </div>
+            <span className="qa-evidence-count">引用 {evidence.length} 条证据</span>
+          </header>
+          <div className="qa-row">
+            <span className="qa-mark" aria-hidden="true">问</span>
+            <p>{queryRecord?.raw_query || query}</p>
+          </div>
+          <div className="qa-row qa-answer-row">
+            <span className="qa-mark" aria-hidden="true">答</span>
+            <p>{answerText}</p>
+          </div>
+          <p className="qa-footnote">答案基于下方检索证据生成；请以原始证据为准。</p>
         </section>
       ) : null}
 

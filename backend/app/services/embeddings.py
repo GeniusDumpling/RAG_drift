@@ -85,7 +85,8 @@ def build_embedding_service(settings: Settings) -> EmbeddingService:
         model_name = settings.embedding_model.strip() or DEFAULT_SENTENCE_TRANSFORMERS_MODEL
         if model_name != DEFAULT_SENTENCE_TRANSFORMERS_MODEL:
             raise ValueError(
-                "EMBEDDING_MODEL must be BAAI/bge-small-zh-v1.5 for local 512-dimensional embeddings"
+                "EMBEDDING_MODEL must be BAAI/bge-small-zh-v1.5 for local "
+                "512-dimensional embeddings"
             )
         return SentenceTransformerEmbeddingService(model_name=model_name)
     raise ValueError(

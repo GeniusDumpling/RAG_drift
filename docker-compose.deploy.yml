@@ -20,6 +20,9 @@ services:
       HF_HOME: /models/huggingface
       SENTENCE_TRANSFORMERS_HOME: /models/huggingface
       LLM_PROVIDER: fake
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
       AGENT_TIMEOUT_SECONDS: 20
       WORKER_POLL_INTERVAL_SECONDS: 2
       WAIT_TIMEOUT_SECONDS: 90

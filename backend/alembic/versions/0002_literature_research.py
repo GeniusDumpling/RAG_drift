@@ -4,6 +4,8 @@ Revision ID: 0002_literature_research
 Revises: 0001_intel_rag_schema
 """
 
+# mypy: disable-error-code=no-untyped-call
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa

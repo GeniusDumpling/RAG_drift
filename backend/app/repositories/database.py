@@ -256,7 +256,14 @@ TABLE_CONFIGS: tuple[TableConfig, ...] = (
         label="文献任务 literature_runs",
         description="IEEE 文献研究的异步任务记录。",
         model=LiteratureRunModel,
-        preview_columns=("id", "query", "status", "current_stage", "progress_current", "created_at"),
+        preview_columns=(
+            "id",
+            "query",
+            "status",
+            "current_stage",
+            "progress_current",
+            "created_at",
+        ),
         detail_columns=(
             "progress_total",
             "progress_message",
@@ -344,7 +351,14 @@ TABLE_CONFIGS: tuple[TableConfig, ...] = (
         label="文献制品 literature_artifacts",
         description="论文的 PDF、JSON、全文、报告等制品。",
         model=LiteratureArtifact,
-        preview_columns=("id", "literature_run_id", "paper_id", "artifact_type", "mime_type", "created_at"),
+        preview_columns=(
+            "id",
+            "literature_run_id",
+            "paper_id",
+            "artifact_type",
+            "mime_type",
+            "created_at",
+        ),
         detail_columns=(
             "byte_size",
             "sha256",

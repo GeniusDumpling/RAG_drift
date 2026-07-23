@@ -40,7 +40,7 @@ class IEEEProvider:
 
     async def __aenter__(self) -> IEEEProvider:
         try:
-            from playwright.async_api import async_playwright
+            from playwright.async_api import async_playwright  # type: ignore[import-not-found]
         except ImportError as exc:
             raise RuntimeError(
                 '缺少 Playwright。请执行 pip install -e ".[literature]"，然后执行 '
@@ -240,8 +240,8 @@ def _clean_text(value: str) -> str:
 
 def _extract_pdf_pages(data: bytes) -> list[dict[str, Any]]:
     try:
-        from pdfminer.high_level import extract_pages
-        from pdfminer.layout import LTTextContainer
+        from pdfminer.high_level import extract_pages  # type: ignore[import-not-found]
+        from pdfminer.layout import LTTextContainer  # type: ignore[import-not-found]
     except ImportError as exc:
         raise RuntimeError('缺少 pdfminer.six，请安装项目的 "literature" 可选依赖。') from exc
     pages = []

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Collect YouTube transcript evidence without persisting media files.
+"""Collect YouTube transcript evidence and persist sampled keyframes.
 
 The script prefers public captions. If no public caption exists, it creates a
-short-lived local audio file for local Whisper transcription. Optional keyframes
-are emitted by ffmpeg directly into process memory, never to disk.
+short-lived local audio file for local Whisper transcription. Keyframes are
+emitted by ffmpeg into memory, then saved per video beneath downloads/.
 """
 
 from __future__ import annotations
@@ -52,6 +52,9 @@ class VlmConfig:
     base_url: str
     api_key: str
     model: str
+
+
+DEFAULT_KEYFRAME_DOWNLOADS_DIR = Path(__file__).resolve().parents[1] / "downloads"
 
 
 def normalize_youtube_url(url: str) -> tuple[str, str]:
@@ -230,6 +233,33 @@ def extract_keyframes_as_jpegs(
             raise EvidenceCollectionError("ffmpeg 未返回有效 JPEG 关键帧")
         frames.append(Keyframe(timestamp_seconds=timestamp, jpeg_bytes=jpeg))
     return frames
+
+
+def persist_keyframes(
+    keyframes: list[Keyframe],
+    video_id: str,
+    *,
+    downloads_dir: Path = DEFAULT_KEYFRAME_DOWNLOADS_DIR,
+) -> list[dict[str, Any]]:
+    """Save JPEG keyframes under downloads/<video_id>/keyframes and return their metadata."""
+    output_dir = downloads_dir / video_id / "keyframes"
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        saved = []
+        for index, frame in enumerate(keyframes, start=1):
+            filename = f"keyframe_{index:03d}_{frame.timestamp_seconds:.3f}s.jpg"
+            path = output_dir / filename
+            path.write_bytes(frame.jpeg_bytes)
+            saved.append(
+                {
+                    "timestamp_seconds": frame.timestamp_seconds,
+                    "byte_size": len(frame.jpeg_bytes),
+                    "local_path": str(path),
+                }
+            )
+    except OSError as exc:
+        raise EvidenceCollectionError(f"关键帧保存失败（{type(exc).__name__}）") from exc
+    return saved
 
 
 def add_keyframe_summary(evidence: dict[str, Any], video_url: str) -> dict[str, Any]:
@@ -756,7 +786,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--extract-keyframes",
         action="store_true",
-        help="流式提取关键帧为内存 JPEG；JSON 仅输出时间戳与字节数",
+        default=True,
+        help="兼容旧调用；关键帧现在默认提取",
+    )
+    parser.add_argument(
+        "--keyframes-dir",
+        type=Path,
+        default=DEFAULT_KEYFRAME_DOWNLOADS_DIR,
+        help="关键帧保存根目录，默认 skills/video-crawler/downloads",
     )
     parser.add_argument(
         "--summarize-with-vlm",
@@ -799,10 +836,14 @@ def main() -> int:
                 duration_seconds=duration,
                 frame_count=caption_frame_limit(duration),
             )
-            result["keyframes"] = [
-                {"timestamp_seconds": frame.timestamp_seconds, "byte_size": len(frame.jpeg_bytes)}
-                for frame in keyframes
-            ]
+            video_id = result.get("video_id")
+            if not isinstance(video_id, str) or not video_id:
+                raise EvidenceCollectionError("缺少视频 ID，无法保存关键帧")
+            result["keyframes"] = persist_keyframes(
+                keyframes,
+                video_id,
+                downloads_dir=args.keyframes_dir,
+            )
         if args.summarize_with_vlm:
             config = load_vlm_config(args.env_file)
             result["video_summary"] = summarize_video_evidence_with_vlm(

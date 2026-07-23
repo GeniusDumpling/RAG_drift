@@ -15,6 +15,7 @@ from app.schemas.search import (
     SearchRequest,
     SearchResponse,
 )
+from app.services.answer_generation import AnswerGenerationError, DeepSeekAnswerClient
 from app.services.embeddings import EmbeddingService, build_embedding_service
 from app.services.retrieval import retrieve_evidence
 
@@ -44,9 +45,7 @@ class SearchService:
 
     async def search(self, request: SearchRequest) -> SearchResponse:
         if request.mode != "search":
-            raise UnsupportedSearchModeError(
-                "Use /answer for answer mode when it is available"
-            )
+            raise UnsupportedSearchModeError("Use /answer for answer mode when it is available")
 
         query, evidence = await self._retrieve(request)
         return SearchResponse(query=query, evidence=evidence)
@@ -56,9 +55,24 @@ class SearchService:
         answer_evidence = evidence[:ANSWER_EVIDENCE_LIMIT]
         return AnswerResponse(
             query=query,
-            answer=_synthesize_answer(answer_evidence),
+            answer=self._generate_answer(request.query, answer_evidence),
             supporting_evidence=answer_evidence,
         )
+
+    def _generate_answer(self, query: str, evidence: list[EvidenceObject]) -> str:
+        if not evidence:
+            return _synthesize_answer(evidence)
+        if not self.settings.deepseek_api_key:
+            return _synthesize_answer(evidence)
+        try:
+            return DeepSeekAnswerClient(
+                base_url=self.settings.deepseek_base_url,
+                api_key=self.settings.deepseek_api_key,
+                model=self.settings.deepseek_model,
+                timeout_seconds=self.settings.agent_timeout_seconds,
+            ).generate(query, evidence)
+        except AnswerGenerationError:
+            return _synthesize_answer(evidence)
 
     async def _retrieve(
         self, request: SearchRequest | AnswerRequest

@@ -20,7 +20,7 @@ class FakeVector:
         return list(self.values)
 
 
-@pytest.fixture(autouse=True)  # type: ignore[misc]
+@pytest.fixture(autouse=True)
 def clear_sentence_transformer_cache() -> Iterator[None]:
     cache_clear = getattr(embeddings, "_clear_sentence_transformer_model_cache", None)
     if cache_clear is not None:

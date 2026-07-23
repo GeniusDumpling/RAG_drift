@@ -214,10 +214,10 @@ def test_keyframes_are_extracted_as_in_memory_jpegs(monkeypatch: pytest.MonkeyPa
     assert all("pipe:1" in command for command, _kwargs in commands)
 
 
-def test_cli_keyframe_switch_is_opt_in() -> None:
+def test_cli_extracts_keyframes_by_default() -> None:
     module = load_module()
     args = module.parse_args(["--video-url", "https://youtu.be/abc123"])
-    assert args.extract_keyframes is False
+    assert args.extract_keyframes is True
     args = module.parse_args(["--video-url", "https://youtu.be/abc123", "--extract-keyframes"])
     assert args.extract_keyframes is True
 
@@ -238,20 +238,65 @@ def test_keyframe_summary_only_exposes_timestamps_and_byte_sizes(
     assert "jpeg_bytes" not in result["keyframes"][0]
 
 
-def test_cli_extract_keyframes_adds_summary(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_persist_keyframes_saves_jpegs_in_a_per_video_directory(tmp_path: Path) -> None:
+    module = load_module()
+    saved = module.persist_keyframes(
+        [
+            module.Keyframe(20.0, b"\xff\xd8first\xff\xd9"),
+            module.Keyframe(40.5, b"\xff\xd8second\xff\xd9"),
+        ],
+        "abc123",
+        downloads_dir=tmp_path,
+    )
+
+    assert saved == [
+        {
+            "timestamp_seconds": 20.0,
+            "byte_size": 9,
+            "local_path": str(tmp_path / "abc123" / "keyframes" / "keyframe_001_20.000s.jpg"),
+        },
+        {
+            "timestamp_seconds": 40.5,
+            "byte_size": 10,
+            "local_path": str(tmp_path / "abc123" / "keyframes" / "keyframe_002_40.500s.jpg"),
+        },
+    ]
+    assert (tmp_path / "abc123" / "keyframes" / "keyframe_001_20.000s.jpg").read_bytes() == (
+        b"\xff\xd8first\xff\xd9"
+    )
+    assert (tmp_path / "abc123" / "keyframes" / "keyframe_002_40.500s.jpg").read_bytes() == (
+        b"\xff\xd8second\xff\xd9"
+    )
+
+
+def test_cli_extracts_and_saves_keyframes_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     module = load_module()
     monkeypatch.setattr(
         sys,
         "argv",
-        ["script", "--video-url", "https://youtu.be/abc123", "--extract-keyframes"],
+        ["script", "--video-url", "https://youtu.be/abc123"],
     )
     monkeypatch.setattr(
         module,
         "collect_public_evidence",
-        lambda *_args, **_kwargs: {"duration_seconds": 120},
+        lambda *_args, **_kwargs: {"video_id": "abc123", "duration_seconds": 120},
     )
-    monkeypatch.setattr(module, "extract_keyframes_as_jpegs", lambda *_args, **_kwargs: [])
+    frames = [module.Keyframe(20.0, b"frame")]
+    monkeypatch.setattr(module, "extract_keyframes_as_jpegs", lambda *_args, **_kwargs: frames)
+    monkeypatch.setattr(
+        module,
+        "persist_keyframes",
+        lambda got_frames, video_id, **_kwargs: [
+            {
+                "timestamp_seconds": got_frames[0].timestamp_seconds,
+                "byte_size": len(got_frames[0].jpeg_bytes),
+                "local_path": f"downloads/{video_id}/keyframes/keyframe_001_20.000s.jpg",
+            }
+        ],
+    )
+
     assert module.main() == 0
+    assert frames[0].jpeg_bytes == b"frame"
 
 
 def test_vlm_payload_contains_real_transcript_and_inline_keyframes() -> None:
@@ -353,14 +398,27 @@ def test_module_exposes_evidence_ingestion() -> None:
     assert hasattr(load_module(), "ingest_video_evidence")
 
 
-def test_cli_vlm_summary_uses_extracted_frames(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_vlm_summary_uses_extracted_frames(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     module = load_module()
     monkeypatch.setattr(
         sys,
         "argv",
-        ["script", "--video-url", "https://youtu.be/abc123", "--summarize-with-vlm"],
+        [
+            "script",
+            "--video-url",
+            "https://youtu.be/abc123",
+            "--summarize-with-vlm",
+            "--keyframes-dir",
+            str(tmp_path),
+        ],
     )
-    evidence = {"duration_seconds": 120, "segments": [{"text": "真实转写"}]}
+    evidence = {
+        "video_id": "abc123",
+        "duration_seconds": 120,
+        "segments": [{"text": "真实转写"}],
+    }
     monkeypatch.setattr(module, "collect_public_evidence", lambda *_args, **_kwargs: evidence)
     monkeypatch.setattr(
         module,
@@ -377,5 +435,11 @@ def test_cli_vlm_summary_uses_extracted_frames(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(module, "summarize_video_evidence_with_vlm", fake_vlm_summary)
 
     assert module.main() == 0
-    assert evidence["keyframes"] == [{"timestamp_seconds": 20.0, "byte_size": 5}]
+    assert evidence["keyframes"] == [
+        {
+            "timestamp_seconds": 20.0,
+            "byte_size": 5,
+            "local_path": str(tmp_path / "abc123" / "keyframes" / "keyframe_001_20.000s.jpg"),
+        }
+    ]
     assert evidence["video_summary"] == "摘要: 真实转写 / 1 帧"

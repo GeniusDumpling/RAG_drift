@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
-from urllib.request import Request, urlopen
 
 YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
 _TIMESTAMP_RE = re.compile(
@@ -76,26 +75,17 @@ def normalize_youtube_url(url: str) -> tuple[str, str]:
     return f"https://www.youtube.com/watch?v={video_id}", video_id
 
 
-def caption_frame_limit(duration_seconds: int | float | None) -> int:
-    """Return the planned keyframe cap from the transcript/keyframe design."""
-    duration = float(duration_seconds or 0)
-    if duration <= 5 * 60:
-        return 6
-    if duration <= 15 * 60:
-        return 10
-    if duration <= 30 * 60:
-        return 16
-    if duration <= 60 * 60:
-        return 24
-    return 32
-
-
-def plan_keyframe_timestamps(duration_seconds: int | float, frame_count: int) -> list[float]:
-    """Place keyframes evenly inside the video, excluding both endpoints."""
+def plan_scene_aware_keyframe_timestamps(
+    duration_seconds: int | float, scene_boundaries: list[float]
+) -> list[float]:
+    """Select one representative midpoint per detected shot."""
     duration = float(duration_seconds)
-    if duration <= 0 or frame_count <= 0:
-        return []
-    return [round(duration * index / (frame_count + 1), 3) for index in range(1, frame_count + 1)]
+    boundaries = sorted({boundary for boundary in scene_boundaries if 0 <= boundary <= duration})
+    if not boundaries or boundaries[0] != 0 or boundaries[-1] != duration:
+        return [round(duration / 2, 3)] if duration > 0 else []
+    return [
+        round((start + end) / 2, 3) for start, end in zip(boundaries, boundaries[1:], strict=False)
+    ]
 
 
 def choose_caption_track(
@@ -112,7 +102,14 @@ def choose_caption_track(
         normalized_tracks = {
             key.casefold(): entries for key, entries in tracks.items() if isinstance(key, str)
         }
-        for candidate in candidates:
+        track_candidates = candidates
+        if "-" not in requested:
+            track_candidates += tuple(
+                track
+                for track in normalized_tracks
+                if track.split("-", 1)[0] == requested and track not in track_candidates
+            )
+        for candidate in track_candidates:
             entries = normalized_tracks.get(candidate)
             if not isinstance(entries, list):
                 continue
@@ -159,10 +156,23 @@ def parse_webvtt(text: str) -> list[CaptionSegment]:
     return segments
 
 
-def _read_caption_text(url: str) -> str:
-    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urlopen(request, timeout=30) as response:  # noqa: S310 - URL comes from yt-dlp metadata.
-        return response.read().decode("utf-8", errors="replace")
+def _read_caption_text(url: str, *, downloader: Any | None = None) -> str:
+    """Read a caption through yt-dlp's configured YouTube transport.
+
+    Reusing yt-dlp's request implementation avoids caption requests being
+    rejected by YouTube when a bare urllib client is rate-limited.
+    """
+    try:
+        if downloader is not None:
+            return downloader.urlopen(url).read().decode("utf-8", errors="replace")
+        try:
+            import yt_dlp
+        except ImportError as exc:
+            raise EvidenceCollectionError("需要安装 yt-dlp 才能读取公开字幕") from exc
+        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
+            return ydl.urlopen(url).read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        raise EvidenceCollectionError(f"无法读取公开字幕（{type(exc).__name__}）") from exc
 
 
 def _resolve_video_stream_url(video_url: str) -> str:
@@ -191,17 +201,37 @@ def _resolve_video_stream_url(video_url: str) -> str:
     return media_url
 
 
+def detect_scene_boundaries(media_url: str, duration_seconds: int | float) -> list[float]:
+    """Return ContentDetector shot boundaries; failures deliberately use uniform fallback."""
+    try:
+        from scenedetect import ContentDetector, detect
+
+        scenes = detect(media_url, ContentDetector())
+    except Exception:
+        return []
+    boundaries = [0.0]
+    for _start, end in scenes:
+        seconds = float(end.seconds)
+        if 0 < seconds < float(duration_seconds):
+            boundaries.append(seconds)
+    boundaries.append(float(duration_seconds))
+    return boundaries
+
+
 def extract_keyframes_as_jpegs(
-    video_url: str, *, duration_seconds: int | float, frame_count: int
+    video_url: str, *, duration_seconds: int | float
 ) -> list[Keyframe]:
     """Extract evenly distributed JPEGs into memory without writing video or frames to disk."""
     if not shutil.which("ffmpeg"):
         raise EvidenceCollectionError("需要安装 ffmpeg 才能提取关键帧")
-    timestamps = plan_keyframe_timestamps(duration_seconds, frame_count)
+    media_url = _resolve_video_stream_url(video_url)
+    timestamps = plan_scene_aware_keyframe_timestamps(
+        duration_seconds, detect_scene_boundaries(media_url, duration_seconds)
+    )
     if not timestamps:
         return []
-    media_url = _resolve_video_stream_url(video_url)
     frames: list[Keyframe] = []
+    failures: list[str] = []
     for timestamp in timestamps:
         command = [
             "ffmpeg",
@@ -227,12 +257,55 @@ def extract_keyframes_as_jpegs(
         try:
             result = subprocess.run(command, check=True, capture_output=True, timeout=90)
         except (OSError, subprocess.SubprocessError) as exc:
-            raise EvidenceCollectionError(f"关键帧提取失败（{type(exc).__name__}）") from exc
+            stderr = getattr(exc, "stderr", b"")
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", errors="replace")
+            detail = str(stderr).strip().replace("\n", " ")[:300]
+            failures.append(f"{timestamp:.3f}s: {type(exc).__name__}: {detail}")
+            continue
         jpeg = result.stdout
         if not jpeg.startswith(b"\xff\xd8") or not jpeg.endswith(b"\xff\xd9"):
-            raise EvidenceCollectionError("ffmpeg 未返回有效 JPEG 关键帧")
+            failures.append(f"{timestamp:.3f}s: ffmpeg 未返回有效 JPEG 关键帧")
+            continue
         frames.append(Keyframe(timestamp_seconds=timestamp, jpeg_bytes=jpeg))
-    return frames
+    if not frames:
+        detail = "; ".join(failures) or "未返回任何帧"
+        raise EvidenceCollectionError(f"所有关键帧提取失败：{detail}")
+    return deduplicate_keyframes(frames)
+
+
+def perceptual_hash(frame: Keyframe) -> int:
+    """Compute a 64-bit DCT perceptual hash for a JPEG keyframe."""
+    import cv2
+    import numpy as np
+
+    image = cv2.imdecode(np.frombuffer(frame.jpeg_bytes, dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
+    if image is None:
+        raise EvidenceCollectionError("无法解码关键帧 JPEG 以计算 pHash")
+    coefficients = cv2.dct(np.float32(cv2.resize(image, (32, 32))))[:8, :8]
+    median = float(np.median(coefficients[1:, :]))
+    bits = coefficients > median
+    return int("".join("1" if bit else "0" for bit in bits.flat), 2)
+
+
+def deduplicate_keyframes(
+    keyframes: list[Keyframe], *, hash_frame: Any = perceptual_hash, max_distance: int = 8
+) -> list[Keyframe]:
+    """Keep temporally ordered frames whose pHash differs from every retained frame."""
+    kept: list[tuple[Keyframe, int]] = []
+    for frame in keyframes:
+        try:
+            frame_hash = hash_frame(frame)
+        except Exception:
+            kept.append((frame, -1))
+            continue
+        is_distinct = all(
+            existing_hash < 0 or (frame_hash ^ existing_hash).bit_count() > max_distance
+            for _, existing_hash in kept
+        )
+        if is_distinct:
+            kept.append((frame, frame_hash))
+    return [frame for frame, _hash in kept]
 
 
 def persist_keyframes(
@@ -270,7 +343,6 @@ def add_keyframe_summary(evidence: dict[str, Any], video_url: str) -> dict[str, 
     frames = extract_keyframes_as_jpegs(
         video_url,
         duration_seconds=duration,
-        frame_count=caption_frame_limit(duration),
     )
     evidence["keyframes"] = [
         {"timestamp_seconds": frame.timestamp_seconds, "byte_size": len(frame.jpeg_bytes)}
@@ -507,9 +579,17 @@ def collect_public_evidence(
         "no_warnings": True,
         "extract_flat": False,
     }
+    track: tuple[str, str, dict[str, Any]] | None = None
+    caption_text: str | None = None
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
             info = ydl.extract_info(canonical_url, download=False)
+            if isinstance(info, dict) and info.get("_type") != "playlist":
+                track = choose_caption_track(info, language)
+                if track is not None:
+                    caption_text = _read_caption_text(str(track[2]["url"]), downloader=ydl)
+    except EvidenceCollectionError:
+        raise
     except Exception as exc:
         message = f"yt-dlp 无法获取公开视频元数据（{type(exc).__name__}）"
         raise EvidenceCollectionError(message) from exc
@@ -519,7 +599,6 @@ def collect_public_evidence(
     video_id = str(info.get("id") or expected_video_id).strip()
     if video_id != expected_video_id:
         raise EvidenceCollectionError("yt-dlp 返回的视频 ID 与输入 URL 不一致")
-    track = choose_caption_track(info, language)
     if track is None:
         if not allow_whisper_fallback:
             return {
@@ -533,7 +612,7 @@ def collect_public_evidence(
                 "caption_source": None,
                 "caption_language": None,
                 "segments": [],
-                "planned_keyframe_limit": caption_frame_limit(info.get("duration")),
+
                 "media_downloaded": False,
                 "next_step": "install_and_configure_local_whisper",
             }
@@ -554,7 +633,7 @@ def collect_public_evidence(
             "caption_source": "local_whisper",
             "caption_language": None,
             "segments": [segment.__dict__ for segment in segments],
-            "planned_keyframe_limit": caption_frame_limit(info.get("duration")),
+
             "media_downloaded": False,
             "next_step": "optional_inline_keyframe_analysis",
         }
@@ -563,7 +642,7 @@ def collect_public_evidence(
     ext = str(entry.get("ext") or "")
     if ext != "vtt":
         raise EvidenceCollectionError(f"当前脚本只支持 WebVTT 公开字幕，获得格式: {ext}")
-    segments = parse_webvtt(_read_caption_text(str(entry["url"])))
+    segments = parse_webvtt(caption_text or "")
     if not segments:
         raise EvidenceCollectionError("公开字幕为空或无法解析")
     return {
@@ -577,10 +656,68 @@ def collect_public_evidence(
         "caption_source": caption_source,
         "caption_language": caption_language,
         "segments": [segment.__dict__ for segment in segments],
-        "planned_keyframe_limit": caption_frame_limit(info.get("duration")),
+
         "media_downloaded": False,
         "next_step": "optional_inline_keyframe_analysis",
     }
+
+
+def persisted_video_text(summary: str, _transcript: str) -> str:
+    """Return the only derived text persisted for a video content record."""
+    return summary
+
+
+def persisted_video_summary(_summary: str) -> None:
+    """Avoid storing the VLM summary twice for video content records."""
+    return None
+
+
+def build_video_evidence_chunks(
+    summary: str,
+    segments: list[dict[str, Any]],
+    *,
+    max_transcript_chars: int = 800,
+    max_transcript_seconds: float = 60,
+) -> list[dict[str, Any]]:
+    """Keep the VLM summary and bounded, timed transcript groups as distinct evidence chunks."""
+    chunks: list[dict[str, Any]] = [{"evidence_type": "video_summary", "text": summary}]
+    transcript_parts: list[str] = []
+    transcript_start: float | None = None
+    transcript_end: float | None = None
+
+    def flush_transcript() -> None:
+        nonlocal transcript_parts, transcript_start, transcript_end
+        if transcript_parts:
+            chunks.append(
+                {
+                    "evidence_type": "transcript_segment",
+                    "text": "\n".join(transcript_parts),
+                    "start_seconds": transcript_start,
+                    "end_seconds": transcript_end,
+                }
+            )
+        transcript_parts = []
+        transcript_start = transcript_end = None
+
+    for segment in segments:
+        text = str(segment.get("text") or "").strip()
+        if not text:
+            continue
+        start = float(segment.get("start_seconds") or 0)
+        end = float(segment.get("end_seconds") or 0)
+        candidate_text = "\n".join([*transcript_parts, text])
+        current_start = transcript_start if transcript_start is not None else start
+        if transcript_parts and (
+            len(candidate_text) > max_transcript_chars
+            or end - current_start > max_transcript_seconds
+        ):
+            flush_transcript()
+        if transcript_start is None:
+            transcript_start = start
+        transcript_parts.append(text)
+        transcript_end = end
+    flush_transcript()
+    return chunks
 
 
 def ingest_video_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
@@ -598,7 +735,6 @@ def ingest_video_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         from app.db.base import utcnow
         from app.models.content import ContentChunk, ContentItem, RawPage
         from app.models.control import CrawlJob, CrawlRun, SourceSite
-        from app.services.chunking import build_chunks
         from app.services.embeddings import build_embedding_service
         from app.services.retrieval import QdrantIndexer
         from sqlalchemy import create_engine, select
@@ -612,7 +748,7 @@ def ingest_video_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         for segment in evidence.get("segments", [])
         if isinstance(segment, dict)
     ).strip()
-    cleaned_text = f"视频摘要：\n{summary}\n\n真实转写：\n{transcript}".strip()
+    cleaned_text = persisted_video_text(summary, transcript)
     content_hash = __import__("hashlib").sha256(cleaned_text.encode("utf-8")).hexdigest()
     with Session(create_engine(settings.sync_database_url)) as session:
         source = session.scalar(
@@ -701,7 +837,7 @@ def ingest_video_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
             language="zh",
             raw_text=transcript or None,
             cleaned_text=cleaned_text,
-            summary_text=summary,
+            summary_text=persisted_video_summary(summary),
             structured_by="transcript_keyframe_vlm",
             extraction_confidence=None,
             tags=["video", "youtube", "transcript", "keyframe", "vlm"],
@@ -712,22 +848,21 @@ def ingest_video_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         session.add(content)
         session.flush()
         chunks = []
-        for built in build_chunks(
-            item_type="video_description",
-            title=content.title,
-            cleaned_text=cleaned_text,
-            summary_text=summary,
-            tags=content.tags,
+        for chunk_index, built in enumerate(
+            build_video_evidence_chunks(summary, evidence.get("segments", []))
         ):
+            text = str(built["text"])
+            evidence_type = str(built["evidence_type"])
+            metadata = {key: value for key, value in built.items() if key != "text"}
             chunk = ContentChunk(
                 content_item_id=content.id,
-                chunk_index=built.chunk_index,
-                char_start=built.start_char,
-                char_end=built.end_char,
-                display_text=built.display_text,
-                embed_text=built.embed_text,
-                token_count=built.token_count,
-                chunk_metadata_json=built.chunk_metadata_json,
+                chunk_index=chunk_index,
+                char_start=None,
+                char_end=None,
+                display_text=text,
+                embed_text=f"{evidence_type}: {text}",
+                token_count=max(1, len(text.split())),
+                chunk_metadata_json=metadata,
                 embed_status="pending",
             )
             session.add(chunk)
@@ -798,7 +933,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--summarize-with-vlm",
         action="store_true",
-        help="将真实字幕/ASR 与内存关键帧提交给 .env 配置的 VLM 生成摘要",
+        default=True,
+        help="兼容旧调用；VLM 摘要现在默认生成",
     )
     parser.add_argument(
         "--env-file",
@@ -809,7 +945,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--ingest",
         action="store_true",
-        help="将 VLM 视频摘要、转写和关键帧元数据写入 PostgreSQL 并索引至 Qdrant",
+        default=True,
+        help="兼容旧调用；视频证据现在默认写入 PostgreSQL 和 Qdrant",
     )
     parser.add_argument("--json", action="store_true", help="输出 JSON（默认）")
     return parser.parse_args(argv)
@@ -834,7 +971,6 @@ def main() -> int:
             keyframes = extract_keyframes_as_jpegs(
                 args.video_url,
                 duration_seconds=duration,
-                frame_count=caption_frame_limit(duration),
             )
             video_id = result.get("video_id")
             if not isinstance(video_id, str) or not video_id:

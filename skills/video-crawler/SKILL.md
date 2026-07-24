@@ -1,121 +1,82 @@
 ---
 name: video-crawler
-description: 定时搜索各视频平台的无人机相关视频（型号参数、安全脆弱性、故障），获取URL→VLM摘要→入库RAG。
+description: 搜索无人机公开视频并以字幕、关键帧和 VLM 摘要入库 RAG。
 ---
 
-# Video Crawler — 无人机视频爬取
+# Video Crawler — YouTube 视频证据入库
+
+## 适用范围
+
+仅使用 `scripts/youtube_transcript_evidence.py` 处理公开 YouTube 视频。旧的
+`video_fetch.py` 已删除；不再支持将 Bilibili 页面、完整视频文件或公网媒体 URL
+直接交给 VLM。
 
 ## 搜索主题
 
-每次执行按以下关键词组合搜索各视频平台（YouTube/Bilibili 等），优先获取视频页面 URL。
+按以下主题搜索公开 YouTube 视频，并优先选择时长不超过五分钟、具有可用字幕的候选：
 
-### 优先级 1️⃣ 无人机型号与参数
-- 无人机型号对比、参数讲解
-- 拆机评测、硬件展示
-- 无人机规格、性能测试
+1. 无人机型号、参数、硬件展示和性能测试。
+2. 无人机安全：调试接口、GPS 干扰/欺骗、通信链路、遥控劫持、MAVLink 和遥测。
+3. 无人机故障：失联、坠机、飞控/电机异常和 GPS 丢失后的行为。
 
-### 优先级 2️⃣ 无人机脆弱性安全
-- 物理与硬件安全：USB/调试接口、天线、防篡改
-- 传感器与导航安全：GPS 干扰/欺骗、电磁干扰、导航冗余
-- 通信与地面站控制：遥控信号劫持、MAVLink 监听、明文遥测
+## 完整工作流
 
-### 优先级 3️⃣ 无人机故障
-- 信号丢失、炸机
-- 飞控故障、电机异常
-- GPS 丢失后的行为
-
-## 工作流程
-
-```
-cron（每8h）
-  ↓
-Agent 按关键词搜索视频平台 → 拿到页面 URL
-  ↓
-video_fetch.py --video-url <URL> --source <platform>
-  ↓
-resolve_video_url():
-  ├── 直接 .mp4/.webm 可播放 → 直送 VLM ✅
-  └── 平台页面 → yt-dlp 解析直链
-  ↓
-VLM（Qwen3-Omni）生成结构化中文摘要
-  ↓
-分块 → SentenceTransformer → PostgreSQL + Qdrant
+```text
+搜索 YouTube 候选 → 规范化 URL 并查询 dedup_key
+  → 公开字幕（无字幕时可本地 Whisper ASR）
+  → 临时媒体流的场景关键帧 + pHash 去重
+  → VLM 基于真实字幕/ASR 与内存 JPEG 生成中文摘要
+  → PostgreSQL 写入 + Qdrant 索引
 ```
 
-## 使用方法
+1. 搜索候选后，先检查 `video-evidence:<canonical_url>` 是否已存在；重复视频不能作为本次成功入库结果。
+2. 人工字幕优先于自动字幕。英文原始字幕可用时，传入 `--language en`；不要将标题或简介伪装成转写。
+3. 脚本默认抽取关键帧、生成 VLM 摘要并写入 PostgreSQL/Qdrant。只有 `ingestion.status == "success"` 才算完成。
+4. 不保存完整视频。只持久化关键帧 JPEG 到 `downloads/<video_id>/keyframes/`，并持久化真实转写、摘要和关键帧元数据。
+
+## 执行命令
+
+在仓库根目录运行：
 
 ```bash
-cd /home/admin/.openclaw/workspace/RAG_drift
-
-# 从 YouTube 视频 URL 入库
-.venv/bin/python skills/video-crawler/scripts/video_fetch.py \
-  --video-url "https://www.youtube.com/watch?v=xxx" \
-  --title "无人机型号参数介绍" \
-  --source youtube
-
-# 从 Bilibili 视频入库
-.venv/bin/python skills/video-crawler/scripts/video_fetch.py \
-  --video-url "https://www.bilibili.com/video/BV1xx411c7mD" \
-  --source bilibili
-```
-
-### 仅验证 YouTube 解析与 VLM 描述（不入库）
-
-```bash
-.venv/bin/python skills/video-crawler/scripts/video_fetch.py \
-  --analyze-only \
-  --video-url "https://www.youtube.com/watch?v=fAZZLPwbPyg" \
-  --source youtube \
+uv run --extra video-keyframes --extra local-embeddings python3 \
+  skills/video-crawler/scripts/youtube_transcript_evidence.py \
+  --video-url "https://www.youtube.com/watch?v=VIDEO_ID" \
+  --language en \
+  --no-whisper-fallback \
   --json
 ```
 
-该模式使用 `yt-dlp` 获取不高于 480p 的临时媒体输入，调用 VLM 后只输出稳定的
-YouTube 页面 URL、视频元数据和中文描述，不连接 PostgreSQL 或 Qdrant，也不输出
-临时签名媒体 URL。
+- 常规情况下使用 `--no-whisper-fallback`，避免在无字幕视频上隐式下载/加载 Whisper 模型。
+- 仅当明确需要本地 ASR 时，移除该参数，并确保已安装 `video-asr` extra、配置了模型缓存与足够计算资源。
+- `--extract-keyframes`、`--summarize-with-vlm`、`--ingest` 为兼容旧调用的无操作参数；完整流程默认启用。
+- 用 `--keyframes-dir <目录>` 为测试或隔离运行指定帧保存根目录。
 
-### 下载 720p 内视频后交给 VLM（不入库）
+## 证据与入库约定
 
-当远端 VLM 无法稳定访问 YouTube 临时签名媒体 URL 时，先把视频下载到
-`skills/video-crawler/downloads/`，再通过公网文件服务暴露为稳定 MP4 URL：
-
-```bash
-.venv/bin/python skills/video-crawler/scripts/video_fetch.py \
-  --analyze-only \
-  --download-for-vlm \
-  --public-media-base-url "https://example.com/video-crawler" \
-  --video-url "https://www.youtube.com/watch?v=xxx" \
-  --source youtube \
-  --cookies skills/video-crawler/cookies_www.youtube.com.txt \
-  --json
-```
-
-该模式优先下载浏览器/VLM 兼容性最好的 `18` progressive MP4（通常为 360p），
-再回退到不高于 480p/720p、音视频同文件的媒体。JSON 输出包含本地文件名、
-公网媒体 URL、视频元数据和中文描述；仍然不连接 PostgreSQL 或 Qdrant。
-
-## 无完整视频下载的 YouTube 字幕证据采集
-
-`youtube_transcript_evidence.py` 是新的轻量第一阶段：读取公开 YouTube 元数据和公开字幕，不会保存完整视频或暴露公网媒体 URL，也不会写入 PostgreSQL/Qdrant。无公开字幕时，默认用 `yt-dlp` 解析临时音频流、由 `ffmpeg` 创建处理后自动删除的单声道音频，再交给本地 `faster-whisper` 转写；标题和简介绝不作为转写替代品。
-
-```bash
-.venv/bin/python skills/video-crawler/scripts/youtube_transcript_evidence.py \
-  --video-url "https://www.youtube.com/watch?v=xxx" \
-  --language zh \
-  --json
-```
-
-输出包含稳定的 YouTube 页面 URL、视频 ID、标题、简介、频道、时长、人工/自动字幕或 `local_whisper` 来源、带时间戳字幕段，以及设计规定的关键帧数量上限。公开视频人工字幕优先于自动字幕。
-
-脚本默认使用 `yt-dlp` 的临时不高于 480p 视频流，并让 `ffmpeg` 将均匀分布的帧先输出为**内存 JPEG**，再保存到 `skills/video-crawler/downloads/<video_id>/keyframes/`。每帧文件名包含抽帧序号和时间戳；JSON 返回时间戳、字节数和本地路径，不输出图像二进制或临时媒体 URL。可用 `--keyframes-dir <目录>` 覆盖保存根目录；`--extract-keyframes` 保留为兼容旧调用的无操作参数。
-
-`--summarize-with-vlm` 会隐式提取关键帧，加载 `.env` 中的 `VLM_BASE_URL`、`VLM_API_KEY`、`VLM_MODEL`，以 OpenAI 兼容的 `/chat/completions` 请求将真实字幕/ASR 文本和内联 `data:image/jpeg;base64,...` 关键帧共同发送给 VLM。输出的 `video_summary` 只要求基于转写与画面直接支持的信息；不会发送本机或公网视频 URL。
+- VLM 只接收真实字幕/ASR 和内存中的 `data:image/jpeg;base64,...` 关键帧；不得发送临时签名媒体 URL、本机路径或公网视频 URL。
+- `content_items.cleaned_text` 保存 VLM 摘要；`raw_pages.raw_text` 与 `content_items.raw_text` 保存真实转写；`summary_text` 保持 `NULL`，避免重复存储摘要。
+- 摘要块使用 `video_summary` 类型；相邻字幕按最多 800 字符或 60 秒合并为带起止时间的 `transcript_segment` 块。两类块均须嵌入 Qdrant。
 
 ## 环境变量
 
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `VLM_BASE_URL` | `https://api.siliconflow.cn/v1` | VLM API 地址 |
-| `VLM_API_KEY` | — | API Key（必填） |
-| `VLM_MODEL` | `Qwen/Qwen3-Omni-30B-A3B-Instruct` | 模型名 |
-| `EMBEDDING_PROVIDER` | `sentence-transformers` | embedding 类型 |
-| `EMBEDDING_MODEL` | `BAAI/bge-small-zh-v1.5` | embedding 模型 |
+| 变量 | 说明 |
+|---|---|
+| `VLM_API_KEY` | VLM API Key，必填。 |
+| `VLM_BASE_URL` | OpenAI 兼容 VLM 地址；未设置时使用脚本默认值。 |
+| `VLM_MODEL` | VLM 模型；未设置时使用脚本默认值。 |
+| `EMBEDDING_PROVIDER` | 向量模型提供方，通常为 `sentence-transformers`。 |
+| `EMBEDDING_MODEL` | 本地或远程 embedding 模型名称。 |
+
+## 完成核验
+
+1. CLI JSON 的顶层 `status` 为 `success`，且 `ingestion.status` 为 `success`。
+2. `keyframes` 非空，所有 `local_path` 位于 `downloads/<video_id>/keyframes/`。
+3. 数据库中存在返回的 `content_id`，所有块的 `embed_status` 为 `success`。
+4. Qdrant 中该 `content_id` 的点数等于数据库块数。
+
+## 常见问题
+
+- YouTube 翻译字幕轨可能返回 HTTP 429。可先改用可用的原始字幕语言（例如 `--language en`）；不要把无字幕视频直接标记为已入库。
+- 单个关键帧提取失败会被跳过；只有全部候选帧失败时才终止该视频。
+- 预先存在关键帧目录不代表视频已成功入库，必须以数据库和 Qdrant 核验为准。

@@ -163,6 +163,17 @@ def test_choose_caption_track_falls_back_to_automatic_caption() -> None:
     )
 
 
+def test_choose_caption_track_accepts_chinese_script_variant_for_generic_zh() -> None:
+    module = load_module()
+    info = {"automatic_captions": {"zh-Hans": [{"url": "https://caption/auto", "ext": "vtt"}]}}
+
+    assert module.choose_caption_track(info, "zh") == (
+        "automatic_caption",
+        "zh-hans",
+        {"url": "https://caption/auto", "ext": "vtt"},
+    )
+
+
 def test_parse_webvtt_returns_timed_clean_segments() -> None:
     module = load_module()
     vtt = (
@@ -177,18 +188,66 @@ def test_parse_webvtt_returns_timed_clean_segments() -> None:
     ]
 
 
-@pytest.mark.parametrize(
-    ("duration", "expected"),
-    [(300, 6), (301, 10), (900, 10), (901, 16), (1801, 24), (3601, 32)],
-)
-def test_keyframe_cap_matches_design_duration_bands(duration: int, expected: int) -> None:
-    assert load_module().caption_frame_limit(duration) == expected
-
-
-def test_keyframe_timestamps_are_evenly_distributed_inside_video_bounds() -> None:
+def test_read_caption_text_uses_yt_dlp_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     module = load_module()
-    assert hasattr(module, "plan_keyframe_timestamps")
-    assert module.plan_keyframe_timestamps(120, 3) == [30.0, 60.0, 90.0]
+    calls = []
+
+    class FakeResponse:
+        def read(self):
+            return b"WEBVTT\\n\\n00:00:00.000 --> 00:00:01.000\\n" + "字幕".encode()
+
+    class FakeYoutubeDL:
+        def __init__(self, options):
+            calls.append(("options", options))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def urlopen(self, url):
+            calls.append(("urlopen", url))
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "yt_dlp", type("FakeYtDlp", (), {"YoutubeDL": FakeYoutubeDL}))
+
+    assert module._read_caption_text("https://caption.example/track.vtt").startswith("WEBVTT")
+    assert calls[-1] == ("urlopen", "https://caption.example/track.vtt")
+
+
+def test_read_caption_text_reuses_existing_yt_dlp_session() -> None:
+    module = load_module()
+    calls = []
+
+    class FakeResponse:
+        def read(self):
+            return b"WEBVTT"
+
+    class FakeDownloader:
+        def urlopen(self, url):
+            calls.append(url)
+            return FakeResponse()
+
+    assert module._read_caption_text(
+        "https://caption.example/track.vtt", downloader=FakeDownloader()
+    ) == "WEBVTT"
+    assert calls == ["https://caption.example/track.vtt"]
+
+
+def test_scene_aware_keyframes_use_every_detected_shot_midpoint() -> None:
+    module = load_module()
+    assert module.plan_scene_aware_keyframe_timestamps(120, [0.0, 20.0, 50.0, 90.0, 120.0]) == [
+        10.0,
+        35.0,
+        70.0,
+        105.0,
+    ]
+
+
+def test_scene_aware_keyframes_fall_back_to_one_center_frame_without_shots() -> None:
+    module = load_module()
+    assert module.plan_scene_aware_keyframe_timestamps(120, []) == [60.0]
 
 
 def test_keyframes_are_extracted_as_in_memory_jpegs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -206,12 +265,52 @@ def test_keyframes_are_extracted_as_in_memory_jpegs(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
     frames = module.extract_keyframes_as_jpegs(
-        "https://www.youtube.com/watch?v=abc123", duration_seconds=120, frame_count=2
+        "https://www.youtube.com/watch?v=abc123", duration_seconds=120
     )
 
-    assert [frame.timestamp_seconds for frame in frames] == [40.0, 80.0]
-    assert [frame.jpeg_bytes for frame in frames] == [b"\xff\xd8frame\xff\xd9"] * 2
+    assert [frame.timestamp_seconds for frame in frames] == [60.0]
+    assert [frame.jpeg_bytes for frame in frames] == [b"\xff\xd8frame\xff\xd9"]
     assert all("pipe:1" in command for command, _kwargs in commands)
+
+
+def test_keyframe_extraction_skips_one_failed_scene_and_keeps_other_frames(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = load_module()
+    monkeypatch.setattr(module, "_resolve_video_stream_url", lambda _url: "https://media.example/video")
+    monkeypatch.setattr(module, "detect_scene_boundaries", lambda *_args: [0.0, 10.0, 120.0])
+    calls = 0
+
+    def fake_run(command, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise module.subprocess.CalledProcessError(1, command, stderr=b"decode failed")
+        return type("Result", (), {"stdout": b"\xff\xd8frame\xff\xd9"})()
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    frames = module.extract_keyframes_as_jpegs(
+        "https://www.youtube.com/watch?v=abc123", duration_seconds=120
+    )
+
+    assert [frame.timestamp_seconds for frame in frames] == [65.0]
+
+
+def test_phash_deduplication_discards_near_duplicate_frames() -> None:
+    module = load_module()
+    frames = [
+        module.Keyframe(10.0, b"a"),
+        module.Keyframe(20.0, b"b"),
+        module.Keyframe(30.0, b"c"),
+    ]
+    hashes = iter([0b0000, 0b0001, 0b1111])
+    result = module.deduplicate_keyframes(
+        frames, hash_frame=lambda _frame: next(hashes), max_distance=1
+    )
+    assert result == [
+        frames[0],
+        frames[2],
+    ]
 
 
 def test_cli_extracts_keyframes_by_default() -> None:
@@ -279,7 +378,11 @@ def test_cli_extracts_and_saves_keyframes_by_default(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(
         module,
         "collect_public_evidence",
-        lambda *_args, **_kwargs: {"video_id": "abc123", "duration_seconds": 120},
+        lambda *_args, **_kwargs: {
+            "video_id": "abc123",
+            "duration_seconds": 120,
+            "segments": [{"text": "真实转写"}],
+        },
     )
     frames = [module.Keyframe(20.0, b"frame")]
     monkeypatch.setattr(module, "extract_keyframes_as_jpegs", lambda *_args, **_kwargs: frames)
@@ -294,6 +397,16 @@ def test_cli_extracts_and_saves_keyframes_by_default(monkeypatch: pytest.MonkeyP
             }
         ],
     )
+
+    monkeypatch.setattr(
+        module,
+        "load_vlm_config",
+        lambda _path: module.VlmConfig("https://vlm.example/v1", "test-key", "vision-model"),
+    )
+    monkeypatch.setattr(
+        module, "summarize_video_evidence_with_vlm", lambda *_args, **_kwargs: "摘要"
+    )
+    monkeypatch.setattr(module, "ingest_video_evidence", lambda _evidence: {"status": "success"})
 
     assert module.main() == 0
     assert frames[0].jpeg_bytes == b"frame"
@@ -355,6 +468,53 @@ def test_vlm_summary_uses_env_configured_model_and_returns_content() -> None:
     assert received["json"]["model"] == "configured-model"
 
 
+def test_persisted_video_text_does_not_combine_summary_and_transcript() -> None:
+    module = load_module()
+    assert module.persisted_video_text("摘要文本", "真实转写文本") == "摘要文本"
+
+
+def test_video_evidence_chunks_include_summary_and_timestamped_transcript() -> None:
+    module = load_module()
+    chunks = module.build_video_evidence_chunks(
+        "视频摘要",
+        [
+            {"start_seconds": 1.5, "end_seconds": 3.0, "text": "第一句字幕"},
+            {"start_seconds": 3.0, "end_seconds": 5.0, "text": "第二句字幕"},
+        ],
+    )
+
+    assert [chunk["evidence_type"] for chunk in chunks] == [
+        "video_summary",
+        "transcript_segment",
+    ]
+    assert chunks[1]["text"] == "第一句字幕\n第二句字幕"
+    assert chunks[1]["start_seconds"] == 1.5
+    assert chunks[1]["end_seconds"] == 5.0
+
+
+def test_video_evidence_chunks_group_adjacent_short_transcript_segments() -> None:
+    module = load_module()
+    chunks = module.build_video_evidence_chunks(
+        "视频摘要",
+        [
+            {"start_seconds": 0, "end_seconds": 2, "text": "第一句"},
+            {"start_seconds": 2, "end_seconds": 4, "text": "第二句"},
+            {"start_seconds": 4, "end_seconds": 6, "text": "第三句"},
+        ],
+        max_transcript_chars=7,
+        max_transcript_seconds=60,
+    )
+
+    assert [chunk["text"] for chunk in chunks] == ["视频摘要", "第一句\n第二句", "第三句"]
+    assert chunks[1]["start_seconds"] == 0
+    assert chunks[1]["end_seconds"] == 4
+
+
+def test_video_content_does_not_persist_duplicate_summary_field() -> None:
+    module = load_module()
+    assert module.persisted_video_summary("摘要文本") is None
+
+
 def test_load_vlm_config_reads_required_values_without_exposing_secret(tmp_path: Path) -> None:
     module = load_module()
     assert hasattr(module, "load_vlm_config")
@@ -380,17 +540,10 @@ def test_load_vlm_config_uses_project_defaults_for_optional_base_url_and_model(
     assert config.model == "Qwen/Qwen3-Omni-30B-A3B-Instruct"
 
 
-def test_cli_vlm_summary_switch_requires_keyframes() -> None:
-    module = load_module()
-    args = module.parse_args(["--video-url", "https://youtu.be/abc123", "--summarize-with-vlm"])
-    assert args.summarize_with_vlm is True
-
-
-def test_cli_ingest_switch_is_opt_in() -> None:
+def test_cli_runs_vlm_summary_and_ingestion_by_default() -> None:
     module = load_module()
     args = module.parse_args(["--video-url", "https://youtu.be/abc123"])
-    assert args.ingest is False
-    args = module.parse_args(["--video-url", "https://youtu.be/abc123", "--ingest"])
+    assert args.summarize_with_vlm is True
     assert args.ingest is True
 
 
@@ -409,7 +562,6 @@ def test_cli_vlm_summary_uses_extracted_frames(
             "script",
             "--video-url",
             "https://youtu.be/abc123",
-            "--summarize-with-vlm",
             "--keyframes-dir",
             str(tmp_path),
         ],
@@ -433,6 +585,7 @@ def test_cli_vlm_summary_uses_extracted_frames(
         return f"摘要: {transcript} / {len(frames)} 帧"
 
     monkeypatch.setattr(module, "summarize_video_evidence_with_vlm", fake_vlm_summary)
+    monkeypatch.setattr(module, "ingest_video_evidence", lambda _evidence: {"status": "success"})
 
     assert module.main() == 0
     assert evidence["keyframes"] == [
@@ -443,3 +596,4 @@ def test_cli_vlm_summary_uses_extracted_frames(
         }
     ]
     assert evidence["video_summary"] == "摘要: 真实转写 / 1 帧"
+    assert evidence["ingestion"] == {"status": "success"}

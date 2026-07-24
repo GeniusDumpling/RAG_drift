@@ -37,6 +37,10 @@ local-embeddings = [
 video-asr = [
   "faster-whisper>=1.1,<2"
 ]
+video-keyframes = [
+  "opencv-python>=4.8",
+  "scenedetect>=0.6,<1"
+]
 literature = [
   "pdfminer.six>=20240706",
   "playwright>=1.45.0"

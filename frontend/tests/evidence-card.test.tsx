@@ -29,8 +29,8 @@ describe('EvidenceCard', () => {
     render(<EvidenceCard evidence={evidence} />);
 
     expect(screen.getByRole('link', { name: evidence.canonical_url })).toHaveAttribute('href', evidence.canonical_url);
-    expect(screen.getByText('评分')).toBeInTheDocument();
-    expect(screen.getByText('原始页')).toBeInTheDocument();
+    expect(screen.queryByText('评分')).not.toBeInTheDocument();
+    expect(screen.queryByText('原始页')).not.toBeInTheDocument();
   });
 
   it('renders an unsafe canonical URL as plain text instead of a link', () => {
@@ -42,7 +42,7 @@ describe('EvidenceCard', () => {
     expect(screen.getByText(unsafeUrl)).toBeInTheDocument();
   });
 
-  it('renders video evidence with controls and full description', () => {
+  it('renders video evidence with controls and a single full-description disclosure', () => {
     const videoUrl = 'https://cdn.flyforum.cn/demo.mp4';
     render(
       <EvidenceCard
@@ -51,11 +51,14 @@ describe('EvidenceCard', () => {
           item_type: 'video_description',
           canonical_url: videoUrl,
           video_url: videoUrl,
+          snippet: '视频证据片段。'.repeat(60),
           description_text: '完整的无人机视频描述。',
         }}
       />,
     );
 
+    expect(screen.getByText('查看完整视频描述')).toBeInTheDocument();
+    expect(screen.queryByText('查看完整文本')).not.toBeInTheDocument();
     expect(screen.getByText('完整的无人机视频描述。')).toBeInTheDocument();
     expect(screen.getByTestId('video-evidence')).toHaveAttribute('src', videoUrl);
   });

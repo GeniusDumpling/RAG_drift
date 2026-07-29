@@ -17,8 +17,6 @@ type AiChatPageProps = {
   onOpenContent?: (contentItemId: string) => void;
 };
 
-const STARTERS = ['视频中展示了哪些操作？', '该来源有哪些关键结论？', '请总结与问题相关的证据。'];
-
 export function AiChatPage({ initialQuery = '', onOpenContent }: AiChatPageProps) {
   const [input, setInput] = useState(initialQuery);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -95,13 +93,6 @@ export function AiChatPage({ initialQuery = '', onOpenContent }: AiChatPageProps
             <div className="chat-empty-mark" aria-hidden="true">✦</div>
             <h2>从一个问题开始</h2>
             <p>我会检索已入库的内容，再基于证据生成引用明确的回答。</p>
-            <div className="chat-starters">
-              {STARTERS.map((starter) => (
-                <button key={starter} type="button" onClick={() => void sendQuestion(starter)}>
-                  {starter}
-                </button>
-              ))}
-            </div>
           </div>
         )}
         {loading ? (

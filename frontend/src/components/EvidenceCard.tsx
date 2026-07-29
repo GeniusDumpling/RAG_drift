@@ -3,13 +3,6 @@ import { itemTypeLabel, safeExternalHref } from '../utils/links';
 
 const MAX_SNIPPET_LENGTH = 300;
 
-function formatScore(score: number | null | undefined): string {
-  if (score === null || score === undefined || Number.isNaN(score)) {
-    return 'n/a';
-  }
-  return score.toFixed(3);
-}
-
 function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) {
     return text;
@@ -51,6 +44,10 @@ export function EvidenceCard({ evidence, onOpenContent }: EvidenceCardProps) {
   const videoHref = evidence.video_url ? safeExternalHref(evidence.video_url) : null;
   const youtubeEmbedHref = youtubeEmbedUrl(evidence.video_url);
   const hasLongSnippet = evidence.snippet.length > MAX_SNIPPET_LENGTH;
+  const hasVideoDescription = Boolean(
+    evidence.description_text && (evidence.item_type === 'video_description' || evidence.video_url),
+  );
+  const hasExpandableContent = hasLongSnippet || hasVideoDescription;
 
   return (
     <article className="card evidence-card">
@@ -64,19 +61,19 @@ export function EvidenceCard({ evidence, onOpenContent }: EvidenceCardProps) {
         <span className="badge">{evidence.matched_by}</span>
       </div>
 
-      <p className="evidence-snippet">
-        {hasLongSnippet ? (
+      <div className="evidence-snippet">
+        {hasExpandableContent ? (
           <>
-            {truncate(evidence.snippet, MAX_SNIPPET_LENGTH)}
+            {hasLongSnippet ? truncate(evidence.snippet, MAX_SNIPPET_LENGTH) : evidence.snippet}
             <details className="snippet-expand">
-              <summary>查看完整文本</summary>
-              <p>{evidence.snippet}</p>
+              <summary>{hasVideoDescription ? '查看完整视频描述' : '查看完整文本'}</summary>
+              <p>{hasVideoDescription ? evidence.description_text : evidence.snippet}</p>
             </details>
           </>
         ) : (
           evidence.snippet
         )}
-      </p>
+      </div>
 
       {evidence.thread_summary ? <p className="muted evidence-thread">帖子摘要：{evidence.thread_summary}</p> : null}
 
@@ -99,57 +96,6 @@ export function EvidenceCard({ evidence, onOpenContent }: EvidenceCardProps) {
           </video>
         </div>
       ) : null}
-
-      {evidence.description_text ? (
-        <details className="video-description">
-          <summary>查看完整视频描述</summary>
-          <p className="video-description-text">{evidence.description_text}</p>
-        </details>
-      ) : null}
-
-      <dl className="kv-grid">
-        <div>
-          <dt>评分</dt>
-          <dd>{formatScore(evidence.score)}</dd>
-        </div>
-        <div>
-          <dt>向量</dt>
-          <dd>{formatScore(evidence.vector_score)}</dd>
-        </div>
-        <div>
-          <dt>关键词</dt>
-          <dd>{formatScore(evidence.keyword_score)}</dd>
-        </div>
-        <div>
-          <dt>内容</dt>
-          <dd>
-            {onOpenContent ? (
-              <button
-                aria-label={`打开内容 ${evidence.content_item_id}`}
-                className="link-button"
-                type="button"
-                onClick={() => onOpenContent(evidence.content_item_id)}
-              >
-                {evidence.content_item_id}
-              </button>
-            ) : (
-              evidence.content_item_id
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>来源</dt>
-          <dd>{evidence.source_site_id}</dd>
-        </div>
-        <div>
-          <dt>原始页</dt>
-          <dd>{evidence.raw_page_id}</dd>
-        </div>
-        <div>
-          <dt>分块</dt>
-          <dd>{evidence.chunk_id}</dd>
-        </div>
-      </dl>
 
       {canonicalHref ? (
         <a href={canonicalHref} target="_blank" rel="noreferrer" className="evidence-link">

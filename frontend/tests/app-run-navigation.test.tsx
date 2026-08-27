@@ -147,14 +147,24 @@ describe('App run navigation', () => {
 
     const primaryNav = screen.getByRole('navigation', { name: '主导航 Primary' });
     const dashboardButton = within(primaryNav).getByRole('button', { name: '总览' });
-    const searchButton = within(primaryNav).getByRole('button', { name: '检索问答' });
+    const answerButton = within(primaryNav).getByRole('button', { name: 'AI 问答' });
 
     expect(dashboardButton).toHaveAttribute('aria-current', 'page');
-    expect(searchButton).not.toHaveAttribute('aria-current');
+    expect(answerButton).not.toHaveAttribute('aria-current');
+    expect(within(primaryNav).getAllByRole('button').map((button) => button.textContent)).toEqual([
+      '总览',
+      '数据源',
+      '运行记录',
+      '检索',
+      'AI 问答',
+      '文献研究',
+      '内容详情',
+      '数据库',
+    ]);
 
-    fireEvent.click(searchButton);
+    fireEvent.click(answerButton);
 
-    expect(searchButton).toHaveAttribute('aria-current', 'page');
+    expect(answerButton).toHaveAttribute('aria-current', 'page');
     expect(dashboardButton).not.toHaveAttribute('aria-current');
   });
 

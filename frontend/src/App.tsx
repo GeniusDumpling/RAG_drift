@@ -11,7 +11,7 @@ import { SourcesPage } from './pages/SourcesPage';
 
 type View = 'Dashboard' | 'Sources' | 'Runs' | 'Search' | 'Answer' | 'Content' | 'Database' | 'Literature';
 
-const NAV_ITEMS: View[] = ['Dashboard', 'Sources', 'Runs', 'Search', 'Answer', 'Content', 'Database', 'Literature'];
+const NAV_ITEMS: View[] = ['Dashboard', 'Sources', 'Runs', 'Search', 'Answer', 'Literature', 'Content', 'Database'];
 
 const NAV_LABELS: Record<View, string> = {
   Dashboard: '总览',

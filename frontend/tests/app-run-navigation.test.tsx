@@ -146,12 +146,15 @@ describe('App run navigation', () => {
     render(<App />);
 
     const primaryNav = screen.getByRole('navigation', { name: '主导航 Primary' });
+    const workspaceToggle = within(primaryNav).getByRole('button', { name: '工作空间' });
+    const sidebarToggle = screen.getByRole('button', { name: '收起左侧导航' });
     const dashboardButton = within(primaryNav).getByRole('button', { name: '总览' });
     const answerButton = within(primaryNav).getByRole('button', { name: 'AI 问答' });
 
     expect(dashboardButton).toHaveAttribute('aria-current', 'page');
     expect(answerButton).not.toHaveAttribute('aria-current');
-    expect(within(primaryNav).getAllByRole('button').map((button) => button.textContent)).toEqual([
+    expect(workspaceToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(within(primaryNav).getAllByRole('button').slice(1).map((button) => button.textContent)).toEqual([
       '总览',
       '数据源',
       '运行记录',
@@ -166,6 +169,16 @@ describe('App run navigation', () => {
 
     expect(answerButton).toHaveAttribute('aria-current', 'page');
     expect(dashboardButton).not.toHaveAttribute('aria-current');
+
+    fireEvent.click(workspaceToggle);
+    expect(workspaceToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(within(primaryNav).queryByRole('button', { name: '总览' })).not.toBeInTheDocument();
+
+    fireEvent.click(sidebarToggle);
+    expect(sidebarToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('navigation', { name: '主导航 Primary' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '和无人机知识库对话' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开左侧导航' })).toBeInTheDocument();
   });
 
   it('opens the selected run detail from the content detail run link', async () => {

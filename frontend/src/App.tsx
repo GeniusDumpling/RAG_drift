@@ -29,6 +29,8 @@ export function App() {
   const [searchSeed, setSearchSeed] = useState('');
   const [selectedRunId, setSelectedRunId] = useState('');
   const [selectedContentId, setSelectedContentId] = useState('');
+  const [workspaceExpanded, setWorkspaceExpanded] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   function openSearch(query: string) {
     setSearchSeed(query);
@@ -46,28 +48,51 @@ export function App() {
   }
 
   return (
-    <div className="app-shell">
-      <aside className="nav">
-        <div className="brand-block">
-          <span className="brand-dot" />
-          <div>
-            <strong>RAG系统控制台</strong>
+    <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+      <aside className="nav" id="app-sidebar">
+        <div className="sidebar-content" hidden={sidebarCollapsed}>
+          <div className="brand-block">
+            <span className="brand-dot" />
+            <div>
+              <strong>RAG系统控制台</strong>
+            </div>
           </div>
-        </div>
-        <nav aria-label="主导航 Primary">
-          <p className="nav-label">工作空间</p>
-          {NAV_ITEMS.map((item) => (
+          <nav aria-label="主导航 Primary">
             <button
-              aria-current={activeView === item ? 'page' : undefined}
-              className={activeView === item ? 'active' : ''}
-              key={item}
+              aria-controls="workspace-navigation"
+              aria-expanded={workspaceExpanded}
+              className="nav-section-toggle"
               type="button"
-              onClick={() => setActiveView(item)}
+              onClick={() => setWorkspaceExpanded((expanded) => !expanded)}
             >
-              {NAV_LABELS[item] ?? item}
+              <span>工作空间</span>
+              <span aria-hidden="true">{workspaceExpanded ? '−' : '+'}</span>
             </button>
-          ))}
-        </nav>
+            <div id="workspace-navigation" hidden={!workspaceExpanded}>
+              {NAV_ITEMS.map((item) => (
+                <button
+                  aria-current={activeView === item ? 'page' : undefined}
+                  className={activeView === item ? 'active' : ''}
+                  key={item}
+                  type="button"
+                  onClick={() => setActiveView(item)}
+                >
+                  {NAV_LABELS[item] ?? item}
+                </button>
+              ))}
+            </div>
+          </nav>
+        </div>
+        <button
+          aria-controls="app-sidebar"
+          aria-expanded={!sidebarCollapsed}
+          className="sidebar-toggle"
+          type="button"
+          onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+        >
+          <span className="sr-only">{sidebarCollapsed ? '展开左侧导航' : '收起左侧导航'}</span>
+          <span aria-hidden="true">{sidebarCollapsed ? '›' : '‹'}</span>
+        </button>
       </aside>
       <div className="workspace">
         <header className="app-topbar">

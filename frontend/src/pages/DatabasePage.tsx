@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { getDatabaseOverview, listDatabaseRows, listDatabaseTables } from '../api/client';
-import type { DatabaseJsonValue, DatabaseOverview, DatabaseTableMeta, DatabaseTableRow, DatabaseTableRowsPage } from '../api/types';
+import type { DatabaseOverview, DatabaseTableMeta, DatabaseTableRowsPage } from '../api/types';
 import { formatErrorMessage } from '../utils/errors';
 
 const PAGE_SIZE = 50;
@@ -58,7 +58,7 @@ export function DatabasePage() {
   const [tables, setTables] = useState<DatabaseTableMeta[]>([]);
   const [selectedTable, setSelectedTable] = useState('');
   const [rowsPage, setRowsPage] = useState<DatabaseTableRowsPage | null>(null);
-  const [selectedRow, setSelectedRow] = useState<DatabaseTableRow | null>(null);
+
   const [query, setQuery] = useState('');
   const [appliedQuery, setAppliedQuery] = useState('');
   const [offset, setOffset] = useState(0);
@@ -97,21 +97,18 @@ export function DatabasePage() {
   useEffect(() => {
     if (!selectedTable) {
       setRowsPage(null);
-      setSelectedRow(null);
       return;
     }
     let ignore = false;
     setRowsLoading(true);
     setRowsError('');
     setRowsPage(null);
-    setSelectedRow(null);
     listDatabaseRows(selectedTable, { limit: PAGE_SIZE, offset, q: appliedQuery })
       .then((page) => {
         if (ignore) {
           return;
         }
         setRowsPage(page);
-        setSelectedRow(page.items[0] || null);
         setRowsLoading(false);
       })
       .catch((reason: unknown) => {
@@ -119,7 +116,6 @@ export function DatabasePage() {
           return;
         }
         setRowsPage(null);
-        setSelectedRow(null);
         setRowsError(formatErrorMessage('无法加载表数据', reason));
         setRowsLoading(false);
       });
@@ -184,8 +180,7 @@ export function DatabasePage() {
 
       {overview ? <OverviewCards overview={overview} /> : null}
 
-      <div className="grid database-layout">
-        <section className="card database-browser-card">
+      <section className="card database-browser-card">
           <div className="card-header">
             <div>
               <h2>核心表只读浏览器</h2>
@@ -235,7 +230,7 @@ export function DatabasePage() {
               <p className="muted compact">
                 total={rowsPage.total} limit={rowsPage.limit} offset={rowsPage.offset}
               </p>
-              <DatabaseRowsTable rows={rowsPage.items} selectedRow={selectedRow} onSelectRow={setSelectedRow} />
+              <DatabaseRowsTable rows={rowsPage.items} />
               <div className="button-row">
                 <button type="button" disabled={!canGoPrevious} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
                   上一页
@@ -246,13 +241,7 @@ export function DatabasePage() {
               </div>
             </>
           ) : null}
-        </section>
-
-        <aside className="card row-detail-card">
-          <h2>行详情</h2>
-          {selectedRow ? <RowDetail row={selectedRow} /> : <p className="muted">选择一行查看详情。</p>}
-        </aside>
-      </div>
+      </section>
 
       <section className="card command-handbook" aria-label="psql 使用手册">
         <div className="card-header">
@@ -297,6 +286,11 @@ function OverviewCards({ overview }: { overview: DatabaseOverview }) {
           <span>{overview.qdrant.collection}</span>
         </div>
         <div className="card metric-card">
+          <span className="muted">向量配置</span>
+          <strong>{overview.qdrant.vector_size ?? '—'}</strong>
+          <span>{overview.qdrant.distance ?? overview.qdrant.error ?? 'unknown'}</span>
+        </div>
+        <div className="card metric-card">
           <span className="muted">对账状态</span>
           <strong>{overview.reconciliation.status}</strong>
           <span>
@@ -304,55 +298,24 @@ function OverviewCards({ overview }: { overview: DatabaseOverview }) {
             {overview.reconciliation.qdrant_points_count ?? '—'}
           </span>
         </div>
-        <div className="card metric-card">
-          <span className="muted">向量配置</span>
-          <strong>{overview.qdrant.vector_size ?? '—'}</strong>
-          <span>{overview.qdrant.distance ?? overview.qdrant.error ?? 'unknown'}</span>
-        </div>
       </div>
 
-      <div className="grid two-column">
-        <section className="card">
-          <h2>核心表计数</h2>
-          <div className="grid counter-grid">
-            {tableCounts.map((item) => (
-              <div className="counter" key={item.table_name}>
-                <span className="muted">{item.table_name}</span>
-                <strong>{item.count}</strong>
-              </div>
-            ))}
-          </div>
-        </section>
-        <section className="card">
-          <h2>chunk 向量化状态</h2>
-          {overview.postgres.chunk_vector_status.length ? (
-            <ul className="dense-list">
-              {overview.postgres.chunk_vector_status.map((item) => (
-                <li key={`${item.embed_status}-${item.vector_backend ?? 'null'}`}>
-                  <span className="badge">{item.count}</span>
-                  <span>{item.embed_status} / {item.vector_backend ?? 'NULL'}</span>
-                  <span className="muted">content_chunks</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted">暂无 chunk 状态。</p>
-          )}
-        </section>
-      </div>
+      <section className="card">
+        <h2>核心表计数</h2>
+        <div className="grid counter-grid">
+          {tableCounts.map((item) => (
+            <div className="counter" key={item.table_name}>
+              <span className="muted">{item.table_name}</span>
+              <strong>{item.count}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
     </>
   );
 }
 
-function DatabaseRowsTable({
-  rows,
-  selectedRow,
-  onSelectRow,
-}: {
-  rows: DatabaseTableRow[];
-  selectedRow: DatabaseTableRow | null;
-  onSelectRow: (row: DatabaseTableRow) => void;
-}) {
+function DatabaseRowsTable({ rows }: { rows: DatabaseTableRowsPage['items'] }) {
   if (!rows.length) {
     return <p className="empty-state">当前表没有匹配行。</p>;
   }
@@ -362,18 +325,12 @@ function DatabaseRowsTable({
       <table className="data-table">
         <thead>
           <tr>
-            <th>操作</th>
             {columns.map((column) => <th key={column}>{column}</th>)}
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr className={selectedRow?.id === row.id ? 'selected-row' : ''} key={row.id}>
-              <td>
-                <button type="button" aria-label={`查看 ${row.id}`} onClick={() => onSelectRow(row)}>
-                  查看详情
-                </button>
-              </td>
+            <tr key={row.id}>
               {columns.map((column) => <td key={column}>{formatValue(row.preview[column])}</td>)}
             </tr>
           ))}
@@ -383,71 +340,7 @@ function DatabaseRowsTable({
   );
 }
 
-function RowDetail({ row }: { row: DatabaseTableRow }) {
-  return (
-    <div>
-      <p className="muted compact">{row.table_name}</p>
-      <h3>ID: {row.id}</h3>
-      <DetailSection title="Preview" value={row.preview} />
-      <DetailSection title="Detail" value={row.detail} />
-      <DetailSection title="Related" value={row.related} />
-    </div>
-  );
-}
-
-function DetailSection({ title, value }: { title: string; value: Record<string, DatabaseJsonValue> }) {
-  if (!Object.keys(value).length) {
-    return null;
-  }
-  const highlights = collectDetailHighlights(value);
-  return (
-    <section className="detail-section">
-      <h4>{title}</h4>
-      {highlights.length ? (
-        <div className="detail-highlights">
-          {highlights.map((highlight, index) => (
-            <p className="muted compact" key={`${highlight}-${index}`}>
-              {highlight}
-            </p>
-          ))}
-        </div>
-      ) : null}
-      <pre>{JSON.stringify(value, null, 2)}</pre>
-    </section>
-  );
-}
-
-function collectDetailHighlights(value: Record<string, DatabaseJsonValue>): string[] {
-  const highlights = Object.entries(value).flatMap(([key, item]) => {
-    if (isScalarDisplayValue(item)) {
-      return key.endsWith('_preview') ? [String(item)] : [];
-    }
-    return collectScalarStrings(item);
-  });
-  return Array.from(new Set(highlights));
-}
-
-function collectScalarStrings(value: unknown): string[] {
-  if (value === null || value === undefined) {
-    return [];
-  }
-  if (isScalarDisplayValue(value)) {
-    return [String(value)];
-  }
-  if (Array.isArray(value)) {
-    return value.flatMap((item) => collectScalarStrings(item));
-  }
-  if (typeof value === 'object') {
-    return Object.values(value).flatMap((item) => collectScalarStrings(item));
-  }
-  return [];
-}
-
-function isScalarDisplayValue(value: unknown): value is string | number | boolean {
-  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
-}
-
-function formatValue(value: DatabaseJsonValue): string {
+function formatValue(value: unknown): string {
   if (value === null || value === undefined) {
     return '—';
   }

@@ -127,7 +127,7 @@ afterEach(() => {
 });
 
 describe('DatabasePage', () => {
-  it('renders PostgreSQL/Qdrant overview, table rows, row detail, and psql handbook', async () => {
+  it('renders PostgreSQL/Qdrant overview, table rows, and psql handbook', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/database/overview')) {
@@ -152,7 +152,8 @@ describe('DatabasePage', () => {
     expect(screen.getByText('intelligence_rag')).toBeInTheDocument();
     expect(screen.getByText('content_chunks_v1')).toBeInTheDocument();
     expect(screen.getByText('matched')).toBeInTheDocument();
-    expect(screen.getByText('success / qdrant')).toBeInTheDocument();
+    expect(screen.queryByText('chunk 向量化状态')).not.toBeInTheDocument();
+    expect(screen.queryByText('success / qdrant')).not.toBeInTheDocument();
     expect(await screen.findByText('Telemetry firmware report')).toBeInTheDocument();
 
     const handbook = screen.getByRole('region', { name: 'psql 使用手册' });
@@ -161,10 +162,10 @@ describe('DatabasePage', () => {
 
     fireEvent.change(screen.getByLabelText('选择表'), { target: { value: 'content_chunks' } });
     expect(await screen.findByText('chunk-1')).toBeInTheDocument();
-    expect(screen.getByText('Telemetry firmware report embed text')).toBeInTheDocument();
+    expect(screen.queryByText('Telemetry firmware report embed text')).not.toBeInTheDocument();
   });
 
-  it('selects row detail via an accessible row action button', async () => {
+  it('renders the table without row detail controls', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/database/overview')) {
@@ -183,14 +184,12 @@ describe('DatabasePage', () => {
     render(<DatabasePage />);
 
     expect(await screen.findByText('Telemetry firmware report')).toBeInTheDocument();
-    expect(screen.getByText('Telemetry firmware report cleaned text')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '查看 item-2' }));
-
-    expect(screen.getByText('Battery safety notice cleaned text')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /查看 item-/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('行详情')).not.toBeInTheDocument();
+    expect(screen.queryByText('Telemetry firmware report cleaned text')).not.toBeInTheDocument();
   });
 
-  it('clears stale rows and row detail when the next table rows request fails', async () => {
+  it('clears stale rows when the next table rows request fails', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/database/overview')) {
@@ -217,7 +216,6 @@ describe('DatabasePage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('无法加载表数据: rows offline');
     expect(screen.queryByText('Telemetry firmware report')).not.toBeInTheDocument();
-    expect(screen.queryByText('Telemetry firmware report cleaned text')).not.toBeInTheDocument();
   });
 
   it('passes keyword search to the selected table rows endpoint', async () => {

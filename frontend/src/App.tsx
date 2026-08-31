@@ -51,11 +51,11 @@ export function App() {
         <div className="brand-block">
           <span className="brand-dot" />
           <div>
-            <strong>信息 RAG</strong>
-            <p className="muted compact">信息检索增强问答系统</p>
+            <strong>RAG系统控制台</strong>
           </div>
         </div>
         <nav aria-label="主导航 Primary">
+          <p className="nav-label">工作空间</p>
           {NAV_ITEMS.map((item) => (
             <button
               aria-current={activeView === item ? 'page' : undefined}
@@ -69,16 +69,22 @@ export function App() {
           ))}
         </nav>
       </aside>
-      <main className="main">
-        {activeView === 'Dashboard' ? <DashboardPage onSearch={openSearch} /> : null}
-        {activeView === 'Sources' ? <SourcesPage /> : null}
-        {activeView === 'Runs' ? <RunDetailPage selectedRunId={selectedRunId} /> : null}
-        {activeView === 'Search' ? <SearchPage initialQuery={searchSeed} onOpenContent={openContent} mode="search" /> : null}
-        {activeView === 'Answer' ? <AiChatPage initialQuery={searchSeed} onOpenContent={openContent} /> : null}
-        {activeView === 'Content' ? <ContentDetailPage selectedContentId={selectedContentId} onOpenRun={openRun} /> : null}
-        {activeView === 'Database' ? <DatabasePage /> : null}
-        {activeView === 'Literature' ? <LiteratureResearchPanel /> : null}
-      </main>
+      <div className="workspace">
+        <header className="app-topbar">
+          <p>信息治理 / {NAV_LABELS[activeView]}</p>
+          <div className="system-status"><span /> 系统在线</div>
+        </header>
+        <main className="main">
+          {activeView === 'Dashboard' ? <DashboardPage onSearch={openSearch} /> : null}
+          {activeView === 'Sources' ? <SourcesPage /> : null}
+          {activeView === 'Runs' ? <RunDetailPage selectedRunId={selectedRunId} /> : null}
+          {activeView === 'Search' ? <SearchPage initialQuery={searchSeed} onOpenContent={openContent} mode="search" /> : null}
+          {activeView === 'Answer' ? <AiChatPage initialQuery={searchSeed} onOpenContent={openContent} /> : null}
+          {activeView === 'Content' ? <ContentDetailPage selectedContentId={selectedContentId} onOpenRun={openRun} /> : null}
+          {activeView === 'Database' ? <DatabasePage /> : null}
+          {activeView === 'Literature' ? <LiteratureResearchPanel /> : null}
+        </main>
+      </div>
     </div>
   );
 }

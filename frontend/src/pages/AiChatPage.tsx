@@ -53,8 +53,8 @@ export function AiChatPage({ initialQuery = '', onOpenContent }: AiChatPageProps
       <header className="chat-page-header">
         <div>
           <p className="eyebrow">AI 问答</p>
-          <h1>和情报数据库对话</h1>
-          <p className="muted">回答由 DeepSeek 基于检索证据生成。</p>
+          <h1>和无人机知识库对话</h1>
+          <p className="muted">回答由DeepSeek基于数据库检索证据生成。</p>
         </div>
         {messages.length ? (
           <button className="chat-clear-button" type="button" onClick={() => setMessages([])}>

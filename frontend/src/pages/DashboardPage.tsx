@@ -78,7 +78,7 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
     <section>
       <div className="page-title">
         <p className="eyebrow">工作台</p>
-        <h1>信息 RAG 总览</h1>
+        <h1>RAG系统总览</h1>
         <p className="muted">观察数据源状态、爬取执行、索引内容和证据。</p>
       </div>
 

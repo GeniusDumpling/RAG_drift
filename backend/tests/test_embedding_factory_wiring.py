@@ -3,10 +3,13 @@ from __future__ import annotations
 from typing import Any
 
 import app.services.search as search_module
+import pytest
 from app.core.config import Settings
 from app.services.search import SearchService
 
 import worker.app.chunk_indexer as chunk_indexer
+
+pytestmark = pytest.mark.no_db
 
 
 class FakeEmbedding:

@@ -65,8 +65,10 @@ uv run --extra video-keyframes --extra local-embeddings python3 \
 | `VLM_API_KEY` | VLM API Key，必填。 |
 | `VLM_BASE_URL` | OpenAI 兼容 VLM 地址；未设置时使用脚本默认值。 |
 | `VLM_MODEL` | VLM 模型；未设置时使用脚本默认值。 |
-| `EMBEDDING_PROVIDER` | 向量模型提供方，通常为 `sentence-transformers`。 |
-| `EMBEDDING_MODEL` | 本地或远程 embedding 模型名称。 |
+| `EMBEDDING_PROVIDER` | 向量模型提供方，默认 `siliconflow`。 |
+| `EMBEDDING_MODEL` | 默认 `BAAI/bge-m3`，用于中英多语言检索。 |
+| `EMBEDDING_DIMENSION` | BGE-M3 为 `1024`。 |
+| `EMBEDDING_API_KEY` | 可选；未设置时复用现有 `VLM_API_KEY`。 |
 
 ## 完成核验
 

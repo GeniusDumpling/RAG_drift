@@ -8,8 +8,11 @@ import pytest
 from app.core.config import Settings
 from app.services.embeddings import (
     SentenceTransformerEmbeddingService,
+    SiliconFlowEmbeddingService,
     build_embedding_service,
 )
+
+pytestmark = pytest.mark.no_db
 
 
 class FakeVector:
@@ -46,15 +49,15 @@ class FakeSentenceTransformer:
         return FakeVector([0.1, 0.2, 0.3])
 
 
-def test_embedding_settings_default_to_local_bge_small_zh() -> None:
+def test_embedding_settings_default_to_siliconflow_bge_m3() -> None:
     settings = Settings()
 
-    assert settings.embedding_provider == "sentence-transformers"
-    assert settings.embedding_model == "BAAI/bge-small-zh-v1.5"
-    assert settings.embedding_dimension == 512
+    assert settings.embedding_provider == "siliconflow"
+    assert settings.embedding_model == "BAAI/bge-m3"
+    assert settings.embedding_dimension == 1024
 
 
-def test_build_embedding_service_returns_sentence_transformer_by_default(
+def test_build_embedding_service_returns_siliconflow_bge_m3_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     FakeSentenceTransformer.instances.clear()
@@ -66,9 +69,9 @@ def test_build_embedding_service_returns_sentence_transformer_by_default(
 
     service = build_embedding_service(Settings())
 
-    assert isinstance(service, SentenceTransformerEmbeddingService)
-    assert service.model_name == "BAAI/bge-small-zh-v1.5"
-    assert service.dimension == 3
+    assert isinstance(service, SiliconFlowEmbeddingService)
+    assert service.model_name == "BAAI/bge-m3"
+    assert service.dimension == 1024
 
 
 def test_build_embedding_service_returns_sentence_transformer_provider(
@@ -83,6 +86,7 @@ def test_build_embedding_service_returns_sentence_transformer_provider(
     settings = Settings(
         EMBEDDING_PROVIDER="sentence-transformers",
         EMBEDDING_MODEL="BAAI/bge-small-zh-v1.5",
+        EMBEDDING_DIMENSION=512,
     )
 
     service = build_embedding_service(settings)
@@ -142,7 +146,7 @@ def test_unsupported_embedding_provider_raises_clear_error() -> None:
         build_embedding_service(settings)
 
 
-@pytest.mark.parametrize("provider", ["deterministic", "fake", "siliconflow"])
+@pytest.mark.parametrize("provider", ["deterministic", "fake"])
 def test_removed_embedding_providers_raise_clear_error(provider: str) -> None:
     settings = Settings(EMBEDDING_PROVIDER=provider)
 

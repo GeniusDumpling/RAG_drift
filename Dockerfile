@@ -14,17 +14,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     APP_ENV=prod \
     API_HOST=0.0.0.0 \
     API_PORT=8000 \
-    QDRANT_COLLECTION=content_chunks_v2 \
-    EMBEDDING_PROVIDER=sentence-transformers \
-    EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5 \
-    EMBEDDING_DIMENSION=512 \
+    QDRANT_COLLECTION=content_chunks_bge_m3_v1 \
+    EMBEDDING_PROVIDER=siliconflow \
+    EMBEDDING_MODEL=BAAI/bge-m3 \
+    EMBEDDING_DIMENSION=1024 \
     LLM_PROVIDER=fake \
     AGENT_TIMEOUT_SECONDS=20 \
     WORKER_POLL_INTERVAL_SECONDS=2
 
 WORKDIR /app
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates ffmpeg nodejs \
+RUN sed -i \
+        -e 's|http://deb.debian.org/debian-security|https://mirrors.aliyun.com/debian-security|g' \
+        -e 's|http://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g' \
+        /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::Retries=5 update \
+    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates ffmpeg nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml alembic.ini README.md ./

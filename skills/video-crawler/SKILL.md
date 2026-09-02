@@ -49,8 +49,39 @@ uv run --extra video-keyframes --extra local-embeddings python3 \
 
 - 常规情况下使用 `--no-whisper-fallback`，避免在无字幕视频上隐式下载/加载 Whisper 模型。
 - 仅当明确需要本地 ASR 时，移除该参数，并确保已安装 `video-asr` extra、配置了模型缓存与足够计算资源。
-- `--extract-keyframes`、`--summarize-with-vlm`、`--ingest` 为兼容旧调用的无操作参数；完整流程默认启用。
 - 用 `--keyframes-dir <目录>` 为测试或隔离运行指定帧保存根目录。
+
+## 搜索 + 入库全链路
+
+用 `search_and_ingest.py` 一次完成「搜索 → 去重 → 逐个入库」：
+
+```bash
+uv run --extra video-keyframes --extra local-embeddings python3 \
+  skills/video-crawler/scripts/search_and_ingest.py \
+  --query "drone GPS spoofing" \
+  --caption-only \
+  --language en \
+  --video-limit 3 \
+  --json
+```
+
+- 搜索走 YouTube Data API v3，需要 `YOUTUBE_API_KEY`。
+- 逐个候选独立处理，返回 `outcome`（`success` / `duplicate` / `no_captions` / `failed`）。
+- `--video-limit` 控制入库数量，`--max-results`（1-50）控制搜索候选数。
+- 默认不做本地 ASR；如需无字幕视频回退转写，加 `--whisper-fallback`。
+
+## 定时常驻采集
+
+用 `run_scheduled_collect.sh` 做常态化定时采集，由 cron 或 systemd timer 每 2 小时触发一次：单次搜索 50 候选并尽量全部入库。
+
+```bash
+bash skills/video-crawler/scripts/run_scheduled_collect.sh
+```
+
+- 脚本内 `--max-results 50`、`--video-limit 50`，一次搜索拿满 50 候选、去重后尽量全入；YouTube 搜索配额固定 100 units/次，与入库数量无关。
+- cron 每 2 小时触发（`0 */2 * * *`）；systemd timer 用 `OnCalendar=*-*-* 0/2:00:00`，配合 `flock -n` 防任务重叠。
+- 配额：12 次/天 × 100 units = 1200 units/天，远低于默认 10,000 额度；需提速可改每小时（`0 * * * *`）。
+- 依赖香港代理出口（默认 `HTTPS_PROXY=http://127.0.0.1:7897`）和 `video-keyframes` extra（含 `curl_cffi`）。
 
 ## 证据与入库约定
 
@@ -69,6 +100,8 @@ uv run --extra video-keyframes --extra local-embeddings python3 \
 | `EMBEDDING_MODEL` | 默认 `BAAI/bge-m3`，用于中英多语言检索。 |
 | `EMBEDDING_DIMENSION` | BGE-M3 为 `1024`。 |
 | `EMBEDDING_API_KEY` | 可选；未设置时复用现有 `VLM_API_KEY`。 |
+| `YOUTUBE_API_KEY` | `youtube_search.py` 调用 YouTube Data API v3 搜索所需。 |
+| `HTTPS_PROXY` | 视频流下载必需，须指向能下载 YouTube 视频流的代理出口（如香港节点）；大陆/教育网直连会被 403。 |
 
 ## 完成核验
 
@@ -82,3 +115,5 @@ uv run --extra video-keyframes --extra local-embeddings python3 \
 - YouTube 翻译字幕轨可能返回 HTTP 429。可先改用可用的原始字幕语言（例如 `--language en`）；不要把无字幕视频直接标记为已入库。
 - 单个关键帧提取失败会被跳过；只有全部候选帧失败时才终止该视频。
 - 预先存在关键帧目录不代表视频已成功入库，必须以数据库和 Qdrant 核验为准。
+- 视频流（googlevideo.com）下载可能被 YouTube 反爬返回 403。脚本已用 `impersonate(chrome)` 模拟浏览器指纹，依赖 `curl_cffi`（已含在 `video-keyframes` extra）与 yt-dlp `>=2026.8.19`。换节点或不走代理时，先用 `scripts/youtube_stream_probe.py` 确认真实视频流返回 206，而不是只看元数据/缩略图。
+- 搜索用 `scripts/youtube_search.py --query "…" --caption-only`，返回规范化候选；先按 `video-evidence:<canonical_url>` 查重再逐个入库。不要再保存或提交 YouTube cookies 文件，当前流程不依赖它。

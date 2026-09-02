@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import re
@@ -156,57 +157,50 @@ def parse_webvtt(text: str) -> list[CaptionSegment]:
     return segments
 
 
-def _read_caption_text(url: str, *, downloader: Any | None = None) -> str:
-    """Read a caption through yt-dlp's configured YouTube transport.
-
-    Reusing yt-dlp's request implementation avoids caption requests being
-    rejected by YouTube when a bare urllib client is rate-limited.
-    """
+def _read_caption_text(downloader: Any, url: str) -> str:
+    """Read a caption through yt-dlp's configured YouTube transport."""
     try:
-        if downloader is not None:
-            return downloader.urlopen(url).read().decode("utf-8", errors="replace")
-        try:
-            import yt_dlp
-        except ImportError as exc:
-            raise EvidenceCollectionError("需要安装 yt-dlp 才能读取公开字幕") from exc
-        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
-            return ydl.urlopen(url).read().decode("utf-8", errors="replace")
+        return downloader.urlopen(url).read().decode("utf-8", errors="replace")
     except Exception as exc:
         raise EvidenceCollectionError(f"无法读取公开字幕（{type(exc).__name__}）") from exc
 
 
-def _resolve_video_stream_url(video_url: str) -> str:
+def _download_video_stream(video_url: str, output_dir: Path) -> Path:
+    """Download the selected stream to a local temp file via yt-dlp and return its path."""
     try:
         import yt_dlp
+        from yt_dlp.networking.impersonate import ImpersonateTarget
     except ImportError as exc:
         raise EvidenceCollectionError("需要安装 yt-dlp 才能提取临时关键帧") from exc
     options: dict[str, object] = {
-        "format": "best[height<=480][ext=mp4]/best[height<=480]/best",
-        "skip_download": True,
+        "format": "bestvideo[height<=480][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[height<=480][vcodec^=vp9]+bestaudio/best",
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
+        "outtmpl": str(output_dir / "media.%(ext)s"),
+        "merge_output_format": "mp4",
+        "impersonate": ImpersonateTarget.from_str("chrome"),
     }
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(video_url, download=False)
+            ydl.extract_info(video_url, download=True)
     except Exception as exc:
-        message = f"yt-dlp 无法解析临时视频流（{type(exc).__name__}）"
-        raise EvidenceCollectionError(message) from exc
-    if not isinstance(info, dict) or not isinstance(info.get("url"), str):
-        raise EvidenceCollectionError("yt-dlp 未返回临时视频流")
-    media_url = str(info["url"])
-    if urlparse(media_url).scheme not in {"http", "https"}:
-        raise EvidenceCollectionError("yt-dlp 返回的视频流不是 HTTP(S) 地址")
-    return media_url
+        raise EvidenceCollectionError(f"yt-dlp 无法下载临时视频流（{type(exc).__name__}）") from exc
+    candidates = [
+        path for path in output_dir.iterdir()
+        if path.is_file() and not path.name.endswith((".part", ".ytdl"))
+    ]
+    if not candidates:
+        raise EvidenceCollectionError("yt-dlp 未生成临时视频文件")
+    return max(candidates, key=lambda path: path.stat().st_size)
 
 
-def detect_scene_boundaries(media_url: str, duration_seconds: int | float) -> list[float]:
+def detect_scene_boundaries(media_path: Path, duration_seconds: int | float) -> list[float]:
     """Return ContentDetector shot boundaries; failures deliberately use uniform fallback."""
     try:
         from scenedetect import ContentDetector, detect
 
-        scenes = detect(media_url, ContentDetector())
+        scenes = detect(str(media_path), ContentDetector())
     except Exception:
         return []
     boundaries = [0.0]
@@ -221,53 +215,54 @@ def detect_scene_boundaries(media_url: str, duration_seconds: int | float) -> li
 def extract_keyframes_as_jpegs(
     video_url: str, *, duration_seconds: int | float
 ) -> list[Keyframe]:
-    """Extract evenly distributed JPEGs into memory without writing video or frames to disk."""
+    """Download a temporary stream, extract JPEGs into memory, then delete the temp file."""
     if not shutil.which("ffmpeg"):
         raise EvidenceCollectionError("需要安装 ffmpeg 才能提取关键帧")
-    media_url = _resolve_video_stream_url(video_url)
-    timestamps = plan_scene_aware_keyframe_timestamps(
-        duration_seconds, detect_scene_boundaries(media_url, duration_seconds)
-    )
-    if not timestamps:
-        return []
-    frames: list[Keyframe] = []
-    failures: list[str] = []
-    for timestamp in timestamps:
-        command = [
-            "ffmpeg",
-            "-nostdin",
-            "-loglevel",
-            "error",
-            "-ss",
-            str(timestamp),
-            "-i",
-            media_url,
-            "-frames:v",
-            "1",
-            "-vf",
-            "scale='min(768,iw)':-2",
-            "-q:v",
-            "4",
-            "-f",
-            "image2pipe",
-            "-vcodec",
-            "mjpeg",
-            "pipe:1",
-        ]
-        try:
-            result = subprocess.run(command, check=True, capture_output=True, timeout=90)
-        except (OSError, subprocess.SubprocessError) as exc:
-            stderr = getattr(exc, "stderr", b"")
-            if isinstance(stderr, bytes):
-                stderr = stderr.decode("utf-8", errors="replace")
-            detail = str(stderr).strip().replace("\n", " ")[:300]
-            failures.append(f"{timestamp:.3f}s: {type(exc).__name__}: {detail}")
-            continue
-        jpeg = result.stdout
-        if not jpeg.startswith(b"\xff\xd8") or not jpeg.endswith(b"\xff\xd9"):
-            failures.append(f"{timestamp:.3f}s: ffmpeg 未返回有效 JPEG 关键帧")
-            continue
-        frames.append(Keyframe(timestamp_seconds=timestamp, jpeg_bytes=jpeg))
+    with tempfile.TemporaryDirectory(prefix="intelligence-rag-keyframes-") as temp_dir:
+        local_path = _download_video_stream(video_url, Path(temp_dir))
+        timestamps = plan_scene_aware_keyframe_timestamps(
+            duration_seconds, detect_scene_boundaries(local_path, duration_seconds)
+        )
+        if not timestamps:
+            return []
+        frames: list[Keyframe] = []
+        failures: list[str] = []
+        for timestamp in timestamps:
+            command = [
+                "ffmpeg",
+                "-nostdin",
+                "-loglevel",
+                "error",
+                "-ss",
+                str(timestamp),
+                "-i",
+                str(local_path),
+                "-frames:v",
+                "1",
+                "-vf",
+                "scale='min(768,iw)':-2",
+                "-q:v",
+                "4",
+                "-f",
+                "image2pipe",
+                "-vcodec",
+                "mjpeg",
+                "pipe:1",
+            ]
+            try:
+                result = subprocess.run(command, check=True, capture_output=True, timeout=90)
+            except (OSError, subprocess.SubprocessError) as exc:
+                stderr = getattr(exc, "stderr", b"")
+                if isinstance(stderr, bytes):
+                    stderr = stderr.decode("utf-8", errors="replace")
+                detail = str(stderr).strip().replace("\n", " ")[:300]
+                failures.append(f"{timestamp:.3f}s: {type(exc).__name__}: {detail}")
+                continue
+            jpeg = result.stdout
+            if not jpeg.startswith(b"\xff\xd8") or not jpeg.endswith(b"\xff\xd9"):
+                failures.append(f"{timestamp:.3f}s: ffmpeg 未返回有效 JPEG 关键帧")
+                continue
+            frames.append(Keyframe(timestamp_seconds=timestamp, jpeg_bytes=jpeg))
     if not frames:
         detail = "; ".join(failures) or "未返回任何帧"
         raise EvidenceCollectionError(f"所有关键帧提取失败：{detail}")
@@ -333,22 +328,6 @@ def persist_keyframes(
     except OSError as exc:
         raise EvidenceCollectionError(f"关键帧保存失败（{type(exc).__name__}）") from exc
     return saved
-
-
-def add_keyframe_summary(evidence: dict[str, Any], video_url: str) -> dict[str, Any]:
-    """Attach non-persistent keyframe metadata while retaining JPEG bytes only in process memory."""
-    duration = evidence.get("duration_seconds")
-    if not isinstance(duration, int | float) or duration <= 0:
-        raise EvidenceCollectionError("缺少有效视频时长，无法规划关键帧")
-    frames = extract_keyframes_as_jpegs(
-        video_url,
-        duration_seconds=duration,
-    )
-    evidence["keyframes"] = [
-        {"timestamp_seconds": frame.timestamp_seconds, "byte_size": len(frame.jpeg_bytes)}
-        for frame in frames
-    ]
-    return evidence
 
 
 def load_vlm_config(env_file: Path = Path(".env")) -> VlmConfig:
@@ -587,7 +566,7 @@ def collect_public_evidence(
             if isinstance(info, dict) and info.get("_type") != "playlist":
                 track = choose_caption_track(info, language)
                 if track is not None:
-                    caption_text = _read_caption_text(str(track[2]["url"]), downloader=ydl)
+                    caption_text = _read_caption_text(ydl, str(track[2]["url"]))
     except EvidenceCollectionError:
         raise
     except Exception as exc:
@@ -660,16 +639,6 @@ def collect_public_evidence(
         "media_downloaded": False,
         "next_step": "optional_inline_keyframe_analysis",
     }
-
-
-def persisted_video_text(summary: str, _transcript: str) -> str:
-    """Return the only derived text persisted for a video content record."""
-    return summary
-
-
-def persisted_video_summary(_summary: str) -> None:
-    """Avoid storing the VLM summary twice for video content records."""
-    return None
 
 
 def build_video_evidence_chunks(
@@ -748,8 +717,8 @@ def ingest_video_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
         for segment in evidence.get("segments", [])
         if isinstance(segment, dict)
     ).strip()
-    cleaned_text = persisted_video_text(summary, transcript)
-    content_hash = __import__("hashlib").sha256(cleaned_text.encode("utf-8")).hexdigest()
+    cleaned_text = summary
+    content_hash = hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest()
     with Session(create_engine(settings.sync_database_url)) as session:
         source = session.scalar(
             select(SourceSite).where(SourceSite.name == "YouTube Transcript Evidence")
@@ -837,7 +806,7 @@ def ingest_video_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
             language="zh",
             raw_text=transcript or None,
             cleaned_text=cleaned_text,
-            summary_text=persisted_video_summary(summary),
+            summary_text=None,
             structured_by="transcript_keyframe_vlm",
             extraction_confidence=None,
             tags=["video", "youtube", "transcript", "keyframe", "vlm"],
@@ -919,34 +888,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="本地 Whisper 模型缓存目录",
     )
     parser.add_argument(
-        "--extract-keyframes",
-        action="store_true",
-        default=True,
-        help="兼容旧调用；关键帧现在默认提取",
-    )
-    parser.add_argument(
         "--keyframes-dir",
         type=Path,
         default=DEFAULT_KEYFRAME_DOWNLOADS_DIR,
         help="关键帧保存根目录，默认 skills/video-crawler/downloads",
     )
     parser.add_argument(
-        "--summarize-with-vlm",
-        action="store_true",
-        default=True,
-        help="兼容旧调用；VLM 摘要现在默认生成",
-    )
-    parser.add_argument(
         "--env-file",
         type=Path,
         default=Path(".env"),
         help="VLM 配置文件路径，默认 .env",
-    )
-    parser.add_argument(
-        "--ingest",
-        action="store_true",
-        default=True,
-        help="兼容旧调用；视频证据现在默认写入 PostgreSQL 和 Qdrant",
     )
     parser.add_argument("--json", action="store_true", help="输出 JSON（默认）")
     return parser.parse_args(argv)
@@ -963,34 +914,22 @@ def main() -> int:
             whisper_device=args.whisper_device,
             whisper_model_cache=args.whisper_model_cache,
         )
-        keyframes: list[Keyframe] = []
-        if args.extract_keyframes or args.summarize_with_vlm:
-            duration = result.get("duration_seconds")
-            if not isinstance(duration, int | float) or duration <= 0:
-                raise EvidenceCollectionError("缺少有效视频时长，无法提取关键帧")
-            keyframes = extract_keyframes_as_jpegs(
-                args.video_url,
-                duration_seconds=duration,
-            )
-            video_id = result.get("video_id")
-            if not isinstance(video_id, str) or not video_id:
-                raise EvidenceCollectionError("缺少视频 ID，无法保存关键帧")
-            result["keyframes"] = persist_keyframes(
-                keyframes,
-                video_id,
-                downloads_dir=args.keyframes_dir,
-            )
-        if args.summarize_with_vlm:
-            config = load_vlm_config(args.env_file)
-            result["video_summary"] = summarize_video_evidence_with_vlm(
-                result,
-                keyframes,
-                base_url=config.base_url,
-                api_key=config.api_key,
-                model=config.model,
-            )
-        if args.ingest:
-            result["ingestion"] = ingest_video_evidence(result)
+        duration = result.get("duration_seconds")
+        if not duration:
+            raise EvidenceCollectionError("缺少有效视频时长，无法提取关键帧")
+        keyframes = extract_keyframes_as_jpegs(args.video_url, duration_seconds=duration)
+        result["keyframes"] = persist_keyframes(
+            keyframes, result["video_id"], downloads_dir=args.keyframes_dir
+        )
+        config = load_vlm_config(args.env_file)
+        result["video_summary"] = summarize_video_evidence_with_vlm(
+            result,
+            keyframes,
+            base_url=config.base_url,
+            api_key=config.api_key,
+            model=config.model,
+        )
+        result["ingestion"] = ingest_video_evidence(result)
     except EvidenceCollectionError as exc:
         error = json.dumps({"status": "failed", "error": str(exc)}, ensure_ascii=False)
         print(error, file=sys.stderr)

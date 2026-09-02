@@ -38,6 +38,7 @@ video-asr = [
   "faster-whisper>=1.1,<2"
 ]
 video-keyframes = [
+  "curl_cffi>=0.11",
   "opencv-python>=4.8",
   "scenedetect>=0.6,<1"
 ]

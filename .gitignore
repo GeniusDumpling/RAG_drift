@@ -18,6 +18,3 @@ frontend/dist/
 .DS_Store
 model-cache/
 skills/video-crawler/downloads/
-
-model-cache/
-skills/video-crawler/downloads/

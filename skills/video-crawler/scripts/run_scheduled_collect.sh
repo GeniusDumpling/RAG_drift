@@ -6,10 +6,15 @@ set -euo pipefail
 cd "$(dirname "$0")/../../.."
 
 # 代理：yt-dlp 下载视频流必需（仓库 .env 不含代理，这里显式兜底，可用环境变量覆盖）
-export HTTPS_PROXY="${HTTPS_PROXY:-http://127.0.0.1:7897}"
+export HTTPS_PROXY="${HTTPS_PROXY:-http://host.docker.internal:7890}"
 export https_proxy="${https_proxy:-$HTTPS_PROXY}"
+export HTTP_PROXY="${HTTP_PROXY:-$HTTPS_PROXY}"
+export http_proxy="${http_proxy:-$HTTP_PROXY}"
 
-UV=/home/gaowei/.local/bin/uv
+export NO_PROXY="${NO_PROXY:+$NO_PROXY,}localhost,127.0.0.1,::1,qdrant,postgres,app"
+export no_proxy="$NO_PROXY"
+
+PY="${PY:-python3}"
 
 # 主题轮换：每 2 小时（7200 秒）切换一个搜索主题，均匀覆盖
 QUERIES=(
@@ -25,8 +30,7 @@ IDX=$(( $(date +%s) / INTERVAL % N ))
 QUERY="${QUERIES[$IDX]}"
 
 echo "=== $(date '+%F %T') 采集开始 query=$QUERY ==="
-"$UV" run --extra video-keyframes --extra local-embeddings python3 \
-  skills/video-crawler/scripts/search_and_ingest.py \
+"$PY" skills/video-crawler/scripts/search_and_ingest.py \
   --query "$QUERY" \
   --caption-only \
   --language en \

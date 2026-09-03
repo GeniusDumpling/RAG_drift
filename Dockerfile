@@ -23,12 +23,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     WORKER_POLL_INTERVAL_SECONDS=2
 
 WORKDIR /app
-RUN sed -i \
-        -e 's|http://deb.debian.org/debian-security|https://mirrors.aliyun.com/debian-security|g' \
-        -e 's|http://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g' \
-        /etc/apt/sources.list.d/debian.sources \
-    && apt-get -o Acquire::Retries=5 update \
-    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates ffmpeg nodejs \
+RUN apt-get -o Acquire::Retries=5 update \
+    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+        ca-certificates \
+        ffmpeg \
+        nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml alembic.ini README.md ./
@@ -38,7 +37,7 @@ COPY scripts ./scripts
 COPY skills ./skills
 RUN python -m pip install --upgrade pip \
     && python -m pip install torch --index-url https://download.pytorch.org/whl/cpu \
-    && python -m pip install '.[local-embeddings]'
+    && python -m pip install '.[local-embeddings,video-keyframes]'
 
 COPY --from=frontend-builder /frontend/dist ./frontend/dist
 COPY docker/entrypoint.sh /usr/local/bin/intelligence-rag-entrypoint

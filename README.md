@@ -1,15 +1,102 @@
 # 情报 RAG 原型
 
-一个用于可观测开源情报 RAG 的模块化单体原型。
+一个用于可观测开源情报 RAG 的模块化单体原型：`backend`（FastAPI）提供检索问答 API，`worker` 处理异步任务，`frontend` 为 Web 界面，外挂 PostgreSQL（事实来源）+ Qdrant（向量检索）。
+
+## 架构总览
+
+```text
+frontend (网页) ── HTTP ──> backend (FastAPI)
+                              │
+            ┌─────────────────┼──────────────────┐
+            ▼                 ▼                  ▼
+      PostgreSQL (事实)    Qdrant (向量)      LLM / Embedding(硅基流动等)
+                              ▲
+                              │
+   forum-crawler / video-crawler / literature worker（采集与入库，cron 调度）
+```
 
 ## 本地环境配置
 
+推荐使用 [uv](https://github.com/astral-sh/uv) 管理环境；依赖版本由 `uv.lock` 精确保留。
+
 ```bash
 test -f .env || cp .env.example .env
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e ".[dev]"
+uv sync                                  # 基础依赖 + dev
+# 采集/向量相关额外依赖（按需）：
+uv sync --extra video-keyframes --extra local-embeddings
+# 文献研究需 extra literature + playwright 浏览器
+uv sync --extra literature && uv run playwright install chromium
 ```
+
+> 不使用 uv 时，可用 `python3 -m venv .venv` + `pip install -e ".[dev]"`（Debian/Ubuntu 缺 ensurepip 需先装 `python3.12-venv`），或直接 `make install`。
+
+常用开发命令见 `Makefile`：
+
+```bash
+make infra-up       # 启动 postgres + qdrant
+make migrate        # 执行数据库迁移 alembic upgrade head
+make api            # 启动后端 API（热重载）
+make worker-once    # 跑一次异步 worker 处理待办 run
+make frontend       # 启动前端开发服务器
+make test / lint    # 单测 / 代码检查
+make seed / smoke   # 播种演示数据 / 冒烟验证
+```
+
+> 默认 `docker-compose.yml` 将 PostgreSQL 映射到 `127.0.0.1:54329`（与 `.env` 中 `DATABASE_URL` 一致）；生产部署用 `docker-compose.deploy.yml`（含 app + postgres + qdrant 全套，端口绑定 localhost）。
+
+## 数据采集（两种来源）
+
+### 1. 论坛采集（`skills/forum-crawler`）
+
+覆盖两类公开、免鉴权论坛：
+
+- **Discourse 论坛**（`discuss.ardupilot.org`、`discuss.px4.io`）：关键词经 `/search.json` 检索命中帖子，取全文增量入库。
+- **DJI 官方论坛**（`bbs.dji.com`）：按设备系列导入主题与评论。
+
+```bash
+# 搜索候选（不入库）
+.venv/bin/python skills/forum-crawler/scripts/discourse_search.py \
+  --query "GPS spoofing" --forums ardupilot px4 --max-results 10 --json
+# 搜索 → 查重 → 落库
+.venv/bin/python skills/forum-crawler/scripts/discourse_ingest.py \
+  --query "GPS spoofing" --forums ardupilot px4 --max-results 10 --request-delay 0.3 --json
+```
+
+帖子按四层落库（SourceSite/CrawlRun 控制层 + RawPage + Author/ContentItem + ContentChunk），去重键为 `stable_hash("{source_id}:{canonical_url}:post:{content_hash}")`，重复帖自动跳过。
+
+> 注意：Discourse 全文检索对冗长组合词命中很差，用短概念词（如 `GPS spoofing`、`MAVLink security`、`flyaway`）。
+
+### 2. 视频采集（`skills/video-crawler`）
+
+搜索无人机相关公开 YouTube 视频，以真实字幕 + 场景关键帧 + VLM 中文摘要入库。仅在公共接口范围内工作，不绕过登录/验证码。
+
+```bash
+# 单条视频 → 字幕 + 关键帧 + VLM 摘要 + 入库
+uv run --extra video-keyframes --extra local-embeddings python3 \
+  skills/video-crawler/scripts/youtube_transcript_evidence.py \
+  --video-url "https://www.youtube.com/watch?v=VIDEO_ID" --language en --no-whisper-fallback --json
+# 全链路：搜索 → 去重 → 逐个入库
+uv run --extra video-keyframes --extra local-embeddings python3 \
+  skills/video-crawler/scripts/search_and_ingest.py \
+  --query "drone GPS spoofing" --caption-only --language en --video-limit 3 --json
+```
+
+- 搜索走 YouTube Data API v3，需要 `YOUTUBE_API_KEY`；`--caption-only` 只选有字幕的候选。
+- 视频流下载需 `HTTPS_PROXY` 指向海外/香港出口，否则 googlevideo.com 返回 403。
+- 摘要写入 `content_items.cleaned_text`，字幕合并为 `transcript_segment` 块，去重键 `video-evidence:<canonical_url>`。
+
+### 定时调度（cron）
+
+本机论坛与视频采集统一用用户级 cron 每 2 小时触发一次，`flock -n` 防止任务重叠，日志追加到 `/home/gaowei/*_collect.log`：
+
+```cron
+0 */2 * * *  cd /home/gaowei/projects/RAG_drift && flock -n /tmp/video_collect.lock bash skills/video-crawler/scripts/run_scheduled_collect.sh >> /home/gaowei/video_collect.log 2>&1
+0 */2 * * *  cd /home/gaowei/projects/RAG_drift && flock -n /tmp/discourse_crawler.lock bash skills/forum-crawler/scripts/run_scheduled_discourse.sh >> /home/gaowei/discourse_collect.log 2>&1
+```
+
+## 文献研究（`scripts/run_literature_worker.py`）
+
+按需跑 IEEE 文献调研：搜索 → 挑选 → 深度分析 → 生成报告，写入 `literature_*` 表。需要 DeepSeek 摘要（`DEEPSEEK_API_KEY`）与 `literature` extra。详见 [docs/literature-research.md](docs/literature-research.md)。
 
 ## 演示路径
 
@@ -29,21 +116,20 @@ uvicorn app.main:app --app-dir backend --reload
 bash scripts/smoke_demo.sh
 ```
 
-默认情况下，冒烟脚本会使用 Docker Compose 中的 PostgreSQL 和 Qdrant 服务。这个 Docker/Qdrant 模式是完整的跨进程向量冒烟路径：worker 将向量写入 Qdrant，API 再从同一个向量库读回。该脚本会产生本地副作用：当缺少 `.env` 时可能从 `.env.example` 创建 `.env`，除非显式跳过否则会启动 Docker 服务，执行 Alembic 迁移，播种演示数据，处理一个目标播种 run，将演示向量写入配置的本地向量后端，并通过 API 校验 `/runs`、`/search` 和 `/answer`。在默认 Docker/Qdrant 路径中，`/search` 检查现在会断言响应 trace 中存在真实向量检索：已尝试向量检索、未失败、返回了命中，并且至少产生一个 `vector` 或 `hybrid` 证据匹配。
+默认情况下，冒烟脚本会使用 Docker Compose 中的 PostgreSQL 和 Qdrant 服务。这个 Docker/Qdrant 模式是完整的跨进程向量冒烟路径：worker 将向量写入 Qdrant，API 再从同一个向量库读回。该脚本会产生本地副作用：当缺少 `.env` 时可能从 `.env.example` 创建 `.env`，除非显式跳过否则会启动 Docker 服务，执行 Alembic 迁移，播种演示数据，处理一个目标播种 run，将演示向量写入配置的本地向量后端，并通过 API 校验 `/runs`、`/search` 和 `/answer`。在默认 Docker/Qdrant 路径中，`/search` 检查会断言响应 trace 中存在真实向量检索。
 
-默认的安全保护会拒绝非本地 API、数据库和 `QDRANT_URL` 配置。如果设置了 `ALLOW_NONLOCAL_SMOKE_DB=1`，脚本也会导出 `ALLOW_NONLOCAL_DEMO_SEED=1`，从而让 Alembic 和播种步骤共享同一个显式数据库覆盖配置。只有在你有意让冒烟脚本使用非本地 `QDRANT_URL` 时，才设置 `ALLOW_NONLOCAL_SMOKE_VECTOR=1`；保护逻辑的错误信息会打印已脱敏、无凭据的 URL。
+默认的安全保护会拒绝非本地 API、数据库和 `QDRANT_URL` 配置。如果设置了 `ALLOW_NONLOCAL_SMOKE_DB=1`，脚本也会导出 `ALLOW_NONLOCAL_DEMO_SEED=1`，从而让 Alembic 和播种步骤共享同一个显式数据库覆盖配置。只有在你有意让冒烟脚本使用非本地 `QDRANT_URL` 时，才设置 `ALLOW_NONLOCAL_SMOKE_VECTOR=1`。
 
 如果 PostgreSQL 已经可用，并且你想跳过 Docker Compose 服务，可以使用本地内存向量路径作为便捷模式，同时用相同的向量配置启动 API：
 
 ```bash
 # 终端 1
 QDRANT_URL=memory://smoke-demo uvicorn app.main:app --app-dir backend --reload
-
 # 终端 2
 SKIP_DOCKER=1 QDRANT_URL=memory://smoke-demo bash scripts/smoke_demo.sh
 ```
 
-由于 `memory://...` 和 `:memory:` 向量存储是进程本地的，独立的 API 和 worker 进程不会共享内存向量。在这个便捷模式下，冒烟脚本会有意跳过跨进程向量 trace 断言，但仍保留 SQL/source/canonical 的 `/search` 和 `/answer` 检查；这些请求可能通过 SQL 关键词回退成功，而不是通过一次向量往返成功。需要真实向量冒烟时，请使用默认 Docker/Qdrant 路径。
+由于 `memory://...` 和 `:memory:` 向量存储是进程本地的，独立的 API 和 worker 进程不会共享内存向量。在这个便捷模式下，冒烟脚本会有意跳过跨进程向量 trace 断言，但保留 SQL/source/canonical 的 `/search` 和 `/answer` 检查。需要真实向量冒烟时，请使用默认 Docker/Qdrant 路径。
 
 ### 手动演示路径
 
@@ -59,7 +145,6 @@ alembic upgrade head
 
 ```bash
 SEED_JSON="$(python3 scripts/seed_demo.py)"
-printf '%s\n' "$SEED_JSON"
 RUN_ID="$(printf '%s' "$SEED_JSON" | python3 -c 'import json, sys; print(json.load(sys.stdin)["run_id"])')"
 SOURCE_ID="$(printf '%s' "$SEED_JSON" | python3 -c 'import json, sys; print(json.load(sys.stdin)["source_id"])')"
 python3 scripts/run_worker_once.py --json --require-success --run-id "$RUN_ID"
@@ -86,162 +171,27 @@ curl -fsS -X POST http://localhost:8000/answer \
 ### 前端
 
 ```bash
-cd frontend
-npm install
-npm run dev -- --host 0.0.0.0
+cd frontend && npm install && npm run dev -- --host 0.0.0.0
 ```
 
-该未合并原型分支的迁移策略：初始迁移可以就地编辑。如果你已经将它应用到了本地开发/测试数据库，请在重新运行迁移前重置该数据库。
+## 向量 / Embedding 配置
 
-### 向量后端配置
+默认使用**硅基流动 BGE-M3（1024 维）**做中英多语言检索。相关变量在 `.env`：
 
-`QDRANT_URL=memory://...` 和 `QDRANT_URL=:memory:` 会选择显式的内存向量后端，用于本地开发和测试。它们是进程本地的便捷模式，不是跨进程向量冒烟，也不是实际 Qdrant 故障时的自动回退。如果配置了真实 Qdrant URL，而 Qdrant 连接或 HTTP 调用失败，摄取流程会记录失败/部分 chunk 索引状态，而不是静默切换到内存存储。除非设置 `ALLOW_NONLOCAL_SMOKE_VECTOR=1`，否则冒烟脚本只接受内存向量或本地 Qdrant 主机（`localhost`、`127.0.0.1` 或 `::1`）。
+| 变量 | 说明 |
+|---|---|
+| `EMBEDDING_PROVIDER` | 默认 `siliconflow`（远程 API）；本地可换 `sentence-transformers` |
+| `EMBEDDING_MODEL` / `EMBEDDING_DIMENSION` | 默认 `BAAI/bge-m3` / `1024` |
+| `EMBEDDING_API_KEY` | 可选；未设置时复用 `VLM_API_KEY` |
+| `QDRANT_URL` | 默认 `http://localhost:6333`；`memory://` 为进程本地内存模式 |
+| `QDRANT_COLLECTION` | 默认 `content_chunks_bge_m3_v1` |
 
-### 本地语义 Embedding 配置
-
-项目只使用 512 维本地语义 embedding。安装本地 embedding 依赖后，统一使用 `sentence-transformers` 加载 `BAAI/bge-small-zh-v1.5`：
-
-```bash
-source .venv/bin/activate
-python -m pip install -e ".[dev,local-embeddings]"
-```
-
-配置：
-
-```bash
-export EMBEDDING_PROVIDER=sentence-transformers
-export EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
-export EMBEDDING_DIMENSION=512
-export QDRANT_COLLECTION=content_chunks_v2
-```
-
-第一次运行会下载模型文件。切换 embedding 模型后必须重建 Qdrant 向量索引，因为旧 collection 中的向量维度和语义空间不同：
+- `QDRANT_URL=memory://...` 与 `:memory:` 是进程本地便捷模式，不是跨进程冒烟，也不是真实 Qdrant 故障时的自动回退；摄取失败会记录失败/部分 chunk 索引状态，而非静默切内存。
+- **切换 embedding 模型后必须重建 Qdrant 集合**（维度/语义空间不同）：
 
 ```bash
 python3 scripts/reindex_embeddings.py --reset-collection
 ```
-
-如果在 Debian/Ubuntu 上运行 `python3 -m venv` 时提示 `ensurepip` 不可用，请安装 `python3.12-venv` 或 `python3-venv` 后重试。也可以使用 `make install` 创建 `.venv`；当 `uv` 可用时，它会回退到 `uv venv --seed`。
-
-## FlyForum 视频 RAG Demo（2026-06-24）
-
-一个最小可演示的视频 RAG 链路：从 FlyForum 公网页面发现直链视频 URL，通过硅基流动 VLM 生成中文描述，存入 PostgreSQL，用本地 `BAAI/bge-small-zh-v1.5` 512 维 embedding 写入 Qdrant collection，并在现有 Search 页面展示视频播放器和完整描述。
-
-**只支持：**
-
-- `https://www.flyforum.cn/forum.php` 及同域公开论坛页/帖子页
-- HTML 中直接出现的 `<video src>`、`<source src>`，以及 `.mp4`、`.webm`、`.m3u8` 结尾的链接
-- 默认最多 3 个页面、1 个视频，请求间隔至少 1 秒
-
-**明确不做：** 登录、验证码、JS 播放器逆向、隐藏流解析、FFmpeg、全站爬取、定时调度、新页面。
-
-### 前置条件
-
-```bash
-# 设置环境变量（替换 <set-locally> 为真实 API key）
-export SILICONFLOW_API_KEY='<set-locally>'
-export EMBEDDING_PROVIDER=sentence-transformers
-export EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
-export EMBEDDING_DIMENSION=512
-export QDRANT_COLLECTION=content_chunks_v2
-```
-
-确保 PostgreSQL 和 Qdrant 已运行：
-
-```bash
-docker compose up -d postgres qdrant
-alembic upgrade head
-```
-
-### 手动创建 Qdrant 1024 维 collection
-
-视频 demo 使用 1024 维 BGE-M3 embedding，需要在 Qdrant 中创建独立 collection：
-
-```bash
-curl -s -X PUT 'http://localhost:6333/collections/flyforum_video_bge_m3' \
-  -H 'Content-Type: application/json' \
-  -d '{"vectors": {"size": 1024, "distance": "Cosine"}}'
-```
-
-### 运行导入脚本
-
-```bash
-python scripts/ingest_flyforum_video_demo.py --page-limit 3 --video-limit 1 --json
-```
-
-输出示例：
-
-```json
-{
-  "status": "success",
-  "run_id": "f503f878-ede6-4b50-baa9-24e28acf059c",
-  "pages_discovered": 2,
-  "pages_fetched": 2,
-  "pages_parsed": 2,
-  "video_discovered": 0,
-  "video_analyzed": 0,
-  "video_failed": 0,
-  "chunked_count": 0,
-  "embedded_count": 0,
-  "deduped_count": 0,
-  "error_count": 0
-}
-```
-
-> **注意：** 公开页面没有直接视频 URL 时，脚本可能成功结束但 `video_discovered_count=0`。这表示当前采样页面没有满足 demo 规则的直链视频链接，不代表 PostgreSQL/Qdrant 故障。不要为了"找出视频"绕过登录、验证码或站点限制。
-
-### 直接视频 URL 导入方法
-
-已知视频 URL 时，可以跳过页面发现步骤，直接测试 VLM + PostgreSQL + Qdrant 完整链路：
-
-```bash
-# 1. 启动 API（使用 512 维本地 embedding collection）
-QDRANT_COLLECTION=content_chunks_v2 \
-EMBEDDING_PROVIDER=sentence-transformers \
-EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5 \
-EMBEDDING_DIMENSION=512 \
-uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
-
-# 2. 在另一个终端，验证搜索能够命中视频：
-curl -s -X POST http://localhost:8000/search \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"无人机","mode":"search","top_k":5,"filters":{}}' | python3 -m json.tool
-```
-
-### 核对 PostgreSQL 与 Qdrant 一致性
-
-```bash
-psql -h 127.0.0.1 -p 54329 -U intelligence -d intelligence_rag -c "
-  select
-    ci.id as content_item_id,
-    ci.canonical_url as video_url,
-    cc.id as chunk_id,
-    cc.vector_point_id,
-    cc.embed_status
-  from content_items ci
-  join content_chunks cc on cc.content_item_id = ci.id
-  where ci.item_type = 'video_description'
-  order by ci.created_at desc, cc.chunk_index;
-"
-```
-
-期望：每一行 `chunk_id::text = vector_point_id` 且 `embed_status=success`。
-
-### 前端验证
-
-启动前端后，在导航栏点击 **检索问答 Search**，输入查询（如"无人机失控"），在 Item Type 下拉选择 `video_description`，点击 **检索 Search**。结果中的视频证据会显示 `<video>` 播放器和可折叠的完整中文描述。
-
-### 环境变量参考
-
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `SILICONFLOW_API_KEY` | — | 硅基流动 API key（必填） |
-| `SILICONFLOW_BASE_URL` | `https://api.siliconflow.cn/v1` | API 地址 |
-| `EMBEDDING_PROVIDER` | `sentence-transformers` | 仅支持本地 sentence-transformers embedding |
-| `EMBEDDING_MODEL` | `BAAI/bge-small-zh-v1.5` | 本地向量模型 |
-| `EMBEDDING_DIMENSION` | `512` | 向量维度 |
-| `VLM_MODEL` | `Qwen/Qwen3-Omni-30B-A3B-Instruct` | 视频描述模型 |
-| `QDRANT_COLLECTION` | `content_chunks_v2` | 512 维本地 embedding collection |
 
 ## 核心不变量
 
@@ -250,3 +200,9 @@ psql -h 127.0.0.1 -p 54329 -U intelligence -d intelligence_rag -c "
 - Qdrant 只保存用于检索的 chunk 向量和 payload。
 - 前端只调用后端 API。
 - 搜索和回答响应会暴露证据对象，其中包含 source 和 content 链接。
+
+## 详细文档
+
+- [部署指南](docs/deployment-guide.md) · [Docker 部署](docs/docker-deploy.md)
+- [文献研究](docs/literature-research.md)
+- 采集工作流见 `skills/forum-crawler/SKILL.md` 与 `skills/video-crawler/SKILL.md`

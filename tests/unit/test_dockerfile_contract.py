@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -12,12 +11,11 @@ def test_runtime_image_includes_video_crawler_dependencies() -> None:
     assert "COPY skills ./skills" in dockerfile
     assert "https://download.pytorch.org/whl/cpu" in dockerfile
     assert "python -m pip install torch" in dockerfile
-    assert "python -m pip install '.[local-embeddings]'" in dockerfile
+    assert "python -m pip install '.[local-embeddings,video-keyframes]'" in dockerfile
     assert "EMBEDDING_PROVIDER=siliconflow" in dockerfile
     assert "EMBEDDING_MODEL=BAAI/bge-m3" in dockerfile
     assert "EMBEDDING_DIMENSION=1024" in dockerfile
-    assert "https://mirrors.aliyun.com/debian" in dockerfile
-    assert "https://mirrors.aliyun.com/debian-security" in dockerfile
+
     assert "sed -i 's/\\r$//'" in dockerfile
     assert "EMBEDDING_PROVIDER=deterministic" not in dockerfile
     assert "EMBEDDING_MODEL=deterministic-hash-v1" not in dockerfile

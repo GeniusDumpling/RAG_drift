@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../../.."
 
 # 代理：yt-dlp 下载视频流必需（仓库 .env 不含代理，这里显式兜底，可用环境变量覆盖）
-export HTTPS_PROXY="${HTTPS_PROXY:-http://host.docker.internal:7890}"
+export HTTPS_PROXY="${HTTPS_PROXY:-http://host.docker.internal:7897}"
 export https_proxy="${https_proxy:-$HTTPS_PROXY}"
 export HTTP_PROXY="${HTTP_PROXY:-$HTTPS_PROXY}"
 export http_proxy="${http_proxy:-$HTTP_PROXY}"

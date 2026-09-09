@@ -1,3 +1,5 @@
+.hermes
+.hermes/
 .env
 .venv/
 .venv
@@ -17,4 +19,9 @@ frontend/dist/
 .api-18000.pid
 .DS_Store
 model-cache/
-skills/video-crawler/downloads/
+tools/video-crawler/downloads/
+
+# supplier-information 运行产物
+tools/supplier-information/.env
+tools/supplier-information/search_results/
+tools/supplier-information/logs/

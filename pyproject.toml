@@ -46,6 +46,11 @@ literature = [
   "pdfminer.six>=20240706",
   "playwright>=1.45.0"
 ]
+supplier = [
+  "PyYAML==6.0.3",
+  "python-dotenv==1.2.2",
+  "trafilatura==2.2.0"
+]
 
 [tool.setuptools.packages.find]
 where = ["backend", "."]

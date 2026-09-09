@@ -9,6 +9,7 @@ from app.models.literature import (
     LiteratureRunPaper,
 )
 from app.models.search import AgentCall, ContentEntityMention, Entity, SearchQuery
+from app.models.supplier import SupplierRelation, SupplierVerification
 
 __all__ = [
     "AgentCall",
@@ -29,4 +30,6 @@ __all__ = [
     "RawPage",
     "SearchQuery",
     "SourceSite",
+    "SupplierRelation",
+    "SupplierVerification",
 ]

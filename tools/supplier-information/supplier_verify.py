@@ -14,7 +14,9 @@ from datetime import datetime
 
 import requests
 
-from baidu_search_demo import (
+import db_ingest
+
+from baidu_search import (
     base_dir,
     load_conf,
     get_api_key,
@@ -242,6 +244,12 @@ def main(confirmed_path: str = "") -> str:
 
     # 回写文档
     save_confirmed_relations(sec, path)
+
+    # 回写数据库 supplier_verifications（非致命，不影响 md 产物），并回写表1 验证状态
+    try:
+        db_ingest.ingest_supplier_verifications(results)
+    except Exception as e:
+        logger.warning(f"表2 数据回写失败：{e}")
 
     # 生成验证报告（与来源文档同目录，独立时间戳）
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")

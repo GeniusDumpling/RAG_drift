@@ -15,7 +15,7 @@ import os
 import sys
 from datetime import datetime
 
-from baidu_search_demo import base_dir, load_conf, set_run_id, main as search_main
+from baidu_search import base_dir, load_conf, set_run_id, main as search_main
 from llm_supplier_analysis import main as llm_main, CONFIRMED_RELATIONS_MD
 
 logger = logging.getLogger("pipeline")

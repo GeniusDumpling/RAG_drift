@@ -11,6 +11,8 @@ import yaml
 
 import requests
 
+import db_ingest
+
 logger = logging.getLogger(__name__)
 
 def base_dir() -> str:
@@ -426,6 +428,12 @@ def main(fulltext_path: str = "") -> str:
     except Exception as e:
         logger.error(f"维护明确供应关系失败：{e}")
         raise
+    # 回写数据库 supplier_relations（非致命，不影响 md 产物）
+    try:
+        sec = load_confirmed_relations(conf_path)
+        db_ingest.upsert_supplier_relations(sec)
+    except Exception as e:
+        logger.warning(f"表1 数据回写失败：{e}")
     return out_path
 
 

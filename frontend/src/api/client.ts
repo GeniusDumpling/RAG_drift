@@ -17,6 +17,9 @@ import type {
   SearchRequest,
   SearchResponse,
   SourceSite,
+  SupplierOverview,
+  SupplierRelation,
+  SupplierVerification,
   UUID,
 } from './types';
 
@@ -168,4 +171,26 @@ export function answer(requestBody: SearchRequest): Promise<AnswerResponse> {
 export function getLiteratureArtifactUrl(id: UUID): string {
   const base = API_BASE_URL.replace(/\/+$/, '');
   return `${base}/literature-artifacts/${id}/download`;
+}
+
+export function getSupplierOverview(): Promise<SupplierOverview> {
+  return request<SupplierOverview>('/supplier/overview');
+}
+
+export function listSupplierRelations(
+  params: { q?: string; credibility?: string; verify_status?: string; limit?: number; offset?: number } = {},
+): Promise<Page<SupplierRelation>> {
+  return request<Page<SupplierRelation>>(
+    buildPath('/supplier/relations', {
+      limit: params.limit ?? 50,
+      offset: params.offset ?? 0,
+      q: params.q,
+      credibility: params.credibility,
+      verify_status: params.verify_status,
+    }),
+  );
+}
+
+export function listSupplierVerifications(relationId: UUID): Promise<SupplierVerification[]> {
+  return request<SupplierVerification[]>(`/supplier/relations/${relationId}/verifications`);
 }

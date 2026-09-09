@@ -420,3 +420,39 @@ export type LiteratureRunResults = {
   items: LiteratureResultItem[];
   run_artifacts: LiteratureArtifact[];
 };
+
+export type SupplierRelation = {
+  id: UUID;
+  supplier_name: string;
+  supply_content: string | null;
+  buyer_name: string | null;
+  credibility: string;
+  seen_count: number;
+  source_urls: string[];
+  verify_status: string;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+};
+
+export type SupplierVerification = {
+  id: UUID;
+  relation_id: UUID | null;
+  supplier_name: string;
+  verdict: string;
+  confidence: string | null;
+  supply_content: string | null;
+  evidence_md: string | null;
+  evidence_urls: string[];
+  orig_source_urls: string[];
+  verify_time: ISODateTime | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+};
+
+export type SupplierOverview = {
+  total_suppliers: number;
+  confirmed_relations: number;
+  verified: number;
+  unverified: number;
+  verify_failed: number;
+};

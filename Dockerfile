@@ -34,7 +34,7 @@ COPY pyproject.toml alembic.ini README.md ./
 COPY backend ./backend
 COPY worker ./worker
 COPY scripts ./scripts
-COPY skills ./skills
+COPY tools ./tools
 RUN python -m pip install --upgrade pip \
     && python -m pip install torch --index-url https://download.pytorch.org/whl/cpu \
     && python -m pip install '.[local-embeddings,video-keyframes]'

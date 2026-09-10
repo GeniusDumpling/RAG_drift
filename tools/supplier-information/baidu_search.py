@@ -1,8 +1,11 @@
 import functools
+import html
 import json
 import logging
 import os
 import re
+import subprocess
+import tempfile
 import time
 from datetime import datetime
 
@@ -89,6 +92,9 @@ except ImportError:
 
 
 API_URL = "https://qianfan.baidubce.com/v2/ai_search/web_search"
+BAIDU_LANDING_HOST = "mbd.baidu.com"
+BAIDU_LANDING_HEADERS = {"User-Agent": "Mozilla/5.0"}
+ERROR_PAGE_MARKERS = ("网络不给力，请稍后重试", "返回首页", "问题反馈")
 
 
 def base_dir() -> str:
@@ -129,17 +135,117 @@ def sanitize_filename(name: str) -> str:
     return re.sub(r'[\\/:*?"<>|]', "_", name).strip() or "search_result"
 
 
+def _clean_html_text(value: str) -> str:
+    value = re.sub(r"<br\s*/?>", "\n", value, flags=re.IGNORECASE)
+    value = re.sub(r"<[^>]+>", "", value)
+    return html.unescape(value).strip()
+
+
+def is_usable_fulltext(text: str) -> bool:
+    """排除正文提取器从站点错误页抽出的伪正文。"""
+    normalized = re.sub(r"\s+", "", text)
+    return bool(normalized) and not all(marker in normalized for marker in ERROR_PAGE_MARKERS)
+
+
+def _baidu_landing_content_data(downloaded: str) -> dict:
+    marker = "window.jsonData = "
+    start = downloaded.find(marker)
+    if start < 0:
+        return {}
+    try:
+        payload, _ = json.JSONDecoder().raw_decode(downloaded[start + len(marker):])
+        return payload["data"]["pageInfo"]["content"]["data"]
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return {}
+
+
+def extract_baidu_landing_text(downloaded: str) -> str:
+    """从百度动态落地页嵌入的 JSON 提取真实文本；纯图片动态返回空。"""
+    content_data = _baidu_landing_content_data(downloaded)
+    if not content_data:
+        return ""
+
+    def text_blocks(value) -> list[str]:
+        if isinstance(value, dict):
+            if value.get("type") == "text" and isinstance(value.get("content"), str):
+                text = _clean_html_text(value["content"])
+                return [text] if text else []
+            blocks = []
+            for child in value.values():
+                blocks.extend(text_blocks(child))
+            return blocks
+        if isinstance(value, list):
+            blocks = []
+            for child in value:
+                blocks.extend(text_blocks(child))
+            return blocks
+        return []
+
+    title_blocks = text_blocks(content_data.get("title", []))
+    body_blocks = text_blocks(content_data.get("content", []))
+    if not body_blocks:
+        return ""
+    return "\n\n".join(title_blocks + body_blocks)
+
+
+def extract_baidu_landing_image_urls(downloaded: str) -> list[str]:
+    """提取百度纯图片动态的原图 URL，供 OCR 作为最后回退。"""
+    content_data = _baidu_landing_content_data(downloaded)
+    image_urls = []
+    for item in content_data.get("image_items", []):
+        if not isinstance(item, dict):
+            continue
+        url = item.get("hd_image_url") or item.get("image_url")
+        if isinstance(url, str) and url.startswith(("http://", "https://")):
+            image_urls.append(url)
+    return image_urls
+
+
+def extract_baidu_landing_image_text(downloaded: str) -> str:
+    """OCR 百度纯图片动态；系统未安装 tesseract 或 OCR 失败时返回空。"""
+    texts = []
+    for image_url in extract_baidu_landing_image_urls(downloaded):
+        try:
+            response = requests.get(image_url, headers=BAIDU_LANDING_HEADERS, timeout=30)
+            response.raise_for_status()
+            with tempfile.NamedTemporaryFile(suffix=".jpg") as image:
+                image.write(response.content)
+                image.flush()
+                result = subprocess.run(
+                    ["tesseract", image.name, "stdout", "-l", "chi_sim+eng"],
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                    timeout=45,
+                )
+            text = result.stdout.strip()
+            if text:
+                texts.append(text)
+        except (OSError, requests.RequestException, subprocess.SubprocessError) as exc:
+            logger.warning("百度图片 OCR 失败 %s...（%s）", image_url[:50], exc)
+    return "\n\n".join(texts)
+
+
 def fetch_fulltext(url: str, config=None, retries: int = 3, delay: float = 1.0) -> str:
     """用 trafilatura 抓取网页完整正文，带指数重试。失败返回空字符串。"""
     if trafilatura is None:
         return ""
     for attempt in range(1, retries + 1):
         try:
+            if BAIDU_LANDING_HOST in url:
+                response = requests.get(url, headers=BAIDU_LANDING_HEADERS, timeout=30)
+                response.raise_for_status()
+                text = extract_baidu_landing_text(response.text)
+                if is_usable_fulltext(text):
+                    return text
+                text = extract_baidu_landing_image_text(response.text)
+                if is_usable_fulltext(text):
+                    return text
             kwargs = {"config": config} if config is not None else {}
             downloaded = trafilatura.fetch_url(url, **kwargs)
             if downloaded:
                 text = trafilatura.extract(downloaded, include_links=False)
-                if text:
+                if text and is_usable_fulltext(text):
                     return text
         except Exception as e:
             logger.warning(f"抓取失败 {url[:50]}...（{e}），第 {attempt}/{retries} 次尝试")

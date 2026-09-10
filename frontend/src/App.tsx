@@ -12,7 +12,8 @@ import { SupplierPage } from './pages/SupplierPage';
 
 type View = 'Dashboard' | 'Sources' | 'Runs' | 'Search' | 'Answer' | 'Content' | 'Database' | 'Literature' | 'Supplier';
 
-const NAV_ITEMS: View[] = ['Dashboard', 'Sources', 'Runs', 'Search', 'Answer', 'Literature', 'Content', 'Database', 'Supplier'];
+const MONITORING_NAV_ITEMS: View[] = ['Dashboard', 'Sources', 'Runs', 'Content', 'Database'];
+const WORKSPACE_NAV_ITEMS: View[] = ['Search', 'Answer', 'Supplier', 'Literature'];
 
 const NAV_LABELS: Record<View, string> = {
   Dashboard: '总览',
@@ -31,6 +32,7 @@ export function App() {
   const [searchSeed, setSearchSeed] = useState('');
   const [selectedRunId, setSelectedRunId] = useState('');
   const [selectedContentId, setSelectedContentId] = useState('');
+  const [monitoringExpanded, setMonitoringExpanded] = useState(true);
   const [workspaceExpanded, setWorkspaceExpanded] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -61,6 +63,29 @@ export function App() {
           </div>
           <nav aria-label="主导航 Primary">
             <button
+              aria-controls="monitoring-navigation"
+              aria-expanded={monitoringExpanded}
+              className="nav-section-toggle"
+              type="button"
+              onClick={() => setMonitoringExpanded((expanded) => !expanded)}
+            >
+              <span>系统监控</span>
+              <span aria-hidden="true">{monitoringExpanded ? '−' : '+'}</span>
+            </button>
+            <div id="monitoring-navigation" hidden={!monitoringExpanded}>
+              {MONITORING_NAV_ITEMS.map((item) => (
+                <button
+                  aria-current={activeView === item ? 'page' : undefined}
+                  className={activeView === item ? 'active' : ''}
+                  key={item}
+                  type="button"
+                  onClick={() => setActiveView(item)}
+                >
+                  {NAV_LABELS[item] ?? item}
+                </button>
+              ))}
+            </div>
+            <button
               aria-controls="workspace-navigation"
               aria-expanded={workspaceExpanded}
               className="nav-section-toggle"
@@ -71,7 +96,7 @@ export function App() {
               <span aria-hidden="true">{workspaceExpanded ? '−' : '+'}</span>
             </button>
             <div id="workspace-navigation" hidden={!workspaceExpanded}>
-              {NAV_ITEMS.map((item) => (
+              {WORKSPACE_NAV_ITEMS.map((item) => (
                 <button
                   aria-current={activeView === item ? 'page' : undefined}
                   className={activeView === item ? 'active' : ''}

@@ -12,16 +12,14 @@ import re
 import time
 from datetime import datetime
 
-import requests
-
 import db_ingest
-
+import requests
 from baidu_search import (
     base_dir,
-    load_conf,
-    get_api_key,
-    search,
     fetch_fulltext,
+    get_api_key,
+    load_conf,
+    search,
 )
 from llm_supplier_analysis import (
     CONFIRMED_RELATIONS_MD,
@@ -209,47 +207,37 @@ def main(confirmed_path: str = "") -> str:
         return ""
 
     mode = str(verify_conf.get("mode", "unverified")).strip().lower()
-    targets = []
-    for name, rec in sec.items():
-        if mode == "all" or rec.get("verify_status", "未验证") != "已验证":
-            targets.append((name, {
-                "supplier": name,
-                "supply": rec.get("supply", ""),
-                "sources": rec.get("sources", []),
-            }))
-
     max_n = int(verify_conf.get("max_suppliers", 0) or 0)
+    # 验证任务只以数据库审计记录选择目标，Markdown 仅用于人工浏览。
+    all_targets = db_ingest.load_supplier_relations_for_verification(mode)
+    targets = all_targets
     if max_n > 0:
         targets = targets[:max_n]
     total = len(targets)
-    logger.info(f"待验证供应商（mode={mode}）：{total}/{len(sec)} 家")
+    logger.info(f"待验证供应商（mode={mode}）：{total}/{len(all_targets)} 家")
 
     results = []
-    for idx, (name, sup) in enumerate(targets, 1):
-        logger.info(f"[{idx}/{total}] 验证：{name}")
+    for idx, sup in enumerate(targets, 1):
+        logger.info(f"[{idx}/{total}] 验证：{sup['supplier']}")
         try:
             res = verify_supplier(api_key, sup, search_conf, llm_conf, verify_conf)
         except Exception as e:
-            logger.warning(f"    {name} 验证失败：{e}")
-            res = {"supplier": name, "query": f"{name} 大疆 供应商",
+            logger.warning(f"    {sup['supplier']} 验证失败：{e}")
+            res = {"supplier": sup["supplier"], "query": f"{sup['supplier']} 大疆 供应商",
                    "searched": 0, "fetched": 0, "verdict": f"验证失败：{e}",
                    "confidence": "", "supply": "", "evidence": "",
                    "orig_sources": sup.get("sources", []),
                    "orig_supply": sup.get("supply", "")}
         results.append(res)
-        # 回写验证状态（"失败" 关键字标记验证失败，否则视为已验证）
-        sec[name]["verify_status"] = "验证失败" if "失败" in res["verdict"] else "已验证"
-        sec[name]["verify_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        sec[name]["verify_verdict"] = f"{res['verdict']}；{res['supply']}"
-
-    # 回写文档
-    save_confirmed_relations(sec, path)
-
-    # 回写数据库 supplier_verifications（非致命，不影响 md 产物），并回写表1 验证状态
+    # 先落审计表，再以审计表同步 Markdown；不能由 Markdown 反向定义验证事实。
     try:
         db_ingest.ingest_supplier_verifications(results)
     except Exception as e:
-        logger.warning(f"表2 数据回写失败：{e}")
+        raise RuntimeError(f"表2 数据回写失败：{e}") from e
+    changed = db_ingest.sync_confirmed_relation_statuses(sec)
+    if changed:
+        save_confirmed_relations(sec, path)
+        logger.info("已从验证审计记录同步 %d 条 Markdown 关系状态", changed)
 
     # 生成验证报告（与来源文档同目录，独立时间戳）
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")

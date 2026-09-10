@@ -3,15 +3,12 @@ import json
 import logging
 import os
 import re
-import sys
 import time
 from datetime import datetime
 
-import yaml
-
-import requests
-
 import db_ingest
+import requests
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -432,6 +429,10 @@ def main(fulltext_path: str = "") -> str:
     try:
         sec = load_confirmed_relations(conf_path)
         db_ingest.upsert_supplier_relations(sec)
+        changed = db_ingest.sync_confirmed_relation_statuses(sec)
+        if changed:
+            save_confirmed_relations(sec, conf_path)
+            logger.info("已从验证审计记录同步 %d 条 Markdown 关系状态", changed)
     except Exception as e:
         logger.warning(f"表1 数据回写失败：{e}")
     return out_path

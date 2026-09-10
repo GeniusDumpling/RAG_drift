@@ -1,5 +1,6 @@
 """供应商情报：阶段1 明确供应关系 + 阶段2 定向验证。"""
 
+import uuid
 from datetime import datetime
 
 from sqlalchemy import (
@@ -10,12 +11,11 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-import uuid
 
 from app.db.base import Base, TimestampMixin, UuidPrimaryKeyMixin
 
@@ -34,6 +34,7 @@ class SupplierRelation(Base, UuidPrimaryKeyMixin, TimestampMixin):
             name="verify_status_valid",
         ),
         CheckConstraint("seen_count >= 0", name="seen_count_non_negative"),
+        UniqueConstraint("buyer_name", "supplier_name"),
         Index("ix_supplier_relations_supplier_name", "supplier_name"),
         Index("ix_supplier_relations_verify_status", "verify_status"),
         Index("ix_supplier_relations_buyer_name", "buyer_name"),
@@ -78,8 +79,8 @@ class SupplierVerification(Base, UuidPrimaryKeyMixin, TimestampMixin):
         Index("ix_supplier_verifications_verify_time", "verify_time"),
     )
 
-    relation_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("supplier_relations.id", ondelete="SET NULL")
+    relation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("supplier_relations.id", ondelete="RESTRICT"), nullable=False
     )
     supplier_name: Mapped[str] = mapped_column(String(255), nullable=False)
     verdict: Mapped[str] = mapped_column(String(20), nullable=False)

@@ -146,6 +146,7 @@ describe('App run navigation', () => {
     render(<App />);
 
     const primaryNav = screen.getByRole('navigation', { name: '主导航 Primary' });
+    const monitoringToggle = within(primaryNav).getByRole('button', { name: '系统监控' });
     const workspaceToggle = within(primaryNav).getByRole('button', { name: '工作空间' });
     const sidebarToggle = screen.getByRole('button', { name: '收起左侧导航' });
     const dashboardButton = within(primaryNav).getByRole('button', { name: '总览' });
@@ -153,22 +154,30 @@ describe('App run navigation', () => {
 
     expect(dashboardButton).toHaveAttribute('aria-current', 'page');
     expect(answerButton).not.toHaveAttribute('aria-current');
+    expect(monitoringToggle).toHaveAttribute('aria-expanded', 'true');
     expect(workspaceToggle).toHaveAttribute('aria-expanded', 'true');
-    expect(within(primaryNav).getAllByRole('button').slice(1).map((button) => button.textContent)).toEqual([
+    expect(within(primaryNav).getAllByRole('button').map((button) => button.textContent?.replace(/[+−]/g, ''))).toEqual([
+      '系统监控',
       '总览',
       '数据源',
       '运行记录',
-      '检索',
-      'AI 问答',
-      '文献研究',
       '内容详情',
       '数据库',
+      '工作空间',
+      '检索',
+      'AI 问答',
+      '供应链',
+      '文献研究',
     ]);
 
     fireEvent.click(answerButton);
 
     expect(answerButton).toHaveAttribute('aria-current', 'page');
     expect(dashboardButton).not.toHaveAttribute('aria-current');
+
+    fireEvent.click(monitoringToggle);
+    expect(monitoringToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(within(primaryNav).queryByRole('button', { name: '总览' })).not.toBeInTheDocument();
 
     fireEvent.click(workspaceToggle);
     expect(workspaceToggle).toHaveAttribute('aria-expanded', 'false');

@@ -19,6 +19,7 @@ class SupplierRelationRead(BaseModel):
     seen_count: int
     source_urls: list[str]
     verify_status: str
+    latest_verification_confidence: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -29,7 +30,7 @@ class SupplierVerificationRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    relation_id: uuid.UUID | None
+    relation_id: uuid.UUID
     supplier_name: str
     verdict: str
     confidence: str | None

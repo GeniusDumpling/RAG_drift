@@ -430,13 +430,14 @@ export type SupplierRelation = {
   seen_count: number;
   source_urls: string[];
   verify_status: string;
+  latest_verification_confidence: string | null;
   created_at: ISODateTime;
   updated_at: ISODateTime;
 };
 
 export type SupplierVerification = {
   id: UUID;
-  relation_id: UUID | null;
+  relation_id: UUID;
   supplier_name: string;
   verdict: string;
   confidence: string | null;

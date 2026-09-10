@@ -53,7 +53,18 @@ async def list_supplier_relations(
     verify_status: str | None,
 ) -> Page[SupplierRelationRead]:
     """分页列出供应关系，支持关键词与状态/可信度过滤。"""
-    statement = select(SupplierRelation)
+    latest_confidence = (
+        select(SupplierVerification.confidence)
+        .where(SupplierVerification.relation_id == SupplierRelation.id)
+        .order_by(
+            SupplierVerification.verify_time.desc().nulls_last(),
+            SupplierVerification.created_at.desc(),
+        )
+        .limit(1)
+        .scalar_subquery()
+        .label("latest_verification_confidence")
+    )
+    statement = select(SupplierRelation, latest_confidence)
     count_statement = select(func.count()).select_from(SupplierRelation)
 
     if q:
@@ -73,12 +84,17 @@ async def list_supplier_relations(
 
     total = int((await session.scalar(count_statement)) or 0)
     rows = (
-        await session.scalars(
+        await session.execute(
             statement.order_by(SupplierRelation.updated_at.desc()).offset(offset).limit(limit)
         )
     ).all()
     return Page[SupplierRelationRead](
-        items=[SupplierRelationRead.model_validate(row) for row in rows],
+        items=[
+            SupplierRelationRead.model_validate(relation).model_copy(
+                update={"latest_verification_confidence": confidence}
+            )
+            for relation, confidence in rows
+        ],
         total=total,
         limit=limit,
         offset=offset,
@@ -92,7 +108,10 @@ async def list_supplier_verifications(
     statement = (
         select(SupplierVerification)
         .where(SupplierVerification.relation_id == relation_id)
-        .order_by(SupplierVerification.verify_time.desc().nulls_last(), SupplierVerification.created_at.desc())
+        .order_by(
+            SupplierVerification.verify_time.desc().nulls_last(),
+            SupplierVerification.created_at.desc(),
+        )
     )
     rows = (await session.scalars(statement)).all()
     return [SupplierVerificationRead.model_validate(row) for row in rows]

@@ -66,22 +66,22 @@ make seed / smoke   # 播种演示数据 / 冒烟验证
 
 > 注意：Discourse 全文检索对冗长组合词命中很差，用短概念词（如 `GPS spoofing`、`MAVLink security`、`flyaway`）。
 
-### 2. 视频采集（`skills/video-crawler`）
+### 2. 视频采集（`tools/video-crawler`）
 
 搜索无人机相关公开 YouTube 视频，以真实字幕 + 场景关键帧 + VLM 中文摘要入库。仅在公共接口范围内工作，不绕过登录/验证码。
 
 ```bash
 # 单条视频 → 字幕 + 关键帧 + VLM 摘要 + 入库
 uv run --extra video-keyframes --extra local-embeddings python3 \
-  skills/video-crawler/scripts/youtube_transcript_evidence.py \
+  tools/video-crawler/scripts/youtube_transcript_evidence.py \
   --video-url "https://www.youtube.com/watch?v=VIDEO_ID" --language en --no-whisper-fallback --json
 # 全链路：搜索 → 去重 → 逐个入库
 uv run --extra video-keyframes --extra local-embeddings python3 \
-  skills/video-crawler/scripts/search_and_ingest.py \
-  --query "drone GPS spoofing" --caption-only --language en --video-limit 3 --json
+  tools/video-crawler/scripts/main.py \
+  --query "drone GPS spoofing" --caption-only --language en --video-limit 1 --json
 ```
 
-- 搜索走 YouTube Data API v3，需要 `YOUTUBE_API_KEY`；`--caption-only` 只选有字幕的候选。
+- 搜索走 YouTube Data API v3，需要 `YOUTUBE_API_KEY`；定时模式会持久化轮换关键词、跨页跳过已入库候选，直至达到成功入库目标或耗尽页面。
 - 视频流下载需 `HTTPS_PROXY` 指向海外/香港出口，否则 googlevideo.com 返回 403。
 - 摘要写入 `content_items.cleaned_text`，字幕合并为 `transcript_segment` 块，去重键 `video-evidence:<canonical_url>`。
 
@@ -90,7 +90,7 @@ uv run --extra video-keyframes --extra local-embeddings python3 \
 本机论坛与视频采集统一用用户级 cron 每 2 小时触发一次，`flock -n` 防止任务重叠，日志追加到 `/home/gaowei/*_collect.log`：
 
 ```cron
-0 */2 * * *  cd /home/gaowei/projects/RAG_drift && flock -n /tmp/video_collect.lock bash skills/video-crawler/scripts/run_scheduled_collect.sh >> /home/gaowei/video_collect.log 2>&1
+0 */2 * * *  cd /home/gaowei/projects/RAG_drift && flock -n /tmp/video_collect.lock bash tools/video-crawler/scripts/run_scheduled_collect.sh >> /home/gaowei/video_collect.log 2>&1
 0 */2 * * *  cd /home/gaowei/projects/RAG_drift && flock -n /tmp/discourse_crawler.lock bash skills/forum-crawler/scripts/run_scheduled_discourse.sh >> /home/gaowei/discourse_collect.log 2>&1
 ```
 

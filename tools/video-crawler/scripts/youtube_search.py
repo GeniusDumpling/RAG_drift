@@ -189,7 +189,8 @@ def main(argv: list[str] | None = None) -> int:
             page_token=args.page_token,
         )
     except SearchError as exc:
-        print(json.dumps({"status": "failed", "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        error = json.dumps({"status": "failed", "error": str(exc)}, ensure_ascii=False)
+        print(error, file=sys.stderr)
         return 1
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0

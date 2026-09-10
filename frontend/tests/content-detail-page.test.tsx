@@ -90,7 +90,7 @@ const chunk: ContentChunk = {
 const contentItem: ContentListItem = {
   id: 'content-1',
   source_site_id: 'source-1',
-  item_type: 'doc_page',
+  item_type: 'post',
   canonical_url: 'https://example.test/docs/setup',
   title: 'Setup Guide',
   author_name: 'Ops Writer',
@@ -123,8 +123,14 @@ function jsonResponse(body: unknown): Response {
 function stubContentFetch(contentDetail: ContentDetail = detail) {
   const fetchMock = vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.endsWith('/contents?limit=100&offset=0')) {
+    if (url.endsWith('/contents?limit=100&offset=0&item_type=thread')) {
+      return Promise.resolve(jsonResponse(page<ContentListItem>([])));
+    }
+    if (url.endsWith('/contents?limit=100&offset=0&item_type=post')) {
       return Promise.resolve(jsonResponse(page<ContentListItem>([contentItem])));
+    }
+    if (url.endsWith('/contents?limit=100&offset=0&item_type=comment')) {
+      return Promise.resolve(jsonResponse(page<ContentListItem>([])));
     }
     if (url.endsWith('/contents/content-1')) {
       return Promise.resolve(jsonResponse(contentDetail));
@@ -199,8 +205,14 @@ describe('ContentDetailPage', () => {
     };
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/contents?limit=100&offset=0')) {
+      if (url.endsWith('/contents?limit=100&offset=0&item_type=thread')) {
+        return Promise.resolve(jsonResponse(page<ContentListItem>([])));
+      }
+      if (url.endsWith('/contents?limit=100&offset=0&item_type=post')) {
         return Promise.resolve(jsonResponse(page<ContentListItem>([contentItem])));
+      }
+      if (url.endsWith('/contents?limit=100&offset=0&item_type=comment')) {
+        return Promise.resolve(jsonResponse(page<ContentListItem>([])));
       }
       if (url.endsWith('/contents/content-selected')) {
         return Promise.resolve(jsonResponse(selectedDetail));
@@ -223,6 +235,52 @@ describe('ContentDetailPage', () => {
     });
   });
 
+  it('switches between comment and video description records', async () => {
+    const videoItem: ContentListItem = {
+      ...contentItem,
+      id: 'video-description-1',
+      item_type: 'video_description',
+      title: 'Flight demonstration description',
+    };
+    const videoDetail: ContentDetail = {
+      ...detail,
+      ...videoItem,
+      chunks: [{ ...chunk, id: 'video-description-chunk-1', content_item_id: videoItem.id, display_text: 'Video description evidence.' }],
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/contents?limit=100&offset=0&item_type=thread')) {
+        return Promise.resolve(jsonResponse(page<ContentListItem>([])));
+      }
+      if (url.endsWith('/contents?limit=100&offset=0&item_type=post')) {
+        return Promise.resolve(jsonResponse(page<ContentListItem>([contentItem])));
+      }
+      if (url.endsWith('/contents?limit=100&offset=0&item_type=comment')) {
+        return Promise.resolve(jsonResponse(page<ContentListItem>([])));
+      }
+      if (url.endsWith('/contents?limit=100&offset=0&item_type=video_description')) {
+        return Promise.resolve(jsonResponse(page<ContentListItem>([videoItem])));
+      }
+      if (url.endsWith('/contents/content-1')) {
+        return Promise.resolve(jsonResponse(detail));
+      }
+      if (url.endsWith('/contents/video-description-1')) {
+        return Promise.resolve(jsonResponse(videoDetail));
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<ContentDetailPage />);
+
+    expect(await screen.findByRole('heading', { name: 'Setup Guide' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('查看数据类型'), { target: { value: 'video_description' } });
+
+    expect(await screen.findByRole('heading', { name: 'Flight demonstration description' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '视频描述类数据' })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([request]) => String(request).endsWith('/contents?limit=100&offset=0&item_type=video_description'))).toBe(true);
+  });
+
   it('renders an explicit API error when content list loading fails', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('backend offline')));
 
@@ -236,7 +294,13 @@ describe('ContentDetailPage', () => {
   it('renders the empty state when no content records are available', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/contents?limit=100&offset=0')) {
+      if (url.endsWith('/contents?limit=100&offset=0&item_type=thread')) {
+        return Promise.resolve(jsonResponse(page<ContentListItem>([])));
+      }
+      if (url.endsWith('/contents?limit=100&offset=0&item_type=post')) {
+        return Promise.resolve(jsonResponse(page<ContentListItem>([])));
+      }
+      if (url.endsWith('/contents?limit=100&offset=0&item_type=comment')) {
         return Promise.resolve(jsonResponse(page<ContentListItem>([])));
       }
       return Promise.reject(new Error(`Unexpected URL: ${url}`));
@@ -246,6 +310,6 @@ describe('ContentDetailPage', () => {
     render(<ContentDetailPage />);
 
     expect(await screen.findByText(EMPTY_STATE_COPY)).toBeInTheDocument();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
   });
 });

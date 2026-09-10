@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -25,19 +26,81 @@ from youtube_transcript_evidence import (
     summarize_video_evidence_with_vlm,
 )
 
+DEFAULT_SEARCH_QUERIES = [
+    {"query": "drone GPS spoofing jamming demonstration", "language": "en"},
+    {"query": "drone MAVLink telemetry security vulnerability", "language": "en"},
+    {"query": "drone flight controller firmware hardware test", "language": "en"},
+    {"query": "drone lost signal flyaway GPS failure", "language": "en"},
+    {"query": "无人机 GPS 欺骗 干扰 演示", "language": "zh"},
+    {"query": "无人机 飞控 固件 硬件 拆解", "language": "zh"},
+]
 
-def select_rotating_entry(conf: dict) -> dict:
-    """按时间桶轮换主题条目；条目为字符串（无自带语言）或 {query, language}。"""
-    entries = list(conf_get(conf, "search", "queries", []) or [])
+
+def default_conf() -> dict[str, Any]:
+    """Return a runnable crawler configuration when the optional YAML file is absent."""
+    return {
+        "search": {
+            "queries": DEFAULT_SEARCH_QUERIES,
+            "state_path": "search-state.json",
+            "max_results": 25,
+            "max_pages": 3,
+            "success_target": 1,
+            "caption_only": True,
+            "order": "date",
+            "language": "en",
+            "whisper_fallback": False,
+        },
+        "retry": {"attempts": 2, "delay_seconds": 3.0},
+        "download": {"keyframes_dir": "downloads"},
+        "whisper": {"model": "small", "device": "auto", "model_cache": "model-cache/whisper"},
+    }
+
+
+def resolve_search_state_path(conf: dict) -> Path:
+    value = str(conf_get(conf, "search", "state_path", "search-state.json") or "search-state.json")
+    path = Path(value)
+    return path if path.is_absolute() else SCRIPT_DIR / path
+
+
+def _write_json_atomically(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
+    ) as temporary:
+        json.dump(payload, temporary, ensure_ascii=False, sort_keys=True)
+        temporary.write("\n")
+        temporary_path = Path(temporary.name)
+    temporary_path.replace(path)
+
+
+def select_next_query_entry(conf: dict) -> dict[str, Any]:
+    """Return the next configured query and atomically persist the next position."""
+    entries = list(conf_get(conf, "search", "queries", DEFAULT_SEARCH_QUERIES) or [])
     if not entries:
         raise ValueError("conf.yaml 的 search.queries 不能为空")
-    interval = int(conf_get(conf, "search", "rotation_interval_seconds", 7200) or 7200)
-    entry = entries[int(time.time()) // interval % len(entries)]
+    state_path = resolve_search_state_path(conf)
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.is_file() else {}
+    except (OSError, json.JSONDecodeError):
+        state = {}
+    next_index = int(state.get("next_query_index", 0)) % len(entries)
+    entry = entries[next_index]
     if isinstance(entry, str):
-        return {"query": entry}
-    if isinstance(entry, dict) and entry.get("query"):
-        return entry
-    raise ValueError(f"search.queries 条目格式错误: {entry!r}")
+        normalized = {"query": entry}
+    elif isinstance(entry, dict) and isinstance(entry.get("query"), str) and entry["query"].strip():
+        normalized = dict(entry)
+    else:
+        raise ValueError(f"search.queries 条目格式错误: {entry!r}")
+    _write_json_atomically(
+        state_path,
+        {"next_query_index": (next_index + 1) % len(entries), "last_query": normalized["query"]},
+    )
+    return normalized
+
+
+def select_rotating_entry(conf: dict) -> dict:
+    """Backward-compatible name for persisted query rotation."""
+    return select_next_query_entry(conf)
 
 
 def select_rotating_query(conf: dict) -> str:
@@ -62,7 +125,9 @@ def resolve_keyframes_dir(conf: dict) -> Path:
 
 
 def resolve_whisper_model_cache(conf: dict) -> Path:
-    value = str(conf_get(conf, "whisper", "model_cache", "model-cache/whisper") or "model-cache/whisper")
+    value = str(
+        conf_get(conf, "whisper", "model_cache", "model-cache/whisper") or "model-cache/whisper"
+    )
     path = Path(value)
     return path if path.is_absolute() else SCRIPT_DIR.parents[2] / path
 
@@ -138,6 +203,16 @@ def outcome_of(result: dict[str, Any]) -> str:
     return "failed"
 
 
+def classify_failure(error: str | None) -> str:
+    """Classify known collection failures for operator-visible run summaries."""
+    message = (error or "").casefold()
+    if any(token in message for token in ("字幕", "caption", "webvtt", "http 429")):
+        return "caption_failure"
+    if any(token in message for token in ("关键帧", "视频流", "ffmpeg", "temporary stream")):
+        return "temporary_stream_failure"
+    return "failed"
+
+
 def run_search_and_ingest(
     conf: dict,
     *,
@@ -151,12 +226,23 @@ def run_search_and_ingest(
 ) -> dict[str, Any]:
     """执行一轮搜索 → 去重 → 入库，返回 JSON 汇总。None 表示用 conf.yaml 默认值。"""
     search = conf.get("search") or {}
-    max_results = max_results or int(search.get("max_results", 10))
-    video_limit = video_limit if video_limit is not None else int(search.get("video_limit", 3))
+    max_results = max_results or int(search.get("max_results", 25))
+    success_target = (
+        video_limit
+        if video_limit is not None
+        else int(search.get("success_target", 1))
+    )
+    max_pages = int(search.get("max_pages", 3))
+    if success_target < 1:
+        raise ValueError("success_target/video_limit 必须至少为 1")
+    if max_pages < 1:
+        raise ValueError("search.max_pages 必须至少为 1")
     language = language or str(search.get("language", "en"))
     order = order or str(search.get("order", "relevance"))
     caption_only = search.get("caption_only", True) if caption_only is None else caption_only
-    whisper_fallback = search.get("whisper_fallback", False) if whisper_fallback is None else whisper_fallback
+    whisper_fallback = (
+        search.get("whisper_fallback", False) if whisper_fallback is None else whisper_fallback
+    )
     retry_attempts = int(conf_get(conf, "retry", "attempts", 2) or 2)
     retry_delay = float(conf_get(conf, "retry", "delay_seconds", 3.0) or 3.0)
     keyframes_dir = resolve_keyframes_dir(conf)
@@ -166,69 +252,106 @@ def run_search_and_ingest(
 
     apply_proxy(conf)
     load_global_env()
-    try:
-        page = search_youtube_videos(
-            query,
-            api_key=load_api_key(),
-            max_results=max_results,
-            order=order,
-            caption_only=caption_only,
-        )
-    except SearchError as exc:
-        return {"status": "failed", "query": query, "error": str(exc)}
-
     existing = load_existing_dedup_keys()
     results: list[dict[str, Any]] = []
-    for candidate in (page.get("items") or [])[:video_limit]:
-        url = candidate["canonical_url"]
-        if f"video-evidence:{url}" in existing:
-            results.append(
-                {"video_id": candidate["video_id"], "canonical_url": url, "outcome": "duplicate"}
+    seen_urls: set[str] = set()
+    page_token: str | None = None
+    pages_searched = 0
+    candidates_seen = 0
+    search_error: str | None = None
+    while (
+        pages_searched < max_pages
+        and sum(r["outcome"] == "success" for r in results) < success_target
+    ):
+        try:
+            page = search_youtube_videos(
+                query,
+                api_key=load_api_key(),
+                max_results=max_results,
+                order=order,
+                caption_only=caption_only,
+                page_token=page_token,
             )
-            continue
-        result: dict[str, Any] | None = None
-        last_error: str | None = None
-        for attempt in range(retry_attempts):
-            try:
-                result = ingest_candidate(
-                    url,
-                    language=language,
-                    allow_whisper_fallback=whisper_fallback,
-                    keyframes_dir=keyframes_dir,
-                    whisper_model=whisper_model,
-                    whisper_device=whisper_device,
-                    whisper_model_cache=whisper_model_cache,
-                )
+        except SearchError as exc:
+            search_error = str(exc)
+            break
+        pages_searched += 1
+        for candidate in page.get("items") or []:
+            if sum(r["outcome"] == "success" for r in results) >= success_target:
                 break
-            except EvidenceCollectionError as exc:
-                last_error = str(exc)
-                if attempt < retry_attempts - 1:
-                    time.sleep(retry_delay)
-        if result is not None:
-            results.append(
-                {
-                    "video_id": candidate["video_id"],
-                    "canonical_url": url,
-                    "outcome": outcome_of(result),
-                    "content_id": (result.get("ingestion") or {}).get("content_id"),
-                }
-            )
-        else:
-            results.append(
-                {
-                    "video_id": candidate["video_id"],
-                    "canonical_url": url,
-                    "outcome": "failed",
-                    "error": last_error,
-                }
-            )
+            url = candidate["canonical_url"]
+            candidates_seen += 1
+            if url in seen_urls or f"video-evidence:{url}" in existing:
+                results.append(
+                    {
+                        "video_id": candidate["video_id"],
+                        "canonical_url": url,
+                        "outcome": "duplicate",
+                    }
+                )
+                continue
+            seen_urls.add(url)
+            result: dict[str, Any] | None = None
+            last_error: str | None = None
+            for attempt in range(retry_attempts):
+                try:
+                    result = ingest_candidate(
+                        url,
+                        language=language,
+                        allow_whisper_fallback=whisper_fallback,
+                        keyframes_dir=keyframes_dir,
+                        whisper_model=whisper_model,
+                        whisper_device=whisper_device,
+                        whisper_model_cache=whisper_model_cache,
+                    )
+                    break
+                except EvidenceCollectionError as exc:
+                    last_error = str(exc)
+                    if attempt < retry_attempts - 1:
+                        time.sleep(retry_delay)
+            if result is not None:
+                results.append(
+                    {
+                        "video_id": candidate["video_id"],
+                        "canonical_url": url,
+                        "outcome": outcome_of(result),
+                        "content_id": (result.get("ingestion") or {}).get("content_id"),
+                    }
+                )
+            else:
+                results.append(
+                    {
+                        "video_id": candidate["video_id"],
+                        "canonical_url": url,
+                        "outcome": classify_failure(last_error),
+                        "error": last_error,
+                    }
+                )
+        page_token = page.get("next_page_token")
+        if not page_token:
+            break
+
+    outcome_counts = {
+        outcome: sum(1 for result in results if result["outcome"] == outcome)
+        for outcome in (
+            "duplicate",
+            "no_captions",
+            "caption_failure",
+            "temporary_stream_failure",
+            "failed",
+            "success",
+        )
+    }
 
     return {
-        "status": "success",
+        "status": "failed" if search_error and not results else "success",
         "query": query,
-        "candidates": len(page.get("items") or []),
-        "video_limit": video_limit,
-        "success_count": sum(1 for r in results if r["outcome"] == "success"),
+        "success_target": success_target,
+        "pages_searched": pages_searched,
+        "candidates_seen": candidates_seen,
+        "success_count": outcome_counts["success"],
+        "outcome_counts": outcome_counts,
+        **({"error": search_error} if search_error else {}),
         "results": results,
     }
 
@@ -236,6 +359,8 @@ def run_search_and_ingest(
 def load_conf_with_env(config_path: Path) -> dict:
     """加载 conf.yaml 并载入全局 .env（供各模块使用）。"""
     load_global_env()
+    if config_path == SCRIPT_DIR / "conf.yaml" and not config_path.is_file():
+        return default_conf()
     return load_conf(config_path)
 
 

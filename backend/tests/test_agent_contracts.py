@@ -9,6 +9,7 @@ from app.agents.contracts import (
     ExtractionItem,
     QueryOptimizationResponse,
 )
+from app.core.config import Settings
 from app.models.search import AgentCall
 from app.repositories.search import create_agent_call
 from pydantic import ValidationError
@@ -212,3 +213,63 @@ async def test_create_agent_call_persists_refreshes_summaries_and_schema_version
     assert persisted_agent_call.output_summary_json == output_summary
     assert persisted_agent_call.request_schema_version == "extraction.v1"
     assert persisted_agent_call.response_schema_version == "query_optimization.v1"
+
+
+def test_agent_client_deepseek_optimize_query_parses_entity_hints(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        DEEPSEEK_API_KEY="test-key",
+        DEEPSEEK_BASE_URL="https://api.deepseek.com/v1",
+        DEEPSEEK_MODEL="deepseek-chat",
+    )
+    client = AgentClient(provider="deepseek", timeout_seconds=5, settings=settings)
+    raw = (
+        '{"optimized_query_text":"Mavic 3 GPS spoofing 识别","keyword_terms":["GPS spoofing"],'
+        '"entity_hints":["Mavic 3","PX4"],"time_hints_json":{},"query_intent":"troubleshoot",'
+        '"confidence":0.9}'
+    )
+
+    monkeypatch.setattr(client, "_request_json_content", lambda **_: raw)
+
+    result = client.optimize_query(
+        raw_query="Mavic 3 被 GPS 欺骗怎么办", filters={}, mode="search"
+    )
+
+    assert isinstance(result, QueryOptimizationResponse)
+    assert result.optimized_query_text
+    assert result.entity_hints == ["Mavic 3", "PX4"]
+    assert "GPS spoofing" in result.keyword_terms
+    assert result.query_intent == "troubleshoot"
+    assert result.trace_summary_json["provider"] == "deepseek"
+    assert result.trace_summary_json["fallback"] is False
+
+
+def test_agent_client_deepseek_optimize_query_falls_back_on_invalid_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        DEEPSEEK_API_KEY="test-key",
+        DEEPSEEK_BASE_URL="https://api.deepseek.com/v1",
+        DEEPSEEK_MODEL="deepseek-chat",
+    )
+    client = AgentClient(provider="deepseek", timeout_seconds=5, settings=settings)
+
+    monkeypatch.setattr(client, "_request_json_content", lambda **_: "not json at all")
+
+    result = client.optimize_query(raw_query="telemetry", filters={}, mode="search")
+
+    assert result.optimized_query_text == "telemetry"
+    assert result.entity_hints == []
+    assert result.trace_summary_json["fallback"] is True
+
+
+def test_agent_client_deepseek_optimize_query_requires_api_key() -> None:
+    settings = Settings(DEEPSEEK_API_KEY=None)
+    client = AgentClient(provider="deepseek", timeout_seconds=5, settings=settings)
+
+    result = client.optimize_query(raw_query="telemetry", filters={}, mode="search")
+
+    assert result.optimized_query_text == "telemetry"
+    assert result.trace_summary_json["fallback"] is True
+    assert "DEEPSEEK_API_KEY" in result.trace_summary_json["error"]

@@ -269,6 +269,7 @@ async def retrieve_evidence(
     qdrant_url: str,
     qdrant_collection: str,
     embedding: EmbeddingService,
+    entity_hints: Sequence[str] = (),
 ) -> RetrievalResult:
     vector_hits: list[VectorSearchHit] = []
     vector_trace: dict[str, Any] = {
@@ -299,6 +300,7 @@ async def retrieve_evidence(
         session,
         raw_query=raw_query,
         keyword_terms=keyword_terms,
+        entity_hints=entity_hints,
         filters=filters,
         limit=max(top_k * 10, 50),
     )
@@ -319,6 +321,7 @@ async def retrieve_evidence(
         trace={
             "vector": vector_trace,
             "keyword": {"hit_count": len(keyword_hits)},
+            "entity_hints": list(entity_hints),
             "merged_hit_count": len(merged_hits),
             "hydrated_evidence_count": len(evidence),
             "component_scores": [
@@ -360,10 +363,12 @@ async def _keyword_search(
     *,
     raw_query: str,
     keyword_terms: list[str],
+    entity_hints: Sequence[str],
     filters: SearchFilters,
     limit: int,
 ) -> list[_SearchHit]:
     terms = _normalized_terms(keyword_terms=keyword_terms, raw_query=raw_query)
+    entity_terms = _normalized_terms(keyword_terms=entity_hints, raw_query="")
     if not terms:
         return []
 
@@ -381,7 +386,7 @@ async def _keyword_search(
         )
 
     candidate_limit = _keyword_candidate_limit(limit)
-    keyword_score_expr = _keyword_score_sql_expression(terms)
+    keyword_score_expr = _keyword_score_sql_expression(terms, entity_terms=entity_terms)
     stmt = (
         select(ContentChunk, ContentItem, keyword_score_expr.label("keyword_score"))
         .join(ContentItem, ContentChunk.content_item_id == ContentItem.id)
@@ -402,7 +407,11 @@ async def _keyword_search(
 
     scored_hits: list[tuple[_SearchHit, float, int, str]] = []
     for content_chunk, content_item, _sql_keyword_score in rows:
-        score = _normalize_keyword_score(_keyword_score(content_item, content_chunk, terms))
+        score = _normalize_keyword_score(
+            _keyword_score(
+                content_item, content_chunk, terms, entity_terms=entity_terms
+            )
+        )
         if score >= _KEYWORD_MINIMUM_MATCH_SCORE:
             scored_hits.append(
                 (
@@ -580,32 +589,23 @@ def _keyword_candidate_limit(limit: int) -> int:
     return min(max(limit * 20, 500), 1000)
 
 
-def _keyword_score_sql_expression(terms: Sequence[str]) -> Any:
+def _keyword_score_sql_expression(
+    terms: Sequence[str], *, entity_terms: Sequence[str] = ()
+) -> Any:
     score_expr: Any = literal(0.0)
     for term in terms:
+        score_expr = _add_term_score(score_expr, term)
+    for term in entity_terms:
+        # 实体词是强信号：标题命中额外加权，标签命中显著加权
         pattern = _ilike_pattern(term)
         score_expr = (
             score_expr
             + case(
-                (ContentItem.title.ilike(pattern, escape="\\"), 0.50),
+                (ContentItem.title.ilike(pattern, escape="\\"), 0.45),
                 else_=0.0,
             )
             + case(
-                (ContentItem.summary_text.ilike(pattern, escape="\\"), 0.30),
-                else_=0.0,
-            )
-            + case(
-                (
-                    or_(
-                        ContentChunk.display_text.ilike(pattern, escape="\\"),
-                        ContentChunk.embed_text.ilike(pattern, escape="\\"),
-                    ),
-                    0.20,
-                ),
-                else_=0.0,
-            )
-            + case(
-                (sql_cast(ContentItem.tags, String).ilike(pattern, escape="\\"), 0.10),
+                (sql_cast(ContentItem.tags, String).ilike(pattern, escape="\\"), 0.35),
                 else_=0.0,
             )
         )
@@ -616,6 +616,35 @@ def _keyword_score_sql_expression(terms: Sequence[str]) -> Any:
             func.least(func.greatest(score_expr, _KEYWORD_MINIMUM_MATCH_SCORE), 1.0),
         ),
         else_=0.0,
+    )
+
+
+def _add_term_score(score_expr: Any, term: str) -> Any:
+    pattern = _ilike_pattern(term)
+    return (
+        score_expr
+        + case(
+            (ContentItem.title.ilike(pattern, escape="\\"), 0.50),
+            else_=0.0,
+        )
+        + case(
+            (ContentItem.summary_text.ilike(pattern, escape="\\"), 0.30),
+            else_=0.0,
+        )
+        + case(
+            (
+                or_(
+                    ContentChunk.display_text.ilike(pattern, escape="\\"),
+                    ContentChunk.embed_text.ilike(pattern, escape="\\"),
+                ),
+                0.20,
+            ),
+            else_=0.0,
+        )
+        + case(
+            (sql_cast(ContentItem.tags, String).ilike(pattern, escape="\\"), 0.10),
+            else_=0.0,
+        )
     )
 
 
@@ -715,7 +744,11 @@ async def _hydrate_and_rank_evidence(
 
 
 def _keyword_score(
-    content_item: ContentItem, content_chunk: ContentChunk, terms: Sequence[str]
+    content_item: ContentItem,
+    content_chunk: ContentChunk,
+    terms: Sequence[str],
+    *,
+    entity_terms: Sequence[str] = (),
 ) -> float:
     score = 0.0
     tags = [tag.casefold() for tag in content_item.tags]
@@ -733,6 +766,14 @@ def _keyword_score(
             score += 0.20
         if any(normalized in tag for tag in tags):
             score += 0.10
+
+    # 实体词是强信号：标题/标签命中可获得额外加权，使其在软加权重排下沉到更靠前
+    for term in entity_terms:
+        normalized = term.casefold()
+        if content_item.title is not None and normalized in content_item.title.casefold():
+            score += 0.45
+        if any(normalized in tag for tag in tags):
+            score += 0.35
 
     if score > 0.0:
         return max(score, _KEYWORD_MINIMUM_MATCH_SCORE)
@@ -892,6 +933,19 @@ def _normalized_terms(*, keyword_terms: Sequence[str], raw_query: str) -> list[s
         seen.add(term)
         terms.append(term)
     return terms
+
+
+def _dedupe_terms(terms: Sequence[str]) -> list[str]:
+    """Remove whitespace and duplicates while preserving order."""
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for term in terms:
+        stripped = term.strip()
+        if not stripped or stripped in seen:
+            continue
+        seen.add(stripped)
+        deduped.append(stripped)
+    return deduped
 
 
 def _ilike_pattern(term: str) -> str:

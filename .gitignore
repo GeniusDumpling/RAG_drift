@@ -20,6 +20,8 @@ frontend/dist/
 .DS_Store
 model-cache/
 tools/video-crawler/downloads/
+tools/video-crawler/scripts/downloads/
+tools/video-crawler/scripts/search-state.json
 
 # supplier-information 运行产物
 tools/supplier-information/.env

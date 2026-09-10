@@ -40,6 +40,7 @@ class SearchService:
         self.agent_client = agent_client or AgentClient(
             provider=self.settings.llm_provider,
             timeout_seconds=self.settings.agent_timeout_seconds,
+            settings=self.settings,
         )
         self.embedding = embedding or build_embedding_service(self.settings)
 
@@ -105,6 +106,7 @@ class SearchService:
             raw_query=request.query,
             optimized_query_text=optimized.optimized_query_text,
             keyword_terms=optimized.keyword_terms,
+            entity_hints=optimized.entity_hints,
             filters=request.filters,
             top_k=request.top_k,
             qdrant_url=self.settings.qdrant_url,

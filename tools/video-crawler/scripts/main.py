@@ -7,7 +7,7 @@
     # 显式指定搜索词
     uv run python3 main.py --query "drone GPS spoofing"
 
-    # 定时采集：按 conf.yaml 主题轮换（cron/systemd 每 rotation_interval_seconds 触发一次）
+    # 定时采集：按持久化状态轮换 conf.yaml 主题
     uv run python3 main.py --scheduled
 
     # 覆盖单次参数
@@ -29,9 +29,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONF_PATH, help="conf.yaml 路径")
     parser.add_argument("--query", default=None, help="搜索词；缺省时按 conf.yaml 主题轮换")
-    parser.add_argument("--scheduled", action="store_true", help="定时模式：按时间桶轮换主题")
+    parser.add_argument("--scheduled", action="store_true", help="定时模式：按持久化状态轮换主题")
     parser.add_argument("--max-results", type=int, default=None, help="搜索候选数（1-50）")
-    parser.add_argument("--video-limit", type=int, default=None, help="最多入库视频数")
+    parser.add_argument(
+        "--video-limit",
+        type=int,
+        default=None,
+        help="本次成功入库目标数；达到后停止搜索（兼容旧参数名）",
+    )
     parser.add_argument("--language", default=None, help="字幕语言优先级")
     parser.add_argument(
         "--order",

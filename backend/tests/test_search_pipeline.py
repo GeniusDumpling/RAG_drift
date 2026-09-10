@@ -15,8 +15,10 @@ from app.services.retrieval import (
     _MEMORY_COLLECTIONS,
     QdrantIndexer,
     VectorSearchHit,
+    _keyword_score,
     _memory_payload_matches,
     _merge_hits,
+    _normalize_keyword_score,
     _SearchHit,
     _vector_filter_payload,
     retrieve_evidence,
@@ -98,8 +100,12 @@ def _use_memory_vector_backend(monkeypatch: pytest.MonkeyPatch) -> Settings:
     settings = Settings(
         QDRANT_URL=f"memory://search-pipeline-{uuid.uuid4()}",
         QDRANT_COLLECTION=f"content_chunks_{uuid.uuid4().hex}",
+        LLM_PROVIDER="fake",
     )
     monkeypatch.setattr("app.services.search.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "app.services.search.build_embedding_service", lambda _: _FixedEmbeddingService()
+    )
     return settings
 
 
@@ -403,7 +409,7 @@ async def test_search_persists_optimization_before_retrieval_failure(
     monkeypatch.setattr(search_service_module, "retrieve_evidence", fail_after_optimization)
 
     with pytest.raises(RuntimeError, match="retrieval exploded"):
-        await SearchService(db_session).search(
+        await SearchService(db_session, settings=Settings(LLM_PROVIDER="fake")).search(
             SearchRequest(query="optimized telemetry", mode="search", top_k=3)
         )
 
@@ -1072,3 +1078,121 @@ def test_vector_filter_payload_and_memory_matching_include_published_dates() -> 
     assert not _memory_payload_matches(
         payload={"published_at": "2026-01-01T00:00:00+00:00"}, filters=payload
     )
+
+
+async def test_keyword_retrieval_soft_ranks_by_entity_hints(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _use_memory_vector_backend(monkeypatch)
+    # 两条内容都含普通关键词 truecoincident，但只有一条的 title/tags 命中实体 mavic3
+    created_a, _source_a = await _create_retrieval_content(
+        db_session,
+        url_path="entity-no-match",
+        title="Mavic 3 conflict note",
+        cleaned_text="Mavic 3 truecoincident firmware report.",
+        summary_text=None,
+        tags=["mavic3"],
+    )
+    await _create_retrieval_content(
+        db_session,
+        url_path="entity-no-match-other",
+        title="Other conflict note",
+        cleaned_text="Other truecoincident firmware report.",
+        summary_text=None,
+        tags=[],
+    )
+
+    result = await retrieve_evidence(
+        db_session,
+        raw_query="truecoincident",
+        optimized_query_text="truecoincident",
+        keyword_terms=["truecoincident"],
+        entity_hints=["mavic3"],
+        filters=SearchFilters(),
+        top_k=5,
+        qdrant_url=settings.qdrant_url,
+        qdrant_collection=settings.qdrant_collection,
+        embedding=_FixedEmbeddingService(),
+    )
+
+    # 命中原词的两条都进入关键词证据
+    assert len(result.evidence) >= 2
+    # 实体命中项（mavic3 title/tags）应排在最前
+    assert result.evidence[0].content_item_id == created_a.content_item.id
+    # trace 记录实体提示
+    assert result.trace["entity_hints"] == ["mavic3"]
+
+
+def test_keyword_score_applies_entity_boost() -> None:
+    item = ContentItem(
+        id=uuid.uuid4(),
+        source_site_id=uuid.uuid4(),
+        raw_page_id=uuid.uuid4(),
+        crawl_run_id=uuid.uuid4(),
+        item_type="doc_page",
+        title="mavic3 telemetry guide",
+        canonical_url="https://docs.example.com/guide",
+        cleaned_text="telemetry manual",
+        tags=["mavic3"],
+        content_hash="h",
+        dedup_key="k",
+    )
+    chunk = ContentChunk(
+        id=uuid.uuid4(),
+        content_item_id=item.id,
+        chunk_index=0,
+        char_start=0,
+        char_end=len(item.cleaned_text),
+        display_text=item.cleaned_text,
+        embed_text=item.cleaned_text,
+        chunk_metadata_json={},
+        embed_status="pending",
+    )
+
+    base_score = _keyword_score(item, chunk, ["telemetry"])
+    boosted_score = _keyword_score(item, chunk, ["telemetry"], entity_terms=["mavic3"])
+
+    # 实体词命中 title(0.45) + tags(0.35) 带来加分
+    assert base_score >= 0.0
+    assert boosted_score > base_score
+    assert boosted_score >= 0.9
+    assert _normalize_keyword_score(boosted_score) == 1.0
+
+
+async def test_keyword_retrieval_does_not_return_entity_only_match(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _use_memory_vector_backend(monkeypatch)
+    entity_only, _ = await _create_retrieval_content(
+        db_session,
+        url_path="entity-only-match",
+        title="Mavic 3 field guide",
+        cleaned_text="Mavic 3 flight setup notes.",
+        summary_text=None,
+        tags=["mavic3"],
+    )
+    keyword_match, _ = await _create_retrieval_content(
+        db_session,
+        url_path="keyword-match",
+        title="Telemetry troubleshooting",
+        cleaned_text="Telemetry troubleshooting and diagnostics.",
+        summary_text=None,
+        tags=[],
+    )
+
+    result = await retrieve_evidence(
+        db_session,
+        raw_query="telemetry",
+        optimized_query_text="telemetry",
+        keyword_terms=["telemetry"],
+        entity_hints=["mavic3"],
+        filters=SearchFilters(),
+        top_k=5,
+        qdrant_url=settings.qdrant_url,
+        qdrant_collection=settings.qdrant_collection,
+        embedding=_FixedEmbeddingService(),
+    )
+
+    result_ids = {evidence.content_item_id for evidence in result.evidence}
+    assert keyword_match.content_item.id in result_ids
+    assert entity_only.content_item.id not in result_ids

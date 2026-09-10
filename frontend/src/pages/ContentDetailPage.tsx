@@ -10,15 +10,42 @@ const EMPTY_STATE_COPY = '暂无数据。请先启动后端并运行 demo seed �
 const CONTENT_UNAVAILABLE_COPY = 'Content 详情暂不可用：API 请求失败。';
 const LOADING_CONTENT_COPY = '正在加载 Content 数据...';
 const LOADING_CONTENT_DETAIL_COPY = '正在加载 Content 详情...';
+const CONTENT_VIEW_OPTIONS = [
+  { value: 'post', label: '帖子类数据' },
+  { value: 'video_description', label: '视频描述类数据' },
+] as const;
+
+type ContentViewType = (typeof CONTENT_VIEW_OPTIONS)[number]['value'];
 
 type ContentDetailPageProps = {
   selectedContentId?: string;
   onOpenRun?: (runId: string) => void;
 };
 
+async function listContentsForView(contentViewType: ContentViewType): Promise<Page<ContentListItem>> {
+  if (contentViewType === 'video_description') {
+    return listContents({ limit: 100, item_type: contentViewType });
+  }
+
+  const [threadsPage, postsPage, commentsPage] = await Promise.all([
+    listContents({ limit: 100, item_type: 'thread' }),
+    listContents({ limit: 100, item_type: 'post' }),
+    listContents({ limit: 100, item_type: 'comment' }),
+  ]);
+  return {
+    items: [...threadsPage.items, ...postsPage.items, ...commentsPage.items].sort(
+      (left, right) => Date.parse(right.fetched_at) - Date.parse(left.fetched_at),
+    ),
+    total: threadsPage.total + postsPage.total + commentsPage.total,
+    limit: threadsPage.limit + postsPage.limit + commentsPage.limit,
+    offset: 0,
+  };
+}
+
 export function ContentDetailPage({ selectedContentId: externallySelectedContentId = '', onOpenRun }: ContentDetailPageProps = {}) {
   const [contents, setContents] = useState<Page<ContentListItem>>();
   const [activeContentId, setActiveContentId] = useState(externallySelectedContentId);
+  const [contentViewType, setContentViewType] = useState<ContentViewType>('post');
   const [detail, setDetail] = useState<ContentDetail>();
   const [listError, setListError] = useState('');
   const [detailError, setDetailError] = useState('');
@@ -29,7 +56,7 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
     let ignore = false;
     setListError('');
     setListLoading(true);
-    listContents({ limit: 100 })
+    listContentsForView(contentViewType)
       .then((page) => {
         if (!ignore) {
           setContents(page);
@@ -50,7 +77,7 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [contentViewType, externallySelectedContentId]);
 
   useEffect(() => {
     if (externallySelectedContentId) {
@@ -125,6 +152,11 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
     setActiveContentId(event.target.value);
   }
 
+  function handleContentViewTypeChange(event: ChangeEvent<HTMLSelectElement>) {
+    setContentViewType(event.target.value as ContentViewType);
+    setActiveContentId('');
+  }
+
   const contentLoadFailed = Boolean(listError || detailError);
   const detailSelectionPending = Boolean(activeContentId && !displayedDetail && !detailError);
   const loading = listLoading || detailLoading || detailSelectionPending;
@@ -135,10 +167,18 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
       <div className="page-title">
         <p className="eyebrow">语料库</p>
         <h1>内容详情</h1>
-        <p className="muted">展示内容记录的原始快照、分块、运行链和提取元数据。</p>
+        <p className="muted">选择查看帖子类或视频描述记录，并展示其原始快照、分块和提取元数据。</p>
       </div>
 
       <div className="card controls-card">
+        <label htmlFor="content-view-type">查看数据类型</label>
+        <select id="content-view-type" value={contentViewType} onChange={handleContentViewTypeChange}>
+          {CONTENT_VIEW_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
         <label htmlFor="content-selector">内容</label>
         {contentOptions.length ? (
           <select id="content-selector" value={activeContentId} onChange={handleContentChange}>

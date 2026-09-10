@@ -3,23 +3,34 @@
 
 search:
   queries:
-    - query: "DJI drone firmware hardware test"
+    - query: "drone GPS spoofing jamming demonstration"
       language: en
-    - query: "drone GPS spoofing jamming"
+    - query: "drone MAVLink telemetry security vulnerability"
       language: en
-    - query: "大疆 无人机 固件 飞控"
+    - query: "drone flight controller firmware hardware test"
+      language: en
+    - query: "drone lost signal flyaway GPS failure"
+      language: en
+    - query: "drone remote controller signal hijacking security"
+      language: en
+    - query: "drone teardown antenna debug port hardware"
+      language: en
+    - query: "无人机 GPS 欺骗 干扰 演示"
       language: zh
-    - query: "无人机 GPS 欺骗 干扰"
+    - query: "无人机 MAVLink 遥测 通信 安全"
       language: zh
-    - query: "drone fail crash flyaway GPS lost"
-      language: en
-  rotation_interval_seconds: 7200   # 轮换间隔（秒），应与 cron 触发周期一致（2 小时）
-  max_results: 50                   # 单次搜索候选数（1-50）
-  video_limit: 50                   # 单次最多入库视频数
+    - query: "无人机 飞控 固件 硬件 拆解"
+      language: zh
+    - query: "无人机 失联 炸机 GPS 丢失 故障"
+      language: zh
+  state_path: search-state.json     # 持久化下一条查询索引；每次定时任务轮换，非时间桶
+  max_results: 25                   # 每页候选数（1-50）
+  max_pages: 3                      # 当前查询最多翻页数；耗尽或达到 success_target 时停止
+  success_target: 1                 # 每个定时 tick 成功入库的视频数
   caption_only: true                # 只搜带字幕的视频
-  order: relevance                  # date | rating | relevance | title | videoCount | viewCount
+  order: date                       # 优先新内容，降低固定 relevance 排名的重复率
   language: en                      # 全局默认字幕语言（仅对未指定 language 的条目生效）
-  whisper_fallback: true            # 无字幕时是否本地 Whisper 转写
+  whisper_fallback: false           # caption_only 已开启；显式需要 ASR 时再开启
 
 download:
   proxy: "http://127.0.0.1:7897"    # 视频流下载代理出口；留空串表示直连

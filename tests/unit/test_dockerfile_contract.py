@@ -8,10 +8,13 @@ def test_runtime_image_includes_video_crawler_dependencies() -> None:
 
     assert "ffmpeg" in dockerfile
     assert "nodejs" in dockerfile
-    assert "COPY skills ./skills" in dockerfile
+    assert "COPY tools ./tools" in dockerfile
     assert "https://download.pytorch.org/whl/cpu" in dockerfile
     assert "python -m pip install torch" in dockerfile
-    assert "python -m pip install '.[local-embeddings,video-keyframes]'" in dockerfile
+    assert (
+        "python -m pip install '.[local-embeddings,video-keyframes,video-asr,supplier]'"
+        in dockerfile
+    )
     assert "EMBEDDING_PROVIDER=siliconflow" in dockerfile
     assert "EMBEDDING_MODEL=BAAI/bge-m3" in dockerfile
     assert "EMBEDDING_DIMENSION=1024" in dockerfile
@@ -31,7 +34,7 @@ def test_docker_context_excludes_video_crawler_runtime_artifacts() -> None:
 def test_deploy_compose_uses_siliconflow_bge_m3() -> None:
     compose = (ROOT / "docker-compose.deploy.yml").read_text(encoding="utf-8")
 
-    assert "QDRANT_COLLECTION: content_chunks_bge_m3_v1" in compose
+    assert "QDRANT_COLLECTION: ${QDRANT_COLLECTION:-content_chunks_bge_m3_v1}" in compose
     assert "EMBEDDING_PROVIDER: siliconflow" in compose
     assert "EMBEDDING_MODEL: BAAI/bge-m3" in compose
     assert "EMBEDDING_DIMENSION: 1024" in compose

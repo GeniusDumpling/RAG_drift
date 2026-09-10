@@ -1,0 +1,18 @@
+[Unit]
+Description=Intelligence RAG video-collect container job
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=rag
+Group=rag
+WorkingDirectory=/opt/intelligence-rag
+Environment=JOB_TIMEOUT=110min
+ExecStart=/bin/bash /opt/intelligence-rag/deploy/run-job.sh video-collect
+TimeoutStartSec=120min
+TimeoutStopSec=60s
+KillMode=mixed
+StandardOutput=journal
+StandardError=journal

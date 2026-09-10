@@ -10,10 +10,10 @@ services:
       DATABASE_BROWSER_ENABLED: "true"
       API_HOST: 0.0.0.0
       API_PORT: 8000
-      DATABASE_URL: postgresql+psycopg://intelligence:intelligence@postgres:5432/intelligence_rag
-      SYNC_DATABASE_URL: postgresql+psycopg://intelligence:intelligence@postgres:5432/intelligence_rag
+      DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/intelligence_rag
+      SYNC_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/intelligence_rag
       QDRANT_URL: http://qdrant:6333
-      QDRANT_COLLECTION: content_chunks_bge_m3_v1
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-content_chunks_bge_m3_v1}
       EMBEDDING_PROVIDER: siliconflow
       EMBEDDING_MODEL: BAAI/bge-m3
       EMBEDDING_DIMENSION: 1024
@@ -38,7 +38,7 @@ services:
       qdrant:
         condition: service_started
     ports:
-      - "${APP_PORT:-8000}:8000"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8000}:8000"
     healthcheck:
       test:
         [
@@ -51,14 +51,60 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  jobs:
+    image: ${INTELLIGENCE_RAG_IMAGE:-intelligence-rag-app:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles:
+      - jobs
+    working_dir: /app
+    command: ["python", "--version"]
+    init: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/intelligence_rag
+      SYNC_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/intelligence_rag
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-content_chunks_bge_m3_v1}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      http_proxy: ${HTTP_PROXY:-}
+      https_proxy: ${HTTPS_PROXY:-}
+      ALL_PROXY: ""
+      all_proxy: ""
+      NO_PROXY: localhost,127.0.0.1,postgres,qdrant,app,jobs
+      no_proxy: localhost,127.0.0.1,postgres,qdrant,app,jobs
+      HF_HOME: /models/huggingface
+      SENTENCE_TRANSFORMERS_HOME: /models/huggingface
+      VIDEO_SEARCH_STATE_PATH: /data/video/search-state.json
+      EMBEDDING_PROVIDER: siliconflow
+      EMBEDDING_MODEL: BAAI/bge-m3
+      EMBEDDING_DIMENSION: 1024
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://api.siliconflow.cn/v1}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-${VLM_API_KEY:-}}
+    volumes:
+      - ${MODEL_CACHE_DIR:-./model-cache/huggingface}:/models/huggingface
+      - ${COLLECTOR_DATA_DIR:-./data/collector}/video-downloads:/app/tools/video-crawler/scripts/downloads
+      - ${COLLECTOR_DATA_DIR:-./data/collector}/video-state:/data/video
+      - ${COLLECTOR_DATA_DIR:-./data/collector}/whisper-cache:/app/model-cache/whisper
+      - ${COLLECTOR_DATA_DIR:-./data/collector}/supplier:/app/tools/supplier-information/search_results
+      - ${COLLECTOR_DATA_DIR:-./data/collector}/supplier-logs:/app/tools/supplier-information/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+
   postgres:
-    ports:
-      - "127.0.0.1:54329:5432"
     image: postgres:16-alpine
     container_name: intelligence-rag-postgres-deploy
     environment:
       POSTGRES_USER: intelligence
-      POSTGRES_PASSWORD: intelligence
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: intelligence_rag
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -72,8 +118,6 @@ services:
   qdrant:
     image: qdrant/qdrant:v1.12.4
     container_name: intelligence-rag-qdrant-deploy
-    ports:
-      - "127.0.0.1:6333:6333"
     volumes:
       - qdrant-data:/qdrant/storage
     restart: unless-stopped

@@ -57,7 +57,9 @@ def default_conf() -> dict[str, Any]:
 
 
 def resolve_search_state_path(conf: dict) -> Path:
-    value = str(conf_get(conf, "search", "state_path", "search-state.json") or "search-state.json")
+    value = os.environ.get("VIDEO_SEARCH_STATE_PATH") or str(
+        conf_get(conf, "search", "state_path", "search-state.json") or "search-state.json"
+    )
     path = Path(value)
     return path if path.is_absolute() else SCRIPT_DIR / path
 
@@ -109,13 +111,17 @@ def select_rotating_query(conf: dict) -> str:
 
 
 def apply_proxy(conf: dict) -> None:
-    """从 conf.yaml 注入下载代理；已存在环境变量优先。"""
-    proxy = str(conf_get(conf, "download", "proxy", "") or "").strip()
-    if proxy:
-        os.environ.setdefault("HTTPS_PROXY", proxy)
-        os.environ.setdefault("HTTP_PROXY", proxy)
-        os.environ.setdefault("https_proxy", proxy)
-        os.environ.setdefault("http_proxy", proxy)
+    """Environment (including empty/direct) wins over YAML; normalize aliases.
+
+    Precedence: HTTPS_PROXY, https_proxy, HTTP_PROXY, http_proxy,
+    ALL_PROXY, all_proxy, then download.proxy. NO_PROXY stays untouched.
+    """
+    keys = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy")
+    proxy = next((os.environ[key] for key in keys if key in os.environ), None)
+    if proxy is None:
+        proxy = str(conf_get(conf, "download", "proxy", "") or "").strip()
+    for key in keys:
+        os.environ[key] = proxy
 
 
 def resolve_keyframes_dir(conf: dict) -> Path:

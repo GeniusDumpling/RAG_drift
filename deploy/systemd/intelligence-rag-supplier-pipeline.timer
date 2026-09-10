@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule Intelligence RAG supplier-pipeline
+
+[Timer]
+OnCalendar=*-*-* 00/2:15:00
+Persistent=true
+AccuracySec=1min
+Unit=intelligence-rag-supplier-pipeline.service
+
+[Install]
+WantedBy=timers.target

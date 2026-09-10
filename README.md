@@ -1,5 +1,8 @@
 # 情报 RAG 原型
 
+部署到另一台 Linux 服务器：见 [Docker + systemd 部署指南](docs/linux-server-deployment.md)。
+包含目标机代理/端口配置、四类定时任务、持久化、镜像发布及验证步骤；无需宿主机 Python 环境。
+
 一个用于可观测开源情报 RAG 的模块化单体原型：`backend`（FastAPI）提供检索问答 API，`worker` 处理异步任务，`frontend` 为 Web 界面，外挂 PostgreSQL（事实来源）+ Qdrant（向量检索）。
 
 ## 架构总览

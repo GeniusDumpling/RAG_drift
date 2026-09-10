@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule Intelligence RAG video-collect
+
+[Timer]
+OnCalendar=*-*-* 00/2:00:00
+Persistent=true
+AccuracySec=1min
+Unit=intelligence-rag-video-collect.service
+
+[Install]
+WantedBy=timers.target

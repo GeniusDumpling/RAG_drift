@@ -2,6 +2,9 @@
 .gitignore
 .env
 .env.*
+**/.env
+**/.env.*
+**/cookies*.txt
 !.env.example
 .venv
 .venv/
@@ -29,3 +32,10 @@ skills/video-crawler/cookies*.txt
 .worktrees/
 .superpowers/
 .DS_Store
+data/
+.job-locks/
+tools/video-crawler/scripts/downloads/
+tools/video-crawler/scripts/search-state.json
+tools/supplier-information/search_results/
+tools/supplier-information/logs/
+deploy/*.env

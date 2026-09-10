@@ -7,7 +7,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../../.."
 
-PY="${PY:-$PWD/.venv/bin/python}"
+if [[ -z "${PY:-}" ]]; then
+  if [[ -x "$PWD/.venv/bin/python" ]]; then PY="$PWD/.venv/bin/python"
+  else PY="$(command -v python3 || command -v python)"; fi
+fi
 
 # 主题轮换：每 7200 秒（2 小时）切换一个，覆盖 型号/零件/漏洞/安全。
 # 注意：Discourse 全文检索对冗长组合词/含特殊字符的词命中很差（如
@@ -32,7 +35,7 @@ FORUMS="ardupilot px4"
 MAX_RESULTS=10
 
 echo "=== $(date '+%F %T') 论坛采集开始 query=$QUERY forums=$FORUMS ==="
-"$PY" "$PWD/skills/forum-crawler/scripts/discourse_ingest.py" \
+"$PY" "$PWD/tools/forum-crawler/scripts/discourse_ingest.py" \
   --query "$QUERY" \
   --forums $FORUMS \
   --max-results "$MAX_RESULTS" \

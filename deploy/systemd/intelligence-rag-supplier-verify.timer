@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule Intelligence RAG supplier-verify
+
+[Timer]
+OnCalendar=*-*-* 01/2:45:00
+Persistent=true
+AccuracySec=1min
+Unit=intelligence-rag-supplier-verify.service
+
+[Install]
+WantedBy=timers.target

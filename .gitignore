@@ -27,3 +27,6 @@ tools/video-crawler/scripts/search-state.json
 tools/supplier-information/.env
 tools/supplier-information/search_results/
 tools/supplier-information/logs/
+data/
+.job-locks/
+deploy/*.env

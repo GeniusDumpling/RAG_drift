@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule Intelligence RAG discourse-collect
+
+[Timer]
+OnCalendar=*-*-* 00/2:30:00
+Persistent=true
+AccuracySec=1min
+Unit=intelligence-rag-discourse-collect.service
+
+[Install]
+WantedBy=timers.target

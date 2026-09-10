@@ -1,0 +1,35 @@
+# YouTube 视频采集参数配置
+# 约定：非敏感参数全部放本文件；API Key 等敏感值统一从仓库根目录 .env（全局）读取。
+
+search:
+  queries:
+    - query: "DJI drone firmware hardware test"
+      language: en
+    - query: "drone GPS spoofing jamming"
+      language: en
+    - query: "大疆 无人机 固件 飞控"
+      language: zh
+    - query: "无人机 GPS 欺骗 干扰"
+      language: zh
+    - query: "drone fail crash flyaway GPS lost"
+      language: en
+  rotation_interval_seconds: 7200   # 轮换间隔（秒），应与 cron 触发周期一致（2 小时）
+  max_results: 50                   # 单次搜索候选数（1-50）
+  video_limit: 50                   # 单次最多入库视频数
+  caption_only: true                # 只搜带字幕的视频
+  order: relevance                  # date | rating | relevance | title | videoCount | viewCount
+  language: en                      # 全局默认字幕语言（仅对未指定 language 的条目生效）
+  whisper_fallback: true            # 无字幕时是否本地 Whisper 转写
+
+download:
+  proxy: "http://127.0.0.1:7897"    # 视频流下载代理出口；留空串表示直连
+  keyframes_dir: downloads          # 关键帧保存根目录（相对本文件所在目录）
+
+whisper:
+  model: small                      # faster-whisper 模型（small | base | medium 等）
+  device: auto                      # auto | cuda | cpu
+  model_cache: model-cache/whisper  # 模型缓存目录（相对仓库根目录）
+
+retry:
+  attempts: 2                       # 单个候选入库失败重试次数
+  delay_seconds: 3.0                # 重试间隔（秒）

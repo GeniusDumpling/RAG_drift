@@ -6,7 +6,7 @@
 是「请求头缺失」还是「出口 IP / 网络被封锁」。
 
 用法示例：
-    uv run python3 skills/video-crawler/scripts/youtube_stream_probe.py \
+    uv run python3 tools/video-crawler/scripts/youtube_stream_probe.py \
         --video-url "https://www.youtube.com/watch?v=-395AYO09T0" --json
 """
 

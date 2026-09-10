@@ -40,7 +40,7 @@ description: 搜索无人机公开视频并以字幕、关键帧和 VLM 摘要�
 
 ```bash
 uv run --extra video-keyframes --extra local-embeddings python3 \
-  skills/video-crawler/scripts/youtube_transcript_evidence.py \
+  tools/video-crawler/scripts/youtube_transcript_evidence.py \
   --video-url "https://www.youtube.com/watch?v=VIDEO_ID" \
   --language en \
   --no-whisper-fallback \
@@ -53,35 +53,32 @@ uv run --extra video-keyframes --extra local-embeddings python3 \
 
 ## 搜索 + 入库全链路
 
-用 `search_and_ingest.py` 一次完成「搜索 → 去重 → 逐个入库」：
+用 `main.py` 一次完成「搜索 → 去重 → 逐个入库」。参数统一从 `scripts/conf.yaml` 读取，可用命令行覆盖；API Key 统一从仓库根目录 `.env` 读取。
 
 ```bash
 uv run --extra video-keyframes --extra local-embeddings python3 \
-  skills/video-crawler/scripts/search_and_ingest.py \
+  tools/video-crawler/scripts/main.py \
   --query "drone GPS spoofing" \
-  --caption-only \
-  --language en \
-  --video-limit 3 \
   --json
 ```
 
-- 搜索走 YouTube Data API v3，需要 `YOUTUBE_API_KEY`。
+- 搜索走 YouTube Data API v3，需要全局 `.env` 中的 `YOUTUBE_API_KEY`。
 - 逐个候选独立处理，返回 `outcome`（`success` / `duplicate` / `no_captions` / `failed`）。
-- `--video-limit` 控制入库数量，`--max-results`（1-50）控制搜索候选数。
-- 默认不做本地 ASR；如需无字幕视频回退转写，加 `--whisper-fallback`。
+- 常用参数（`max_results`、`video_limit`、`language`、`order`、`caption_only`、`queries` 主题轮换等）在 `conf.yaml` 的 `search` 段配置；`--max-results`/`--video-limit`/`--language` 等命令行可覆盖。
+- `--scheduled`：按 `conf.yaml` 的 `search.queries` + `rotation_interval_seconds` 轮换主题，供定时任务调用。
 
 ## 定时常驻采集
 
-用 `run_scheduled_collect.sh` 做常态化定时采集，由 cron 或 systemd timer 每 2 小时触发一次：单次搜索 50 候选并尽量全部入库。
+用 `run_scheduled_collect.sh` 做常态化定时采集，由 cron 或 systemd timer 周期触发；主题轮换、`max_results`/`video_limit` 等参数全部来自 `conf.yaml`。
 
 ```bash
-bash skills/video-crawler/scripts/run_scheduled_collect.sh
+bash tools/video-crawler/scripts/run_scheduled_collect.sh
 ```
 
-- 脚本内 `--max-results 50`、`--video-limit 50`，一次搜索拿满 50 候选、去重后尽量全入；YouTube 搜索配额固定 100 units/次，与入库数量无关。
-- cron 每 2 小时触发（`0 */2 * * *`）；systemd timer 用 `OnCalendar=*-*-* 0/2:00:00`，配合 `flock -n` 防任务重叠。
-- 配额：12 次/天 × 100 units = 1200 units/天，远低于默认 10,000 额度；需提速可改每小时（`0 * * * *`）。
-- 依赖香港代理出口（默认 `HTTPS_PROXY=http://127.0.0.1:7897`）和 `video-keyframes` extra（含 `curl_cffi`）。
+- 内部调用 `main.py --scheduled`，单次搜索候选数与入库上限由 `conf.yaml` 的 `search.max_results` / `search.video_limit` 控制。
+- 代理出口在 `conf.yaml` 的 `download.proxy` 配置（默认 `http://127.0.0.1:7897`）；换节点后先用 `scripts/youtube_stream_probe.py` 验证。
+- 失败自动按 `conf.yaml` 的 `retry.attempts` 重试；日志带时间戳。
+- 配额：搜索配额固定 100 units/次，与入库数量无关。
 
 ## 证据与入库约定
 

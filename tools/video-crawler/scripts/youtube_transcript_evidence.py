@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from config_loader import load_global_env
+
 YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
 _TIMESTAMP_RE = re.compile(
     r"^(?:(?P<hours>\d{1,2}):)?(?P<minutes>\d{2}):(?P<seconds>\d{2})[.,](?P<millis>\d{3})$"
@@ -330,31 +332,22 @@ def persist_keyframes(
     return saved
 
 
-def load_vlm_config(env_file: Path = Path(".env")) -> VlmConfig:
-    """Read required VLM settings from environment, falling back to a local .env file."""
-    values: dict[str, str] = {}
-    if env_file.is_file():
-        for raw_line in env_file.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            values[key.strip()] = value.strip().strip("\"'")
+def load_vlm_config() -> VlmConfig:
+    """Read required VLM settings from the global environment (.env at repo root)."""
+    load_global_env()
     resolved = {
         "VLM_BASE_URL": (
             os.environ.get("VLM_BASE_URL")
-            or values.get("VLM_BASE_URL")
             or "https://api.siliconflow.cn/v1"
         ).strip(),
-        "VLM_API_KEY": (os.environ.get("VLM_API_KEY") or values.get("VLM_API_KEY", "")).strip(),
+        "VLM_API_KEY": os.environ.get("VLM_API_KEY", "").strip(),
         "VLM_MODEL": (
             os.environ.get("VLM_MODEL")
-            or values.get("VLM_MODEL")
             or "Qwen/Qwen3-Omni-30B-A3B-Instruct"
         ).strip(),
     }
     if not resolved["VLM_API_KEY"]:
-        raise EvidenceCollectionError(".env 中必须配置 VLM_API_KEY")
+        raise EvidenceCollectionError("请在仓库根目录 .env 中配置 VLM_API_KEY")
     return VlmConfig(
         base_url=resolved["VLM_BASE_URL"],
         api_key=resolved["VLM_API_KEY"],
@@ -891,13 +884,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--keyframes-dir",
         type=Path,
         default=DEFAULT_KEYFRAME_DOWNLOADS_DIR,
-        help="关键帧保存根目录，默认 skills/video-crawler/downloads",
-    )
-    parser.add_argument(
-        "--env-file",
-        type=Path,
-        default=Path(".env"),
-        help="VLM 配置文件路径，默认 .env",
+        help="关键帧保存根目录，默认 tools/video-crawler/downloads",
     )
     parser.add_argument("--json", action="store_true", help="输出 JSON（默认）")
     return parser.parse_args(argv)
@@ -921,7 +908,7 @@ def main() -> int:
         result["keyframes"] = persist_keyframes(
             keyframes, result["video_id"], downloads_dir=args.keyframes_dir
         )
-        config = load_vlm_config(args.env_file)
+        config = load_vlm_config()
         result["video_summary"] = summarize_video_evidence_with_vlm(
             result,
             keyframes,

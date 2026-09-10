@@ -6,7 +6,7 @@
 
 用法示例：
 
-    YOUTUBE_API_KEY=... python3 skills/video-crawler/scripts/youtube_search.py \
+    YOUTUBE_API_KEY=... python3 tools/video-crawler/scripts/youtube_search.py \
         --query "DJI 飞控 固件" \
         --caption-only \
         --max-results 20 \
@@ -21,11 +21,12 @@ import json
 import os
 import re
 import sys
-from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+from config_loader import load_global_env
 
 SEARCH_ENDPOINT = "https://www.googleapis.com/youtube/v3/search"
 _VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
@@ -35,22 +36,12 @@ class SearchError(RuntimeError):
     """搜索失败或配置缺失。"""
 
 
-def load_api_key(env_file: Path = Path(".env")) -> str:
-    """优先读取环境变量 YOUTUBE_API_KEY，其次回退到 .env 文件。"""
+def load_api_key() -> str:
+    """从全局 .env（仓库根目录）读取 YOUTUBE_API_KEY。"""
+    load_global_env()
     key = os.environ.get("YOUTUBE_API_KEY", "").strip()
-    if key:
-        return key
-    if env_file.is_file():
-        for raw_line in env_file.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            name, value = line.split("=", 1)
-            if name.strip() == "YOUTUBE_API_KEY":
-                key = value.strip().strip("\"'")
-                break
     if not key:
-        raise SearchError("缺少 YOUTUBE_API_KEY（请设置环境变量或在 .env 中配置）")
+        raise SearchError("缺少 YOUTUBE_API_KEY（请在仓库根目录 .env 中配置）")
     return key
 
 
@@ -173,7 +164,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--relevance-language", default=None, help="相关性语言，如 zh、en")
     parser.add_argument("--region-code", default=None, help="地区代码，如 CN、US")
     parser.add_argument("--page-token", default=None, help="上一页返回的 next_page_token")
-    parser.add_argument("--env-file", type=Path, default=Path(".env"), help="API Key 配置文件路径")
     parser.add_argument("--json", action="store_true", help="输出 JSON（默认）")
     return parser.parse_args(argv)
 
@@ -184,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
         print("错误：--max-results 必须在 1 到 50 之间", file=sys.stderr)
         return 1
     try:
-        api_key = load_api_key(args.env_file)
+        api_key = load_api_key()
         result = search_youtube_videos(
             args.query,
             api_key=api_key,

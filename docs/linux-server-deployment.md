@@ -113,7 +113,7 @@ git clone https://github.com/GeniusDumpling/RAG_drift.git .
 git fetch origin
 read -r -p '输入包含部署改造的发布 commit 或 tag: ' RELEASE_REF
 git checkout --detach "$RELEASE_REF"
-test -f deploy/run-job.sh && test -f deploy/server.env.example && printf 'deployment files OK\n'
+test -f deploy/run-job.sh && test -f .env.example && printf 'deployment files OK\n'
 git rev-parse HEAD
 ```
 
@@ -125,7 +125,7 @@ git rev-parse HEAD
 
 ```bash
 cd /opt/intelligence-rag
-test ! -e .env && cp deploy/server.env.example .env
+test ! -e .env && cp .env.example .env
 chmod 600 .env
 openssl rand -hex 32
 nano .env

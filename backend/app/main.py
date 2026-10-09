@@ -31,6 +31,7 @@ DEFAULT_FRONTEND_DIST_DIR = _default_frontend_dist_dir()
 API_PATH_PREFIXES = (
     "/health",
     "/sources",
+    "/scheduled-tasks",
     "/jobs",
     "/runs",
     "/contents",

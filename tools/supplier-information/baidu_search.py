@@ -85,6 +85,11 @@ except ImportError:
     trafilatura = None
 
 try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    sync_playwright = None
+
+try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
@@ -226,8 +231,73 @@ def extract_baidu_landing_image_text(downloaded: str) -> str:
     return "\n\n".join(texts)
 
 
+# 阿里云 WAF 反爬 JS 挑战页特征（挑战页正文被 JS 执行 + cookie 校验遮挡，纯 HTTP 无法提取）
+WAF_MARKERS = ("aliyun_waf_aa", "acw_sc__v2", "id=\"renderData\"", "id='renderData'", "_waf_")
+
+_conf_cache = None
+
+
+def _search_conf() -> dict:
+    """模块级缓存 conf.yaml 的 search 段，避免每条 URL 都重读文件。"""
+    global _conf_cache
+    if _conf_cache is None:
+        try:
+            _conf_cache = load_conf().get("search", {}) or {}
+        except Exception:
+            _conf_cache = {}
+    return _conf_cache
+
+
+def is_waf_challenged(html: str) -> bool:
+    """判定 HTML 是否是阿里云 WAF 反爬 JS 挑战页（而非真实内容页）。"""
+    if not html:
+        return False
+    lower = html.lower()
+    return any(marker in lower for marker in WAF_MARKERS)
+
+
+def fetch_fulltext_via_browser(url: str, timeout_nav: float = 25.0) -> str:
+    """用无头浏览器（Playwright）渲染被 WAF JS 挑战 / JS 渲染 / 登录跳转的页面。
+
+    - Playwright 会自动执行挑战页的 JS（如 acw_sc__v2 种 cookie 后自动重载），拿到真实页面；
+    - 若仍停留在挑战页，防御性 reload 一次再提取；
+    - 失败不抛异常，返回空字符串。
+    """
+    if sync_playwright is None:
+        logger.warning("未安装 playwright，浏览器兜底不可用。请执行：uv sync && playwright install chromium")
+        return ""
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.goto(url, wait_until="domcontentloaded", timeout=timeout_nav * 1000)
+                try:
+                    page.wait_for_load_state("networkidle", timeout=timeout_nav * 1000)
+                except Exception:
+                    pass
+                # 挑战页可能自动重载；若仍是挑战页，防御性 reload 一次
+                for _ in range(2):
+                    if not is_waf_challenged(page.content()):
+                        break
+                    try:
+                        page.wait_for_timeout(1500)
+                        page.reload(wait_until="domcontentloaded", timeout=timeout_nav * 1000)
+                        page.wait_for_load_state("networkidle", timeout=timeout_nav * 1000)
+                    except Exception:
+                        break
+                text = page.evaluate("() => document.body ? document.body.innerText : ''") or ""
+                text = re.sub(r"\n{3,}", "\n\n", text).strip()
+                return text
+            finally:
+                browser.close()
+    except Exception as e:
+        logger.warning(f"浏览器渲染兜底失败 {url[:60]}...（{e}）")
+        return ""
+
+
 def fetch_fulltext(url: str, config=None, retries: int = 3, delay: float = 1.0) -> str:
-    """用 trafilatura 抓取网页完整正文，带指数重试。失败返回空字符串。"""
+    """用 trafilatura 抓取网页完整正文，带指数重试；失败时按配置用无头浏览器兜底。"""
     if trafilatura is None:
         return ""
     for attempt in range(1, retries + 1):
@@ -251,6 +321,14 @@ def fetch_fulltext(url: str, config=None, retries: int = 3, delay: float = 1.0) 
             logger.warning(f"抓取失败 {url[:50]}...（{e}），第 {attempt}/{retries} 次尝试")
         if attempt < retries and delay > 0:
             time.sleep(delay)
+    # trafilatura 提取失败（如遇阿里云 WAF JS 挑战 / JS 渲染 / 登录墙），按配置用无头浏览器兜底
+    if _search_conf().get("fetch_with_browser", False):
+        fallback = fetch_fulltext_via_browser(
+            url, timeout_nav=float(_search_conf().get("fetch_browser_timeout", 25))
+        )
+        if fallback and is_usable_fulltext(fallback):
+            logger.info(f"浏览器兜底抓取成功：{url[:60]}...")
+            return fallback
     return ""
 
 

@@ -15,7 +15,7 @@ import { formatErrorMessage } from '../utils/errors';
 import { safeExternalHref } from '../utils/links';
 
 const PAGE_SIZE = 50;
-const EVIDENCE_URL_PATTERN = /(https?:\/\/[^\s)\]}]+)/g;
+const EVIDENCE_URL_PATTERN = /https?:\/\/[^\s)\]}）]+/;
 
 function verificationConfidenceClass(confidence: string | null): string {
   if (confidence === '明确') return 'verification-confidence-explicit';
@@ -38,14 +38,17 @@ function ExternalLink({ href, children }: { href: string; children: string }) {
 function EvidenceText({ text }: { text: string }) {
   return (
     <pre className="evidence-pre">
-      {text.split(EVIDENCE_URL_PATTERN).map((part, index) => {
-        const href = safeExternalHref(part);
-        return href ? (
-          <a href={href} key={`${part}-${index}`} rel="noreferrer" target="_blank">
-            {part}
-          </a>
-        ) : (
-          part
+      {text.split('\n').map((line, index) => {
+        const match = line.match(EVIDENCE_URL_PATTERN);
+        const href = safeExternalHref(match?.[0]);
+        if (!match || !href || match.index === undefined) return `${line}${index < text.split('\n').length - 1 ? '\n' : ''}`;
+        const quote = line.slice(0, match.index).replace(/\s*[（(]\s*$/, '').trimEnd();
+        const suffix = line.slice(match.index + match[0].length).replace(/^\s*[）)]/, '');
+        return (
+          <Fragment key={`${href}-${index}`}>
+            <a href={href} rel="noreferrer" target="_blank">{quote || href}</a>
+            {suffix}{index < text.split('\n').length - 1 ? '\n' : ''}
+          </Fragment>
         );
       })}
     </pre>
@@ -78,30 +81,9 @@ function VerificationExpansion({
           ) : null}
           {!loading && !error
             ? verifications.map((verification) => (
-                <article className="supplier-verification-item" key={verification.id}>
-                  <div className="supplier-verification-head">
-                    <span className="badge">{verification.verdict}</span>
-                    {verification.confidence ? <span>可信度：{verification.confidence}</span> : null}
-                    {verification.supply_content ? <span>验证供应：{verification.supply_content}</span> : null}
-                  </div>
-                  {verification.evidence_urls.length ? (
-                    <div className="supplier-verification-links">
-                      {verification.evidence_urls.map((url, index) => (
-                        <ExternalLink href={url} key={url}>
-                          {index === 0
-                            ? `查看验证来源（${verification.evidence_urls.length}）`
-                            : `验证来源 ${index + 1}`}
-                        </ExternalLink>
-                      ))}
-                    </div>
-                  ) : null}
-                  {verification.evidence_md ? (
-                    <details className="snippet-expand">
-                      <summary>查看完整判定证据</summary>
-                      <EvidenceText text={verification.evidence_md} />
-                    </details>
-                  ) : null}
-                </article>
+                verification.evidence_md
+                  ? <EvidenceText key={verification.id} text={verification.evidence_md} />
+                  : <p className="muted" key={verification.id}>该验证记录未提供判定依据。</p>
               ))
             : null}
         </section>

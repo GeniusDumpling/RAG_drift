@@ -23,6 +23,8 @@ const apiMocks = vi.hoisted(() => ({
   listJobs: vi.fn(),
   listRuns: vi.fn(),
   listSources: vi.fn(),
+  listScheduledTasks: vi.fn(),
+  triggerScheduledTask: vi.fn(),
   triggerJob: vi.fn(),
 }));
 
@@ -216,24 +218,21 @@ describe('Task 11 frontend quality fixes', () => {
   });
 
   test('shows a sources loading status before the empty state', async () => {
-    const sources = deferred<Page<SourceSite>>();
-    const jobs = deferred<Page<CrawlJob>>();
-    apiMocks.listSources.mockReturnValue(sources.promise);
-    apiMocks.listJobs.mockReturnValue(jobs.promise);
+    const tasks = deferred<{ items: [] }>();
+    apiMocks.listScheduledTasks.mockReturnValue(tasks.promise);
 
     render(<SourcesPage />);
 
-    expect(screen.getByRole('status').textContent).toContain('正在加载数据源');
+    expect(screen.getByRole('status').textContent).toContain('正在加载定时采集任务');
     expect(screen.queryAllByText(EMPTY_STATE_COPY)).toHaveLength(0);
 
     await act(async () => {
-      sources.resolve(page<SourceSite>([]));
-      jobs.resolve(page<CrawlJob>([]));
-      await Promise.all([sources.promise, jobs.promise]);
+      tasks.resolve({ items: [] });
+      await tasks.promise;
     });
 
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
-    expect(screen.getByText(EMPTY_STATE_COPY)).toBeTruthy();
+    expect(screen.getByText('当前未安装定时采集任务。')).toBeTruthy();
   });
 
   test('shows a run loading status before the empty state', async () => {

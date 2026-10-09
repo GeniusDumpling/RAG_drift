@@ -25,6 +25,22 @@ import type {
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
+export type ScheduledTask = {
+  id: string; name: string; timer: string; scope: string; schedule: string;
+  timer_state: string; enabled: string; next_run: string; last_run: string;
+  service_state: string; last_result: string; exit_code: string; available: boolean;
+};
+
+export function listScheduledTasks(): Promise<{ items: ScheduledTask[] }> {
+  return request('/scheduled-tasks');
+}
+
+export function triggerScheduledTask(id: string, token: string): Promise<{ status: string }> {
+  return request(`/scheduled-tasks/${encodeURIComponent(id)}/trigger`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 function buildPath(path: string, params: Record<string, unknown> = {}): string {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {

@@ -23,6 +23,7 @@ from app.models.literature import (
     LiteratureRun as LiteratureRunModel,
 )
 from app.models.search import SearchQuery
+from app.models.supplier import SupplierRelation, SupplierVerification
 from app.schemas.database import (
     ChunkVectorStatus,
     DatabaseOverview,
@@ -52,6 +53,8 @@ ModelType = (
     | type[LiteratureRunEvent]
     | type[LiteratureRunPaper]
     | type[SearchQuery]
+    | type[SupplierRelation]
+    | type[SupplierVerification]
 )
 JsonValue = dict[str, Any] | list[Any] | str | int | float | bool | None
 
@@ -249,6 +252,36 @@ TABLE_CONFIGS: tuple[TableConfig, ...] = (
             "query_trace_json",
         ),
         searchable_columns=("raw_query", "optimized_query_text", "mode"),
+        default_sort_column="created_at",
+    ),
+    TableConfig(
+        table_name="supplier_relations",
+        label="供应关系 supplier_relations",
+        description="供应商抽取结果及当前验证状态。",
+        model=SupplierRelation,
+        preview_columns=(
+            "id", "supplier_name", "buyer_name", "supply_content", "credibility",
+            "verify_status", "seen_count", "updated_at",
+        ),
+        detail_columns=("source_urls", "created_at"),
+        searchable_columns=(
+            "supplier_name", "buyer_name", "supply_content", "credibility", "verify_status",
+        ),
+        default_sort_column="updated_at",
+    ),
+    TableConfig(
+        table_name="supplier_verifications",
+        label="供应商验证 supplier_verifications",
+        description="供应关系的历次验证判定与证据。",
+        model=SupplierVerification,
+        preview_columns=(
+            "id", "relation_id", "supplier_name", "verdict", "confidence",
+            "supply_content", "evidence_md", "verify_time", "created_at",
+        ),
+        detail_columns=("evidence_urls", "orig_source_urls", "updated_at"),
+        searchable_columns=(
+            "supplier_name", "verdict", "confidence", "supply_content", "evidence_md",
+        ),
         default_sort_column="created_at",
     ),
     TableConfig(

@@ -30,7 +30,10 @@ services:
       AGENT_TIMEOUT_SECONDS: 20
       WORKER_POLL_INTERVAL_SECONDS: 2
       WAIT_TIMEOUT_SECONDS: 90
+      SCHEDULER_SOCKET: /run/rag-scheduler/control.sock
+      SCHEDULER_TOKEN_FILE: /run/rag-scheduler/token
     volumes:
+      - ${SCHEDULER_BRIDGE_DIR:-./data/scheduler}:/run/rag-scheduler:ro
       - ${MODEL_CACHE_DIR:-./model-cache/huggingface}:/models/huggingface
     depends_on:
       postgres:

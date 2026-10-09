@@ -31,6 +31,8 @@ search:
   fetch_delay: 1.0              # 每条之间的抓取间隔（秒），避免请求过快
   fetch_retries: 3              # 单条 URL 抓取失败时的重试次数
   incremental: true             # 增量模式：只抓取/分析新增 URL，跳过 known_urls 已知库中的 URL
+  fetch_with_browser: true      # trafilatura 失败时是否用 Playwright 无头浏览器兜底（应付 WAF/JS 渲染/登录墙）
+  fetch_browser_timeout: 25     # 浏览器兜底单页导航超时（秒）
 
 # -- LLM 供应关系分析（需在 .env 配置 DEEPSEEK_API_KEY）--
 llm:
@@ -46,8 +48,8 @@ llm:
 verify:
   enabled: true                # 是否启用验证环节
   mode: unverified             # unverified=只验证未验证项（增量）| all=重验全部
-  search_limit: 20             # 百度定向搜索取的条数上限（实际只用前 fetch_limit 条）
-  fetch_limit: 10              # 每个供应商抓取全文的条数
+  search_limit: 50             # 百度定向搜索取的条数上限（实际只用前 fetch_limit 条）
+  fetch_limit: 50              # 每个供应商抓取全文的条数
   fetch_delay: 0.5             # 每条抓取间隔（秒）
   max_suppliers: 3             # 0=不限；正整数表示最多验证多少家（用于控制成本）
 

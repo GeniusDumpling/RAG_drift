@@ -313,8 +313,16 @@ async def test_database_tables_and_rows_are_whitelisted_and_searchable(
         "content_items",
         "content_chunks",
         "search_queries",
+        "supplier_relations",
+        "supplier_verifications",
+        "literature_runs",
+        "literature_run_events",
+        "literature_papers",
+        "literature_run_papers",
+        "literature_artifacts",
+        "literature_evidence",
     ]
-    assert payload["total"] == 8
+    assert payload["total"] == len(table_names)
 
     rows_response = TestClient(app).get("/database/tables/content_items/rows?q=firmware")
     assert rows_response.status_code == 200
@@ -329,6 +337,30 @@ async def test_database_tables_and_rows_are_whitelisted_and_searchable(
     missing_response = TestClient(app).get("/database/tables/users/rows")
     assert missing_response.status_code == 404
     assert _json_object(missing_response) == {"detail": "Database table not found"}
+
+
+@pytest.mark.asyncio
+async def test_supplier_tables_support_search_and_pagination(db_session: AsyncSession) -> None:
+    from app.models.supplier import SupplierRelation, SupplierVerification
+
+    relation = SupplierRelation(supplier_name="测试芯片供应商", supply_content="传感器")
+    db_session.add(relation)
+    await db_session.flush()
+    db_session.add(SupplierVerification(
+        relation_id=relation.id, supplier_name=relation.supplier_name,
+        verdict="确认", confidence="明确", evidence_md="测试证据",
+    ))
+    await db_session.commit()
+    client = TestClient(app)
+    for table in ("supplier_relations", "supplier_verifications"):
+        response = client.get(f"/database/tables/{table}/rows", params={"q": "芯片", "limit": 1})
+        assert response.status_code == 200
+        assert response.json()["total"] == 1
+        assert response.json()["items"][0]["preview"]["supplier_name"] == relation.supplier_name
+        page = client.get(f"/database/tables/{table}/rows", params={"q": "芯片", "offset": 1})
+        assert page.json()["items"] == []
+        empty = client.get(f"/database/tables/{table}/rows", params={"q": "不存在的供应商"})
+        assert empty.json()["total"] == 0
 
 
 @pytest.mark.asyncio

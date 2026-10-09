@@ -1,34 +1,31 @@
-# YouTube 视频采集参数配置
-# 约定：非敏感参数全部放本文件；API Key 等敏感值统一从仓库根目录 .env（全局）读取。
-
 search:
   queries:
     - query: "DJI drone"
       language: en
-    - query: "drone MAVLink telemetry security vulnerability"
+    - query: "drone MAVLink"
       language: en
-    - query: "drone flight controller firmware hardware test"
+    - query: "drone flight controller"
       language: en
-    - query: "drone lost signal flyaway GPS failure"
+    - query: "drone lost signal"
       language: en
-    - query: "drone remote controller signal hijacking security"
+    - query: "drone remote controller"
       language: en
-    - query: "drone teardown antenna debug port hardware"
+    - query: "drone teardown"
       language: en
     - query: "大疆无人机"
       language: zh
-    - query: "无人机 GPS 欺骗 干扰 演示"
+    - query: "无人机 GPS"
       language: zh
-    - query: "无人机 MAVLink 遥测 通信 安全"
+    - query: "无人机 MAVLink"
       language: zh
-    - query: "无人机 飞控 固件 硬件 拆解"
+    - query: "无人机 飞控"
       language: zh
-    - query: "无人机 失联 炸机 GPS 丢失 故障"
+    - query: "无人机 故障"
       language: zh
   state_path: search-state.json     # 持久化下一条查询索引；每次定时任务轮换，非时间桶
   max_results: 25                   # 每页候选数（1-50）
   max_pages: 3                      # 当前查询最多翻页数；耗尽或达到 success_target 时停止
-  success_target: 1                 # 每个定时 tick 成功入库的视频数
+  success_target: 20                # 每个定时 tick 成功入库的视频数
   caption_only: true                # 只搜带字幕的视频
   order: date                       # 优先新内容，降低固定 relevance 排名的重复率
   language: en                      # 全局默认字幕语言（仅对未指定 language 的条目生效）

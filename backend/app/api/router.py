@@ -1,6 +1,16 @@
 from fastapi import APIRouter
 
-from app.api import contents, database, health, literature, scheduled_tasks, search, sources, supplier
+from app.api import (
+    contents,
+    database,
+    health,
+    literature,
+    scheduled_tasks,
+    search,
+    sources,
+    supplier,
+    video_graph,
+)
 
 api_router = APIRouter()
 api_router.include_router(health.router)
@@ -11,3 +21,4 @@ api_router.include_router(database.router)
 api_router.include_router(literature.router)
 api_router.include_router(supplier.router)
 api_router.include_router(scheduled_tasks.router)
+api_router.include_router(video_graph.router)

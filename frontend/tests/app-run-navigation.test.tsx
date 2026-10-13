@@ -168,6 +168,7 @@ describe('App run navigation', () => {
       'AI 问答',
       '供应链',
       '文献研究',
+      '视频知识图谱',
     ]);
 
     fireEvent.click(answerButton);

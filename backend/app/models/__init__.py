@@ -10,6 +10,13 @@ from app.models.literature import (
 )
 from app.models.search import AgentCall, ContentEntityMention, Entity, SearchQuery
 from app.models.supplier import SupplierRelation, SupplierVerification
+from app.models.video_graph import (
+    VideoGraphAlias,
+    VideoGraphBuild,
+    VideoGraphEvidence,
+    VideoGraphRelation,
+    VideoGraphState,
+)
 
 __all__ = [
     "AgentCall",
@@ -32,4 +39,9 @@ __all__ = [
     "SourceSite",
     "SupplierRelation",
     "SupplierVerification",
+    "VideoGraphAlias",
+    "VideoGraphBuild",
+    "VideoGraphEvidence",
+    "VideoGraphRelation",
+    "VideoGraphState",
 ]

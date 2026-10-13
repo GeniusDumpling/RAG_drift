@@ -21,9 +21,36 @@ import type {
   SupplierRelation,
   SupplierVerification,
   UUID,
+  VideoGraphData,
+  VideoGraphEvidence,
+  VideoGraphOverview,
+  VideoGraphStatus,
 } from './types';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
+
+export function getVideoGraphOverview(): Promise<VideoGraphOverview> {
+  return request('/video-graph/overview');
+}
+
+export type VideoGraphParams = {
+  q?: string; entity_id?: UUID; content_item_id?: UUID; entity_type?: string;
+  assertion?: string; hops?: number; max_nodes?: number; max_edges?: number;
+};
+
+export function getVideoGraph(params: VideoGraphParams = {}): Promise<VideoGraphData> {
+  return request(buildPath('/video-graph/graph', params));
+}
+
+export function getVideoGraphEvidence(
+  relationId: UUID, params: { content_item_id?: UUID; assertion?: string; limit?: number; offset?: number } = {},
+): Promise<Page<VideoGraphEvidence>> {
+  return request(buildPath(`/video-graph/relations/${relationId}/evidence`, params));
+}
+
+export function getVideoGraphStatus(contentId: UUID): Promise<VideoGraphStatus> {
+  return request(`/video-graph/videos/${contentId}/status`);
+}
 
 export type ScheduledTask = {
   id: string; name: string; timer: string; scope: string; schedule: string;

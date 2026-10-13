@@ -457,3 +457,37 @@ export type SupplierOverview = {
   unverified: number;
   verify_failed: number;
 };
+export type VideoGraphNode = {
+  id: string; label: string; kind: 'entity' | 'video';
+  entity_type: string | null; content_item_id: UUID | null;
+};
+
+export type VideoGraphEdge = {
+  id: string; source: string; target: string; predicate: string;
+  kind: 'relation' | 'mention'; evidence_count: number;
+  assertions: Record<string, number>; qualifiers: Record<string, string>;
+};
+
+export type VideoGraphData = {
+  nodes: VideoGraphNode[]; edges: VideoGraphEdge[]; truncated: boolean;
+};
+
+export type VideoGraphOverview = {
+  videos: number; active_videos: number; entities: number; relations: number;
+  evidence: number; builds: Record<string, number>;
+};
+
+export type VideoGraphEvidence = {
+  id: UUID; relation_id: UUID; content_item_id: UUID; chunk_id: UUID | null;
+  title: string | null; video_url: string; quote: string;
+  start_seconds: number | null; end_seconds: number | null;
+  assertion: 'asserted' | 'uncertain' | 'negated'; confidence: number;
+  caption_source: string | null; extractor_version: string;
+};
+
+export type VideoGraphStatus = {
+  content_item_id: UUID; withdrawn: boolean; status: string;
+  active_build_id: UUID | null; source_changed: boolean;
+  assessment: { relevant: boolean; reason: string } | null;
+  attempts: number; error: string | null; transcript_chunks: number; summary_only: boolean;
+};

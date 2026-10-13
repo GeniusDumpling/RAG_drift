@@ -198,6 +198,10 @@ cd frontend && npm install && npm run dev -- --host 0.0.0.0
 python3 scripts/reindex_embeddings.py --reset-collection
 ```
 
+## 视频知识图谱（第一版）
+
+视频知识图谱第一版提供历史视频构图、增量轮询、字幕证据定位和前端浏览代码，入口位于 `tools/video-knowledge-graph/`。迁移、模型配置、使用命令及 GraphRAG 接口说明见 [视频知识图谱说明](tools/video-knowledge-graph/README.md)。
+
 ## 核心不变量
 
 - 在调用抽取 agent 之前，必须先持久化 raw pages。

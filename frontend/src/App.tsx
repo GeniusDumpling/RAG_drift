@@ -9,11 +9,12 @@ import { RunDetailPage } from './pages/RunDetailPage';
 import { SearchPage } from './pages/SearchPage';
 import { SourcesPage } from './pages/SourcesPage';
 import { SupplierPage } from './pages/SupplierPage';
+import { VideoGraphPage } from './pages/VideoGraphPage';
 
-type View = 'Dashboard' | 'Sources' | 'Runs' | 'Search' | 'Answer' | 'Content' | 'Database' | 'Literature' | 'Supplier';
+type View = 'Dashboard' | 'Sources' | 'Runs' | 'Search' | 'Answer' | 'Content' | 'Database' | 'Literature' | 'Supplier' | 'VideoGraph';
 
 const MONITORING_NAV_ITEMS: View[] = ['Dashboard', 'Sources', 'Runs', 'Content', 'Database'];
-const WORKSPACE_NAV_ITEMS: View[] = ['Search', 'Answer', 'Supplier', 'Literature'];
+const WORKSPACE_NAV_ITEMS: View[] = ['Search', 'Answer', 'Supplier', 'Literature', 'VideoGraph'];
 
 const NAV_LABELS: Record<View, string> = {
   Dashboard: '总览',
@@ -25,6 +26,7 @@ const NAV_LABELS: Record<View, string> = {
   Database: '数据库',
   Literature: '文献研究',
   Supplier: '供应链',
+  VideoGraph: '视频知识图谱',
 };
 
 export function App() {
@@ -136,6 +138,7 @@ export function App() {
           {activeView === 'Database' ? <DatabasePage /> : null}
           {activeView === 'Literature' ? <LiteratureResearchPanel /> : null}
           {activeView === 'Supplier' ? <SupplierPage /> : null}
+          {activeView === 'VideoGraph' ? <VideoGraphPage onOpenContent={openContent} /> : null}
         </main>
       </div>
     </div>

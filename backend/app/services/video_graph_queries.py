@@ -1,0 +1,463 @@
+"""Bounded graph browsing and evidence context for a future GraphRAG orchestrator."""
+
+import uuid
+from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from sqlalchemy import String, case, cast, exists, func, select
+from sqlalchemy.orm import Session
+
+from app.models.content import ContentItem
+from app.models.search import ContentEntityMention, Entity
+from app.models.video_graph import (
+    VideoGraphAlias,
+    VideoGraphBuild,
+    VideoGraphEvidence,
+    VideoGraphRelation,
+    VideoGraphState,
+)
+from app.schemas.video_graph import (
+    GraphData,
+    GraphEdge,
+    GraphEvidenceRead,
+    GraphNode,
+    GraphRetrieveRequest,
+    GraphRetrieveResponse,
+)
+from app.services.video_graph import MENTION_METHOD, load_material, normalized_name
+
+
+def active_mentions(content_id: uuid.UUID | None = None) -> Any:
+    query = (
+        select(ContentEntityMention)
+        .join(
+            VideoGraphState, VideoGraphState.content_item_id == ContentEntityMention.content_item_id
+        )
+        .where(
+            VideoGraphState.withdrawn.is_(False),
+            VideoGraphState.active_build_id.is_not(None),
+            ContentEntityMention.extraction_method == MENTION_METHOD,
+            ContentEntityMention.metadata_json["video_graph_build_id"].astext
+            == cast(VideoGraphState.active_build_id, String),
+        )
+    )
+    if content_id:
+        query = query.where(ContentEntityMention.content_item_id == content_id)
+    return query
+
+
+def active_evidence(content_id: uuid.UUID | None = None, assertion: str | None = None) -> Any:
+    query = (
+        select(VideoGraphEvidence, VideoGraphBuild, ContentItem)
+        .join(VideoGraphBuild, VideoGraphBuild.id == VideoGraphEvidence.build_id)
+        .join(VideoGraphState, VideoGraphState.active_build_id == VideoGraphBuild.id)
+        .join(ContentItem, ContentItem.id == VideoGraphBuild.content_item_id)
+        .where(
+            VideoGraphState.withdrawn.is_(False),
+            ContentItem.item_type == "video_description",
+        )
+    )
+    if content_id:
+        query = query.where(ContentItem.id == content_id)
+    if assertion:
+        query = query.where(VideoGraphEvidence.assertion == assertion)
+    return query
+
+
+def list_entities(
+    session: Session,
+    *,
+    q: str = "",
+    entity_type: str | None = None,
+    content_id: uuid.UUID | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    mentions = active_mentions(content_id).where(ContentEntityMention.entity_id == Entity.id)
+    query = select(Entity).where(exists(mentions))
+    if entity_type:
+        query = query.where(Entity.entity_type == entity_type)
+    if q.strip():
+        query = query.where(
+            exists(
+                select(VideoGraphAlias.id).where(
+                    VideoGraphAlias.entity_id == Entity.id,
+                    VideoGraphAlias.normalized_alias.contains(normalized_name(q), autoescape=True),
+                )
+            )
+        )
+    total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
+    entities = session.scalars(
+        query.order_by(Entity.canonical_name, Entity.id).offset(offset).limit(limit)
+    ).all()
+    return {
+        "items": [
+            {"id": str(e.id), "name": e.canonical_name or e.name, "entity_type": e.entity_type}
+            for e in entities
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+def relation_stats(content_id: uuid.UUID | None = None, assertion: str | None = None) -> Any:
+    evidence = (
+        active_evidence(content_id, assertion)
+        .with_only_columns(VideoGraphEvidence.relation_id, VideoGraphEvidence.assertion)
+        .subquery()
+    )
+    return (
+        select(
+            VideoGraphRelation,
+            func.count().label("evidence_count"),
+            func.sum(case((evidence.c.assertion == "asserted", 1), else_=0)).label("asserted"),
+            func.sum(case((evidence.c.assertion == "uncertain", 1), else_=0)).label("uncertain"),
+            func.sum(case((evidence.c.assertion == "negated", 1), else_=0)).label("negated"),
+        )
+        .join(evidence, evidence.c.relation_id == VideoGraphRelation.id)
+        .group_by(VideoGraphRelation.id)
+    )
+
+
+def get_graph(
+    session: Session,
+    *,
+    entity_id: uuid.UUID | None = None,
+    content_id: uuid.UUID | None = None,
+    q: str = "",
+    entity_type: str | None = None,
+    assertion: str | None = None,
+    hops: int = 1,
+    max_nodes: int = 80,
+    max_edges: int = 160,
+) -> GraphData:
+    nodes: dict[str, GraphNode] = {}
+    edges: dict[str, GraphEdge] = {}
+    truncated = False
+    if content_id:
+        item = session.get(ContentItem, content_id)
+        if item is None or item.item_type != "video_description":
+            return GraphData(nodes=[], edges=[])
+        state = session.get(VideoGraphState, content_id)
+        if state is None or state.withdrawn or state.active_build_id is None:
+            return GraphData(nodes=[], edges=[])
+        video_key = f"video:{content_id}"
+        nodes[video_key] = GraphNode(
+            id=video_key, label=item.title or "视频", kind="video", content_item_id=content_id
+        )
+    capacity = max_nodes - len(nodes)
+    if entity_id:
+        entity = session.scalar(
+            select(Entity).where(
+                Entity.id == entity_id,
+                exists(
+                    active_mentions(content_id).where(ContentEntityMention.entity_id == Entity.id)
+                ),
+            )
+        )
+        seeds = [entity] if entity is not None else []
+    else:
+        listing = list_entities(
+            session, q=q, entity_type=entity_type, content_id=content_id, limit=capacity
+        )
+        seed_ids = [uuid.UUID(e["id"]) for e in listing["items"]]
+        seeds = list(
+            session.scalars(
+                select(Entity)
+                .where(Entity.id.in_(seed_ids))
+                .order_by(Entity.canonical_name, Entity.id)
+            ).all()
+        )
+        truncated = listing["total"] > capacity
+    for entity in seeds:
+        key = str(entity.id)
+        nodes[key] = GraphNode(
+            id=key,
+            label=entity.canonical_name or entity.name,
+            kind="entity",
+            entity_type=entity.entity_type,
+        )
+    frontier = {entity.id for entity in seeds}
+    for _ in range(hops):
+        if not frontier:
+            break
+        query = (
+            relation_stats(content_id, assertion)
+            .where(
+                VideoGraphRelation.subject_id.in_(frontier)
+                | VideoGraphRelation.object_id.in_(frontier),
+            )
+            .order_by(func.count().desc(), VideoGraphRelation.id)
+            .limit(max_edges + 1)
+        )
+        rows = session.execute(query).all()
+        truncated = truncated or len(rows) > max_edges
+        new_frontier = set()
+        for relation, count, asserted, uncertain, negated in rows:
+            edge_key = str(relation.id)
+            if edge_key in edges:
+                continue
+            missing = {str(relation.subject_id), str(relation.object_id)} - nodes.keys()
+            if len(edges) >= max_edges or len(nodes) + len(missing) > max_nodes:
+                truncated = True
+                continue
+            candidates = session.scalars(
+                select(Entity).where(Entity.id.in_([uuid.UUID(k) for k in sorted(missing)]))
+            ).all()
+            if entity_type and any(entity.entity_type != entity_type for entity in candidates):
+                continue
+            for entity in candidates:
+                key = str(entity.id)
+                nodes[key] = GraphNode(
+                    id=key,
+                    label=entity.canonical_name or entity.name,
+                    kind="entity",
+                    entity_type=entity.entity_type,
+                )
+                new_frontier.add(entity.id)
+            edges[edge_key] = GraphEdge(
+                id=edge_key,
+                source=str(relation.subject_id),
+                target=str(relation.object_id),
+                predicate=relation.predicate,
+                kind="relation",
+                evidence_count=count,
+                assertions={"asserted": asserted, "uncertain": uncertain, "negated": negated},
+                qualifiers=relation.qualifiers_json,
+            )
+        frontier = new_frontier
+    if content_id:
+        mentions = session.scalars(
+            active_mentions(content_id).where(
+                ContentEntityMention.entity_id.in_(
+                    [uuid.UUID(k) for k, n in nodes.items() if n.kind == "entity"]
+                )
+            )
+        ).all()
+        for mention in mentions:
+            edge_key = f"mention:{content_id}:{mention.entity_id}"
+            if edge_key in edges:
+                edges[edge_key].evidence_count += 1
+            elif len(edges) < max_edges:
+                edges[edge_key] = GraphEdge(
+                    id=edge_key,
+                    source=f"video:{content_id}",
+                    target=str(mention.entity_id),
+                    predicate="mentions",
+                    kind="mention",
+                    evidence_count=1,
+                )
+            else:
+                truncated = True
+    return GraphData(nodes=list(nodes.values()), edges=list(edges.values()), truncated=truncated)
+
+
+def timestamp_url(url: str, seconds: float | None) -> str:
+    parsed = urlsplit(url)
+    if seconds is None or parsed.hostname not in {
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "youtu.be",
+    }:
+        return url
+    params = [(k, v) for k, v in parse_qsl(parsed.query) if k not in {"t", "start"}]
+    params.append(("t", str(int(seconds))))
+    return urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path, urlencode(params), parsed.fragment)
+    )
+
+
+def read_evidence(row: Any) -> GraphEvidenceRead:
+    evidence, build, item = row
+    return GraphEvidenceRead(
+        id=evidence.id,
+        relation_id=evidence.relation_id,
+        content_item_id=item.id,
+        chunk_id=evidence.content_chunk_id,
+        title=item.title,
+        video_url=timestamp_url(item.canonical_url, evidence.start_seconds),
+        quote=evidence.quote,
+        start_seconds=evidence.start_seconds,
+        end_seconds=evidence.end_seconds,
+        assertion=evidence.assertion,
+        confidence=evidence.confidence,
+        caption_source=evidence.caption_source,
+        extractor_version=build.extractor_version,
+    )
+
+
+def relation_evidence(
+    session: Session,
+    relation_id: uuid.UUID,
+    *,
+    content_id: uuid.UUID | None = None,
+    assertion: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    query = active_evidence(content_id, assertion).where(
+        VideoGraphEvidence.relation_id == relation_id
+    )
+    total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
+    rows = session.execute(
+        query.order_by(ContentItem.id, VideoGraphEvidence.start_seconds, VideoGraphEvidence.id)
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    return {
+        "items": [read_evidence(row) for row in rows],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+def overview(session: Session) -> dict[str, Any]:
+    videos = (
+        session.scalar(
+            select(func.count())
+            .select_from(ContentItem)
+            .where(ContentItem.item_type == "video_description")
+        )
+        or 0
+    )
+    active_videos = (
+        session.scalar(
+            select(func.count())
+            .select_from(VideoGraphState)
+            .where(
+                VideoGraphState.active_build_id.is_not(None), VideoGraphState.withdrawn.is_(False)
+            )
+        )
+        or 0
+    )
+    builds = {
+        status: count
+        for status, count in session.execute(
+            select(VideoGraphBuild.status, func.count()).group_by(VideoGraphBuild.status)
+        ).all()
+    }
+    entity_count = list_entities(session, limit=1)["total"]
+    evidence_count = (
+        session.scalar(select(func.count()).select_from(active_evidence().subquery())) or 0
+    )
+    relation_count = (
+        session.scalar(select(func.count()).select_from(relation_stats().subquery())) or 0
+    )
+    return {
+        "videos": videos,
+        "active_videos": active_videos,
+        "entities": entity_count,
+        "relations": relation_count,
+        "evidence": evidence_count,
+        "builds": builds,
+    }
+
+
+def video_status(session: Session, content_id: uuid.UUID) -> dict[str, Any] | None:
+    material = load_material(session, content_id)
+    if material is None:
+        return None
+    state = session.get(VideoGraphState, content_id)
+    active = (
+        session.get(VideoGraphBuild, state.active_build_id)
+        if state and state.active_build_id
+        else None
+    )
+    desired = (
+        session.get(VideoGraphBuild, state.desired_build_id)
+        if state and state.desired_build_id
+        else None
+    )
+    return {
+        "content_item_id": str(content_id),
+        "withdrawn": bool(state and state.withdrawn),
+        "status": "withdrawn"
+        if state and state.withdrawn
+        else desired.status
+        if desired
+        else "not_queued",
+        "active_build_id": str(active.id) if active else None,
+        "source_changed": bool(active and active.fingerprint != material.fingerprint),
+        "assessment": (active.output_json or {}).get("assessment") if active else None,
+        "attempts": desired.attempts if desired else 0,
+        "error": desired.error_message if desired else None,
+        "transcript_chunks": sum(c.evidence_type == "transcript_segment" for c in material.chunks),
+        "summary_only": bool(material.extraction_chunks)
+        and all(c.evidence_type == "video_summary" for c in material.extraction_chunks),
+    }
+
+
+def retrieve_context(session: Session, request: GraphRetrieveRequest) -> GraphRetrieveResponse:
+    # Explicit alias linking only. A future orchestrator can add vector-linked seed entities.
+    query_name = normalized_name(request.query)
+    aliases = session.execute(
+        select(VideoGraphAlias.normalized_alias, VideoGraphAlias.entity_id)
+        .where(
+            exists(
+                active_mentions(request.content_item_id).where(
+                    ContentEntityMention.entity_id == VideoGraphAlias.entity_id
+                )
+            ),
+            func.strpos(query_name, VideoGraphAlias.normalized_alias) > 0,
+        )
+        .order_by(func.length(VideoGraphAlias.normalized_alias).desc(), VideoGraphAlias.entity_id)
+        .limit(20)
+    ).all()
+    graphs = [
+        get_graph(
+            session,
+            entity_id=entity_id,
+            content_id=request.content_item_id,
+            hops=1,
+            max_nodes=50,
+            max_edges=100,
+        )
+        for entity_id in dict.fromkeys(row.entity_id for row in aliases)
+    ]
+    nodes: dict[str, GraphNode] = {}
+    edges: dict[str, GraphEdge] = {}
+    truncated = any(graph.truncated for graph in graphs)
+    for graph in graphs:
+        for node in graph.nodes:
+            if node.id not in nodes and len(nodes) >= 80:
+                truncated = True
+                continue
+            nodes[node.id] = node
+        for edge in graph.edges:
+            if edge.source in nodes and edge.target in nodes and len(edges) < 160:
+                edges[edge.id] = edge
+            else:
+                truncated = True
+    graph = GraphData(nodes=list(nodes.values()), edges=list(edges.values()), truncated=truncated)
+    relation_ids = [uuid.UUID(edge.id) for edge in graph.edges if edge.kind == "relation"]
+    rows = session.execute(
+        active_evidence(request.content_item_id)
+        .where(VideoGraphEvidence.relation_id.in_(relation_ids))
+        .order_by(VideoGraphEvidence.confidence.desc(), VideoGraphEvidence.id)
+        .limit(request.top_k * 5)
+    ).all()
+    evidence: list[GraphEvidenceRead] = []
+    blocks: list[str] = []
+    seen: set[tuple[uuid.UUID, str, str, uuid.UUID]] = set()
+    used_chars = 0
+    for row in rows:
+        entry = read_evidence(row)
+        key = (entry.content_item_id, entry.quote, entry.assertion, entry.relation_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        block = (
+            f"[{len(evidence) + 1}] {entry.title or '视频'}\nURL: {entry.video_url}\n"
+            f"陈述状态: {entry.assertion}（字幕陈述，未独立事实验证）\n原文: {entry.quote}"
+        )
+        if used_chars + len(block) + 2 > request.max_chars:
+            continue
+        evidence.append(entry)
+        blocks.append(block)
+        used_chars += len(block) + 2
+        if len(evidence) >= request.top_k:
+            break
+    return GraphRetrieveResponse(graph=graph, evidence=evidence, context="\n\n".join(blocks))

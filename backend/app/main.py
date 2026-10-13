@@ -42,6 +42,7 @@ API_PATH_PREFIXES = (
     "/literature-papers",
     "/literature-artifacts",
     "/database",
+    "/video-graph",
     "/docs",
     "/redoc",
     "/openapi.json",

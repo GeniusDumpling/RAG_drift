@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SupplierPage } from '../src/pages/SupplierPage';
@@ -71,11 +71,30 @@ const verifications = [
 ];
 
 afterEach(() => {
+  cleanup();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe('SupplierPage', () => {
+  it.each(['验证失败', '已验证', '未验证'])('shows %s when verification confidence is absent', async (status) => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/supplier/overview')) return Promise.resolve(jsonResponse(overview));
+      if (url.includes('/supplier/relations?')) return Promise.resolve(jsonResponse({
+        ...relations,
+        total: 1,
+        items: [{ ...relations.items[1], verify_status: status }],
+      }));
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    }));
+
+    render(<SupplierPage />);
+
+    expect(await screen.findByRole('button', { name: '展开候选厂商的验证记录' })).toHaveTextContent(status);
+    if (status !== '未验证') expect(screen.queryByText('未验证')).not.toBeInTheDocument();
+  });
+
   it('uses the latest verification confidence as the final table column', async () => {
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
       const url = String(input);

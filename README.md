@@ -1,5 +1,7 @@
 # 情报 RAG 原型
 
+系统整体采集与大模型分析流程、各子项进展：见 [系统总述与进展](docs/system-overview-and-progress.md)。
+
 部署到另一台 Linux 服务器：见 [Docker + systemd 部署指南](docs/linux-server-deployment.md)。
 包含目标机代理/端口配置、四类定时任务、持久化、镜像发布及验证步骤；无需宿主机 Python 环境。
 

@@ -232,7 +232,7 @@ export function SupplierPage() {
                             onClick={() => toggleVerification(relation)}
                             type="button"
                           >
-                            {expanded ? '收起验证' : relation.latest_verification_confidence || '未验证'}
+                            {expanded ? '收起验证' : relation.latest_verification_confidence || relation.verify_status}
                           </button>
                         </td>
                       </tr>

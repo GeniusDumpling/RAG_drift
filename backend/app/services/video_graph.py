@@ -15,6 +15,7 @@ from datetime import timedelta
 from typing import Any, Protocol
 
 import httpx
+from pydantic import ValidationError
 from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
@@ -32,7 +33,19 @@ from app.models.video_graph import (
     VideoGraphState,
 )
 from app.schemas.video_graph import ChunkExtraction, VideoAssessment
+from app.services.video_graph_diagnostics import describe_graph_error, graph_error_summary
+from app.services.video_graph_semantics import (
+    RelationSemanticError,
+    semantic_instructions,
+    validate_entity_semantics,
+    validate_relation_semantics,
+)
+from app.services.video_graph_semantics import (
+    normalized_name as normalized_name,
+)
 
+# Keep the default version stable: this change does not schedule historical rebuilds.
+# Existing cached outputs are preserved; rebuilding them remains an explicit operation.
 PROMPT_VERSION = "video-graph-v1"
 MENTION_METHOD = "video_graph_v1"
 LEASE_SECONDS = 300
@@ -53,10 +66,6 @@ ALIASES = {
 def digest(value: Any) -> str:
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode()).hexdigest()
-
-
-def normalized_name(value: str) -> str:
-    return " ".join(unicodedata.normalize("NFKC", value).split()).casefold()
 
 
 def canonical_name(surface: str, entity_type: str) -> str:
@@ -199,6 +208,7 @@ class DeepSeekVideoExtractor:
                 headers={"Authorization": f"Bearer {self.settings.deepseek_api_key}"},
                 json={
                     "model": self.settings.deepseek_model,
+                    "thinking": {"type": "enabled"},
                     "temperature": 0,
                     "response_format": {"type": "json_object"},
                     "messages": [
@@ -243,13 +253,15 @@ class DeepSeekVideoExtractor:
             "relations 数组，每项 subject、object（引用实体 key）、predicate、quote、"
             "assertion、confidence、qualifiers（字符串键值对象）。"
             "entity_type 仅 organization/product/component/software/protocol/technology/"
-            "method/fault；"
-            "predicate 仅 uses/contains/compatible_with/applied_to/reports_fault/mitigates，"
+            "method/fault/country/region；"
+            "predicate 仅 uses/contains/compatible_with/applied_to/reports_fault/mitigates/"
+            "used_in/located_in，"
             "方向分别为使用者到技术、整体到部件、实体到兼容对象、方法到应用对象、"
             "设备到故障、方法到缓解问题。保留型号、版本、适用条件。"
             "assertion 仅 asserted（讲述者陈述）、uncertain（推测或不确定）、negated（明确否定）；"
             "个人经验不能提升为普遍因果。confidence 是抽取把握程度，不是事实验证。"
             "无明确关系则 relations=[]；当前切片是模型摘要时，只提取实体，relations=[]。"
+            + semantic_instructions()
         )
         return ChunkExtraction.model_validate(
             self._request(
@@ -273,8 +285,10 @@ def validate_extraction(chunk: VideoChunk, extraction: ChunkExtraction) -> Chunk
     for entity in extraction.entities:
         if locate_quote(chunk.text, entity.surface_text) is None:
             raise ValueError("实体提及无法在当前切片原文中定位")
+        validate_entity_semantics(entity)
     if chunk.evidence_type != "transcript_segment":
         return extraction.model_copy(update={"relations": []})
+    entities = {entity.key: entity for entity in extraction.entities}
     for relation in extraction.relations:
         if relation.subject not in keys or relation.object not in keys:
             raise ValueError("关系引用了不存在的实体")
@@ -282,7 +296,71 @@ def validate_extraction(chunk: VideoChunk, extraction: ChunkExtraction) -> Chunk
             raise ValueError("关系证据无法在当前字幕切片中定位")
         if any(len(k) > 80 or len(v) > 500 for k, v in relation.qualifiers.items()):
             raise ValueError("关系限定条件过长")
+        validate_relation_semantics(relation, entities[relation.subject], entities[relation.object])
+        if relation.predicate in {"used_in", "located_in"}:
+            if locate_quote(relation.quote, entities[relation.object].surface_text) is None:
+                raise RelationSemanticError("地理关系证据中必须包含宾语的原文名称")
     return extraction
+
+
+def chunk_fingerprint(chunk: VideoChunk) -> str:
+    return digest({
+        "text": chunk.text, "evidence_type": chunk.evidence_type,
+        "start_seconds": chunk.start_seconds, "end_seconds": chunk.end_seconds,
+    })
+
+
+def update_coverage(output: dict[str, Any], material: VideoMaterial) -> dict[str, Any]:
+    relevant = bool(output.get("assessment", {}).get("relevant"))
+    ids = {str(c.id) for c in material.extraction_chunks} if relevant else set()
+    passed = ids & output.get("chunks", {}).keys()
+    skipped = (ids & output.get("chunk_errors", {}).keys()) - passed
+    coverage = {
+        "applicable": relevant, "total_chunks": len(ids), "passed_chunks": len(passed),
+        "skipped_chunks": len(skipped), "pending_chunks": len(ids - passed - skipped),
+        "coverage_ratio": len(passed) / len(ids) if ids else None,
+        "complete": len(passed) == len(ids),
+    }
+    output["coverage"] = coverage
+    return coverage
+
+
+def reuse_active_chunks(
+    session: Session, state: VideoGraphState, build: VideoGraphBuild, material: VideoMaterial,
+) -> None:
+    if not state.active_build_id or state.active_build_id == build.id:
+        return
+    active = session.get(VideoGraphBuild, state.active_build_id)
+    if active is None or active.extractor_version != build.extractor_version:
+        return
+    previous = active.output_json or {}
+    by_fingerprint = {
+        signature: chunk_id
+        for chunk_id, signature in previous.get("chunk_fingerprints", {}).items()
+        if chunk_id in previous.get("chunks", {})
+    }
+    output = dict(build.output_json or {})
+    chunks = dict(output.get("chunks", {}))
+    reused = dict(output.get("reused_chunks", {}))
+    fingerprints = dict(output.get("chunk_fingerprints", {}))
+    for chunk in material.extraction_chunks:
+        key, signature = str(chunk.id), chunk_fingerprint(chunk)
+        old_key = by_fingerprint.get(signature)
+        if key in chunks or old_key is None:
+            continue
+        try:
+            validated = validate_extraction(
+                chunk, ChunkExtraction.model_validate(previous["chunks"][old_key])
+            )
+        except ValueError:
+            continue
+        chunks[key] = validated.model_dump()
+        fingerprints[key] = signature
+        reused[key] = {"build_id": str(active.id), "chunk_id": old_key}
+    if reused:
+        build.output_json = {
+            **output, "chunks": chunks, "chunk_fingerprints": fingerprints, "reused_chunks": reused,
+        }
 
 
 def enqueue_videos(
@@ -291,6 +369,7 @@ def enqueue_videos(
     extractor_version: str,
     content_ids: list[uuid.UUID] | None = None,
     retry_failed: bool = False,
+    retry_partial: bool = False,
 ) -> dict[str, int]:
     """Poll all eligible source records; callers commit before any model call.
 
@@ -355,13 +434,17 @@ def enqueue_videos(
                 previous.lease_token = previous.lease_until = None
         if (
             build.status == "obsolete"
-            or (build.status == "failed" and retry_failed)
+            or (build.status in {"failed", "partial_success"} and retry_failed)
+            or (build.status == "partial_success" and retry_partial)
+            or (build.status == "partial_success" and state.active_build_id is None)
             or (build.status == "success" and state.active_build_id != build.id)
         ):
             build.status = "pending"
             build.error_message = None
             build.lease_token = None
             build.lease_until = None
+        if build.status == "pending":
+            reuse_active_chunks(session, state, build, material)
         if not material.extraction_chunks:
             counts["no_evidence"] += 1
         counts["queued" if build.status == "pending" else "unchanged"] += 1
@@ -500,6 +583,42 @@ def activate_build(
     ):
         build.status, build.lease_token, build.lease_until = "obsolete", None, None
         return "obsolete"
+    coverage = update_coverage(output, material)
+    if coverage["pending_chunks"]:
+        raise ValueError("仍有未处理的切片，不能激活图谱")
+    passed_ids = {
+        str(chunk.id) for chunk in material.extraction_chunks
+        if coverage["applicable"] and str(chunk.id) in output.get("chunks", {})
+    }
+    if coverage["applicable"] and not coverage["passed_chunks"]:
+        detail = {
+            "stage": "validation", "error_type": "ChunkValidationError",
+            "code": "all_chunks_invalid", "message": "所有切片均未通过校验，未生成新图谱",
+        }
+        output.update(last_error=detail, projection_activated=False)
+        build.output_json = output
+        build.error_message = graph_error_summary(detail)
+        build.status, build.lease_token, build.lease_until = "failed", None, None
+        return "failed"
+    status = "partial_success" if coverage["skipped_chunks"] else "success"
+    published_ids = set(output.get("published_chunk_ids", []))
+    preserve_active = status == "partial_success" and state.active_build_id is not None and (
+        state.active_build_id != build.id or not published_ids.issubset(passed_ids)
+    )
+    output.pop("last_error", None)
+    output["projection_activated"] = not preserve_active
+    build.error_message = (
+        f"部分完成：通过 {coverage['passed_chunks']}/{coverage['total_chunks']} 个切片，"
+        f"跳过 {coverage['skipped_chunks']} 个，可补跑未通过切片"
+        if status == "partial_success" else None
+    )
+    if preserve_active:
+        output["retained_active_build_id"] = str(state.active_build_id)
+        build.output_json = output
+        build.status, build.lease_token, build.lease_until = status, None, None
+        session.flush()
+        return status
+    output.pop("retained_active_build_id", None)
     session.execute(
         delete(ContentEntityMention).where(
             ContentEntityMention.content_item_id == content_id,
@@ -510,6 +629,8 @@ def activate_build(
     session.execute(delete(VideoGraphEvidence).where(VideoGraphEvidence.build_id == build_id))
     if output.get("assessment", {}).get("relevant"):
         for chunk in material.extraction_chunks:
+            if str(chunk.id) not in output.get("chunks", {}):
+                continue
             extraction = validate_extraction(
                 chunk, ChunkExtraction.model_validate(output["chunks"][str(chunk.id)])
             )
@@ -595,11 +716,13 @@ def activate_build(
                     )
                     .on_conflict_do_nothing()
                 )
+    output["published_chunk_ids"] = sorted(passed_ids)
+    output["published_coverage"] = dict(coverage)
     build.output_json = output
-    build.status, build.lease_token, build.lease_until = "success", None, None
+    build.status, build.lease_token, build.lease_until = status, None, None
     state.active_build_id = build_id
     session.flush()
-    return "success"
+    return status
 
 
 def process_next(
@@ -619,33 +742,87 @@ def process_next(
         material = load_material(session, content_id)
         output = dict(build.output_json or {})
         expected_version = build.extractor_version
+    stage = "prepare"
+    current_chunk = None
+    chunk_index = None
+    extraction = None
+    output.pop("last_error", None)
     try:
         if expected_version != extractor.version:
             raise ValueError("worker 抽取版本与任务版本不一致，请使用 scan 对齐配置")
         if material is None:
             raise LeaseLostError("源视频已删除")
         if "assessment" not in output:
+            stage = "assessment"
             assessment = (
                 extractor.assess(material)
                 if material.extraction_chunks
                 else VideoAssessment(relevant=False, reason="没有可用的字幕或摘要切片")
             )
             output["assessment"] = assessment.model_dump()
+            stage = "checkpoint"
             save_checkpoint(engine, build_id, token, output)
         output["chunks"] = dict(output.get("chunks", {}))
+        output["chunk_errors"] = dict(output.get("chunk_errors", {}))
+        output["chunk_fingerprints"] = {
+            str(chunk.id): chunk_fingerprint(chunk) for chunk in material.extraction_chunks
+        }
+        update_coverage(output, material)
+
+        def skip_chunk(exc: ValueError) -> None:
+            assert current_chunk is not None
+            key = str(current_chunk.id)
+            previous_error = output["chunk_errors"].get(key, {})
+            detail = describe_graph_error(
+                exc, stage=stage, chunk=current_chunk, chunk_index=chunk_index,
+                extraction=extraction, locate=locate_quote,
+            )
+            output["chunk_errors"][key] = {
+                **detail, "fingerprint": chunk_fingerprint(current_chunk),
+                "attempts": previous_error.get("attempts", 0) + 1,
+                "last_attempt_at": utcnow().isoformat(),
+            }
+            update_coverage(output, material)
+            save_checkpoint(engine, build_id, token, output)
+
         if output["assessment"]["relevant"]:
             chunks = material.extraction_chunks
             for index, chunk in enumerate(chunks):
-                if str(chunk.id) in output["chunks"]:
-                    continue
+                key = str(chunk.id)
+                if key in output["chunks"]:
+                    try:
+                        validate_extraction(
+                            chunk, ChunkExtraction.model_validate(output["chunks"][key])
+                        )
+                    except ValueError:
+                        del output["chunks"][key]
+                    else:
+                        output["chunk_errors"].pop(key, None)
+                        continue
+                current_chunk, chunk_index = chunk, index + 1
+                extraction = None
                 neighbors = "\n".join(
                     c.text[:500] for c in chunks[max(0, index - 1) : index + 2] if c.id != chunk.id
                 )
-                extracted = validate_extraction(
-                    chunk, extractor.extract(material, chunk, neighbors)
-                )
-                output["chunks"][str(chunk.id)] = extracted.model_dump()
+                stage = "extraction"
+                try:
+                    extraction = extractor.extract(material, chunk, neighbors)
+                except ValidationError as exc:
+                    skip_chunk(exc)
+                    continue
+                stage = "validation"
+                try:
+                    extracted = validate_extraction(chunk, extraction)
+                except ValueError as exc:
+                    skip_chunk(exc)
+                    continue
+                output["chunks"][key] = extracted.model_dump()
+                output["chunk_errors"].pop(key, None)
+                update_coverage(output, material)
+                stage = "checkpoint"
                 save_checkpoint(engine, build_id, token, output)
+        stage = "activation"
+        current_chunk, chunk_index, extraction = None, None, None
         with Session(engine) as session, session.begin():
             result = activate_build(session, build_id, token, output)
         return {
@@ -654,6 +831,12 @@ def process_next(
             "status": result,
             "assessment": output["assessment"],
             "chunks": len(output["chunks"]),
+            "coverage": output["coverage"],
+            "chunk_errors": output["chunk_errors"],
+            "projection_activated": output.get("projection_activated", False),
+            **({
+                "error": output["last_error"]["error_type"], "error_detail": output["last_error"],
+            } if "last_error" in output else {}),
         }
     except LeaseLostError:
         return {
@@ -662,14 +845,16 @@ def process_next(
             "status": "lease_lost",
         }
     except Exception as exc:
+        detail = describe_graph_error(
+            exc, stage=stage, chunk=current_chunk, chunk_index=chunk_index,
+            extraction=extraction, locate=locate_quote,
+        )
         with Session(engine) as session, session.begin():
             try:
                 build = _owned_build(session, build_id, token)
                 build.status, build.lease_token, build.lease_until = "failed", None, None
-                # Validation errors may contain model output; persist only the error class.
-                build.error_message = (
-                    f"{type(exc).__name__}: 抽取或入库失败，旧图谱仍保留；可重试任务"
-                )
+                build.error_message = graph_error_summary(detail)
+                build.output_json = {**build.output_json, "last_error": detail}
             except LeaseLostError:
                 pass
         return {
@@ -677,6 +862,7 @@ def process_next(
             "content_item_id": str(content_id),
             "status": "failed",
             "error": type(exc).__name__,
+            "error_detail": detail,
         }
 
 

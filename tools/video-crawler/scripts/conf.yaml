@@ -2,25 +2,26 @@ search:
   queries:
     - query: "DJI drone"
       language: en
-    - query: "drone MAVLink"
+    - query: "parrot drone"
       language: en
     - query: "drone flight controller"
       language: en
-    - query: "drone lost signal"
-      language: en
-    - query: "drone remote controller"
-      language: en
     - query: "drone teardown"
       language: en
+    - query: "battlefield drone"
+      language: en
+    - query: "drone vulnerability"
+      language: en
+
     - query: "大疆无人机"
       language: zh
-    - query: "无人机 GPS"
+    - query: "无人机拆解"
       language: zh
-    - query: "无人机 MAVLink"
+    - query: "无人机协议"
       language: zh
-    - query: "无人机 飞控"
+    - query: "无人机脆弱性"
       language: zh
-    - query: "无人机 故障"
+    - query: "战场无人机"
       language: zh
   state_path: search-state.json     # 持久化下一条查询索引；每次定时任务轮换，非时间桶
   max_results: 25                   # 每页候选数（1-50）

@@ -21,6 +21,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     LLM_PROVIDER=fake \
     AGENT_TIMEOUT_SECONDS=20 \
     WORKER_POLL_INTERVAL_SECONDS=2
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 WORKDIR /app
 RUN apt-get -o Acquire::Retries=5 update \
@@ -38,6 +39,8 @@ COPY tools ./tools
 RUN python -m pip install --upgrade pip \
     && python -m pip install torch --index-url https://download.pytorch.org/whl/cpu \
     && python -m pip install '.[local-embeddings,video-keyframes,video-asr,supplier]'
+RUN python -m playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=frontend-builder /frontend/dist ./frontend/dist
 COPY docker/entrypoint.sh /usr/local/bin/intelligence-rag-entrypoint

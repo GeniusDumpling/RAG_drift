@@ -45,7 +45,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "--extractor-version", default=PROMPT_VERSION, help="改动抽取规则后递增此版本"
         )
         command.add_argument(
-            "--retry-failed", action="store_true", help="将失败任务重新排队，沿用成功切片检查点"
+            "--retry-failed", action="store_true", help="重试失败及部分完成任务，复用成功切片"
+        )
+        command.add_argument(
+            "--retry-partial", action="store_true", help="仅重新排队部分完成任务，补跑未通过切片"
         )
         command.add_argument(
             "--dry-run", action="store_true", help="只读盘点，不写数据库、不调用模型"
@@ -136,6 +139,7 @@ def main(argv: list[str] | None = None) -> int:
                     extractor_version=version,
                     content_ids=args.content_id,
                     retry_failed=args.retry_failed,
+                    retry_partial=args.retry_partial,
                 )
             emit({"stage": "scan", **scan})
             if args.command == "scan":
@@ -151,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 1 if failed else 0
             # Failed jobs require an explicit retry; don't repeatedly charge for them in watch.
             args.retry_failed = False
+            args.retry_partial = False
             time.sleep(args.interval)
     except KeyboardInterrupt:
         emit({"status": "interrupted", "note": "未完成任务会在租约过期后重试"})

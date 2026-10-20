@@ -20,16 +20,13 @@ const relation = {
 function mockApi({ error = false, summaryOnly = false } = {}) {
   const fetchMock = vi.fn((input: RequestInfo | URL) => {
     const url = new URL(String(input), 'http://localhost');
-    if (url.pathname === '/video-graph/overview') return Promise.resolve(response({ videos: 1, active_videos: 1, entities: 2, relations: summaryOnly ? 0 : 1, evidence: 1, builds: {} }));
-    if (url.pathname === '/contents') return Promise.resolve(response({ items: [{ id: 'video-1', title: '视频甲', item_type: 'video_description' }], total: 1, limit: 10, offset: 0 }));
+    if (url.pathname === '/video-graph/overview') return Promise.resolve(response({ videos: 1, active_videos: 1, entities: 2, relations: summaryOnly ? 0 : 1, evidence: 1, builds: { partial_success: 1 }, partial_videos: 1,
+      chunk_coverage: { videos: 1, total_chunks: 10, passed_chunks: 8, skipped_chunks: 2, pending_chunks: 0 } }));
     if (url.pathname === '/video-graph/graph') {
       if (error) return Promise.resolve(response({ detail: '视频知识图谱尚未初始化，请执行 alembic upgrade head' }, 503));
-      const videoId = url.searchParams.get('content_item_id');
-      return Promise.resolve(response({ nodes: videoId ? [{ id: `video:${videoId}`, label: '视频甲', kind: 'video', content_item_id: videoId, entity_type: null }, ...entityNodes] : entityNodes,
+      return Promise.resolve(response({ nodes: entityNodes,
         edges: summaryOnly ? [] : [relation], truncated: false }));
     }
-    if (url.pathname.endsWith('/status')) return Promise.resolve(response({ status: 'success', withdrawn: false, active_build_id: 'build-1', source_changed: false, attempts: 1, error: null,
-      transcript_chunks: summaryOnly ? 0 : 1, summary_only: summaryOnly, assessment: { relevant: true, reason: '无人机技术视频' } }));
     if (url.pathname.endsWith('/evidence')) return Promise.resolve(response({ items: [{ id: 'ev-1', relation_id: relation.id, content_item_id: 'video-1', chunk_id: 'chunk-1', title: '视频甲',
       video_url: 'https://www.youtube.com/watch?v=abc&t=10', quote: 'PX4 uses GPS.', start_seconds: 10, end_seconds: 30,
       assertion: 'asserted', confidence: 0.8, caption_source: 'manual', extractor_version: 'v1' }], total: 1, limit: 20, offset: 0 }));
@@ -48,30 +45,37 @@ describe('VideoGraphPage', () => {
     render(<VideoGraphPage onOpenContent={openContent} />);
     fireEvent.click(await screen.findByRole('button', { name: /PX4 → GPS/ }));
     expect(await screen.findByText('PX4 uses GPS.')).toBeInTheDocument();
+    expect(screen.getByText('部分完成 1')).toBeInTheDocument();
+    expect(screen.getByText(/切片通过 8\/10/)).toHaveTextContent('跳过 2');
     expect(screen.getByRole('link', { name: /观看视频 0:10/ })).toHaveAttribute('href', 'https://www.youtube.com/watch?v=abc&t=10');
     fireEvent.click(screen.getByRole('button', { name: '内容详情' }));
     expect(openContent).toHaveBeenCalledWith('video-1');
   });
 
-  it('keeps graph and relation evidence scoped to the selected video', async () => {
+  it('browses the graph and evidence across all videos while allowing entity focus', async () => {
     const fetchMock = mockApi();
     render(<VideoGraphPage onOpenContent={vi.fn()} />);
-    fireEvent.click(await screen.findByRole('button', { name: '视频甲' }));
-    expect(await screen.findByText('处理完成')).toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: /PX4 → GPS/ }));
     await screen.findByText('PX4 uses GPS.');
     const urls = fetchMock.mock.calls.map(([input]) => new URL(String(input), 'http://localhost'));
-    expect(urls.some((url) => url.pathname === '/video-graph/graph' && url.searchParams.get('content_item_id') === 'video-1')).toBe(true);
-    expect(urls.some((url) => url.pathname.endsWith('/evidence') && url.searchParams.get('content_item_id') === 'video-1')).toBe(true);
+    expect(screen.queryByRole('complementary', { name: '按视频浏览' })).not.toBeInTheDocument();
+    expect(urls.every((url) => !url.searchParams.has('content_item_id'))).toBe(true);
+    expect(urls.some((url) => url.pathname === '/contents' || url.pathname.endsWith('/status'))).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'PX4', exact: true }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes('entity_id=px4'))).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: '取消实体聚焦' }));
+    await waitFor(() => {
+      const last = new URL(String(fetchMock.mock.calls.at(-1)?.[0]), 'http://localhost');
+      expect(last.pathname).toBe('/video-graph/graph');
+      expect(last.searchParams.has('entity_id')).toBe(false);
+      expect(last.searchParams.has('content_item_id')).toBe(false);
+    });
   });
 
-  it('explains summary-only videos without displaying technical relations', async () => {
+  it('shows entity mentions when there are no technical relations', async () => {
     mockApi({ summaryOnly: true });
     render(<VideoGraphPage onOpenContent={vi.fn()} />);
-    fireEvent.click(await screen.findByRole('button', { name: '视频甲' }));
-    expect(await screen.findByText('仅有摘要，展示实体提及。')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'PX4', exact: true })).toBeInTheDocument();
     expect(screen.getByText('暂无字幕支持的关系。')).toBeInTheDocument();
   });
 

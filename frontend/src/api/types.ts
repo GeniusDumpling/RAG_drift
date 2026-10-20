@@ -475,6 +475,11 @@ export type VideoGraphData = {
 export type VideoGraphOverview = {
   videos: number; active_videos: number; entities: number; relations: number;
   evidence: number; builds: Record<string, number>;
+  partial_videos?: number;
+  chunk_coverage?: {
+    videos: number; total_chunks: number; passed_chunks: number;
+    skipped_chunks: number; pending_chunks: number;
+  };
 };
 
 export type VideoGraphEvidence = {
@@ -490,4 +495,11 @@ export type VideoGraphStatus = {
   active_build_id: UUID | null; source_changed: boolean;
   assessment: { relevant: boolean; reason: string } | null;
   attempts: number; error: string | null; transcript_chunks: number; summary_only: boolean;
+  coverage?: {
+    applicable: boolean; total_chunks: number; passed_chunks: number;
+    skipped_chunks: number; pending_chunks: number; coverage_ratio: number | null; complete: boolean;
+  } | null;
+  skipped_chunks?: Array<{ chunk_id: UUID; chunk_index: number; code: string; message: string }>;
+  projection_activated?: boolean;
+  retained_active_build_id?: UUID | null;
 };

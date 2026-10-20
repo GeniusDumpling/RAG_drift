@@ -37,7 +37,7 @@ search:
 # -- LLM 供应关系分析（需在 .env 配置 DEEPSEEK_API_KEY）--
 llm:
   api_base: https://api.deepseek.com
-  model: deepseek-chat
+  model: deepseek-flash
   temperature: 0.2              # 分析类任务用低温度更稳定
   max_tokens: 4096              # 单次响应最大 token
   chunk_size: 10                # 每个请求分析多少条网页（分批避免超长）

@@ -47,6 +47,7 @@ literature = [
   "playwright>=1.45.0"
 ]
 supplier = [
+  "playwright==1.62.0",
   "PyYAML==6.0.3",
   "python-dotenv==1.2.2",
   "trafilatura==2.2.0"

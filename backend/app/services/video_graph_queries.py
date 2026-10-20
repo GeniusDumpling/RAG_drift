@@ -64,15 +64,12 @@ def active_evidence(content_id: uuid.UUID | None = None, assertion: str | None =
     return query
 
 
-def list_entities(
-    session: Session,
+def _matching_entities(
     *,
     q: str = "",
     entity_type: str | None = None,
     content_id: uuid.UUID | None = None,
-    limit: int = 50,
-    offset: int = 0,
-) -> dict[str, Any]:
+) -> Any:
     mentions = active_mentions(content_id).where(ContentEntityMention.entity_id == Entity.id)
     query = select(Entity).where(exists(mentions))
     if entity_type:
@@ -86,6 +83,19 @@ def list_entities(
                 )
             )
         )
+    return query
+
+
+def list_entities(
+    session: Session,
+    *,
+    q: str = "",
+    entity_type: str | None = None,
+    content_id: uuid.UUID | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    query = _matching_entities(q=q, entity_type=entity_type, content_id=content_id)
     total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
     entities = session.scalars(
         query.order_by(Entity.canonical_name, Entity.id).offset(offset).limit(limit)
@@ -146,31 +156,10 @@ def get_graph(
         nodes[video_key] = GraphNode(
             id=video_key, label=item.title or "视频", kind="video", content_item_id=content_id
         )
-    capacity = max_nodes - len(nodes)
-    if entity_id:
-        entity = session.scalar(
-            select(Entity).where(
-                Entity.id == entity_id,
-                exists(
-                    active_mentions(content_id).where(ContentEntityMention.entity_id == Entity.id)
-                ),
-            )
-        )
-        seeds = [entity] if entity is not None else []
-    else:
-        listing = list_entities(
-            session, q=q, entity_type=entity_type, content_id=content_id, limit=capacity
-        )
-        seed_ids = [uuid.UUID(e["id"]) for e in listing["items"]]
-        seeds = list(
-            session.scalars(
-                select(Entity)
-                .where(Entity.id.in_(seed_ids))
-                .order_by(Entity.canonical_name, Entity.id)
-            ).all()
-        )
-        truncated = listing["total"] > capacity
-    for entity in seeds:
+    matching = _matching_entities(q=q, entity_type=entity_type, content_id=content_id)
+    matching_ids = matching.with_only_columns(Entity.id)
+
+    def add_entity(entity: Entity) -> None:
         key = str(entity.id)
         nodes[key] = GraphNode(
             id=key,
@@ -178,10 +167,21 @@ def get_graph(
             kind="entity",
             entity_type=entity.entity_type,
         )
-    frontier = {entity.id for entity in seeds}
-    for _ in range(hops):
-        if not frontier:
-            break
+
+    if entity_id:
+        entity = session.scalar(
+            _matching_entities(entity_type=entity_type, content_id=content_id)
+            .where(Entity.id == entity_id)
+        )
+        if entity is None:
+            return GraphData(nodes=list(nodes.values()), edges=[])
+        add_entity(entity)
+        frontier: Any = {entity.id}
+    else:
+        # Match seeds in SQL, but reserve node capacity for complete relation pairs.
+        frontier = matching_ids
+    expansion_hops = hops if entity_id or q.strip() else 1
+    for _ in range(expansion_hops):
         query = (
             relation_stats(content_id, assertion)
             .where(
@@ -189,32 +189,35 @@ def get_graph(
                 | VideoGraphRelation.object_id.in_(frontier),
             )
             .order_by(func.count().desc(), VideoGraphRelation.id)
-            .limit(max_edges + 1)
         )
-        rows = session.execute(query).all()
-        truncated = truncated or len(rows) > max_edges
+        if entity_type:
+            typed_ids = _matching_entities(
+                entity_type=entity_type, content_id=content_id
+            ).with_only_columns(Entity.id)
+            query = query.where(
+                VideoGraphRelation.subject_id.in_(typed_ids),
+                VideoGraphRelation.object_id.in_(typed_ids),
+            )
         new_frontier = set()
-        for relation, count, asserted, uncertain, negated in rows:
+        # Stream candidates so a pair that doesn't fit cannot hide later pairs that do.
+        for relation, count, asserted, uncertain, negated in session.execute(
+            query.execution_options(yield_per=200)
+        ):
             edge_key = str(relation.id)
             if edge_key in edges:
                 continue
             missing = {str(relation.subject_id), str(relation.object_id)} - nodes.keys()
-            if len(edges) >= max_edges or len(nodes) + len(missing) > max_nodes:
+            if len(edges) >= max_edges:
+                truncated = True
+                break
+            if len(nodes) + len(missing) > max_nodes:
                 truncated = True
                 continue
             candidates = session.scalars(
                 select(Entity).where(Entity.id.in_([uuid.UUID(k) for k in sorted(missing)]))
             ).all()
-            if entity_type and any(entity.entity_type != entity_type for entity in candidates):
-                continue
             for entity in candidates:
-                key = str(entity.id)
-                nodes[key] = GraphNode(
-                    id=key,
-                    label=entity.canonical_name or entity.name,
-                    kind="entity",
-                    entity_type=entity.entity_type,
-                )
+                add_entity(entity)
                 new_frontier.add(entity.id)
             edges[edge_key] = GraphEdge(
                 id=edge_key,
@@ -227,6 +230,20 @@ def get_graph(
                 qualifiers=relation.qualifiers_json,
             )
         frontier = new_frontier
+        if not frontier:
+            break
+    if not entity_id:
+        # Isolated mentions remain browsable, after relations have claimed their nodes.
+        capacity = max_nodes - len(nodes)
+        selected_ids = [uuid.UUID(k) for k, node in nodes.items() if node.kind == "entity"]
+        remaining = session.scalars(
+            matching.where(Entity.id.not_in(selected_ids))
+            .order_by(Entity.canonical_name, Entity.id)
+            .limit(capacity + 1)
+        ).all()
+        truncated = truncated or len(remaining) > capacity
+        for entity in remaining[:capacity]:
+            add_entity(entity)
     if content_id:
         mentions = session.scalars(
             active_mentions(content_id).where(
@@ -346,6 +363,22 @@ def overview(session: Session) -> dict[str, Any]:
     relation_count = (
         session.scalar(select(func.count()).select_from(relation_stats().subquery())) or 0
     )
+    current = session.execute(
+        select(VideoGraphBuild.status, VideoGraphBuild.output_json)
+        .join(VideoGraphState, VideoGraphState.desired_build_id == VideoGraphBuild.id)
+        .where(VideoGraphState.withdrawn.is_(False))
+    ).all()
+    coverage_rows = [
+        output["coverage"] for _, output in current
+        if output.get("coverage", {}).get("applicable")
+    ]
+    chunk_coverage = {
+        "videos": len(coverage_rows),
+        **{
+            key: sum(row.get(key, 0) for row in coverage_rows)
+            for key in ("total_chunks", "passed_chunks", "skipped_chunks", "pending_chunks")
+        },
+    }
     return {
         "videos": videos,
         "active_videos": active_videos,
@@ -353,6 +386,8 @@ def overview(session: Session) -> dict[str, Any]:
         "relations": relation_count,
         "evidence": evidence_count,
         "builds": builds,
+        "partial_videos": sum(status == "partial_success" for status, _ in current),
+        "chunk_coverage": chunk_coverage,
     }
 
 
@@ -371,6 +406,8 @@ def video_status(session: Session, content_id: uuid.UUID) -> dict[str, Any] | No
         if state and state.desired_build_id
         else None
     )
+    desired_output = (desired.output_json or {}) if desired else {}
+    active_output = (active.output_json or {}) if active else {}
     return {
         "content_item_id": str(content_id),
         "withdrawn": bool(state and state.withdrawn),
@@ -381,12 +418,17 @@ def video_status(session: Session, content_id: uuid.UUID) -> dict[str, Any] | No
         else "not_queued",
         "active_build_id": str(active.id) if active else None,
         "source_changed": bool(active and active.fingerprint != material.fingerprint),
-        "assessment": (active.output_json or {}).get("assessment") if active else None,
+        "assessment": desired_output.get("assessment") or active_output.get("assessment"),
         "attempts": desired.attempts if desired else 0,
         "error": desired.error_message if desired else None,
         "transcript_chunks": sum(c.evidence_type == "transcript_segment" for c in material.chunks),
         "summary_only": bool(material.extraction_chunks)
         and all(c.evidence_type == "video_summary" for c in material.extraction_chunks),
+        "coverage": desired_output.get("coverage"),
+        "active_coverage": active_output.get("published_coverage"),
+        "skipped_chunks": list(desired_output.get("chunk_errors", {}).values()),
+        "projection_activated": desired_output.get("projection_activated", False),
+        "retained_active_build_id": desired_output.get("retained_active_build_id"),
     }
 
 

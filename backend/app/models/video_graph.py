@@ -27,7 +27,8 @@ class VideoGraphBuild(Base, UuidPrimaryKeyMixin, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("content_item_id", "fingerprint", "extractor_version"),
         CheckConstraint(
-            "status IN ('pending','running','success','failed','obsolete')", name="status_valid"
+            "status IN ('pending','running','success','partial_success','failed','obsolete')",
+            name="status_valid",
         ),
         CheckConstraint("attempts >= 0", name="attempts_non_negative"),
         Index("ix_video_graph_builds_queue", "status", "lease_until", "created_at"),

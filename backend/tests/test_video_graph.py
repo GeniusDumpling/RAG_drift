@@ -252,9 +252,11 @@ class TestVideoGraphPersistence(unittest.TestCase):
                 )
             return item.id
 
-    def queue(self, *, retry=False, version=StubExtractor.version):
+    def queue(self, *, retry=False, retry_partial=False, version=StubExtractor.version):
         with Session(self.engine) as session, session.begin():
-            return enqueue_videos(session, extractor_version=version, retry_failed=retry)
+            return enqueue_videos(
+                session, extractor_version=version, retry_failed=retry, retry_partial=retry_partial
+            )
 
     def change_transcript(self, content_id):
         with Session(self.engine) as session, session.begin():
@@ -332,6 +334,263 @@ class TestVideoGraphPersistence(unittest.TestCase):
         with Session(self.engine) as session:
             self.assertEqual(overview(session)["evidence"], 2)
 
+    def test_failure_details_persist_with_checkpoints_and_clear_after_success(self):
+        content_id = self.seed_video(chunks=2)
+        self.queue()
+        extractor = StubExtractor()
+        original_extract = extractor.extract
+
+        def invalid_second_chunk(material, chunk, context):
+            result = original_extract(material, chunk, context)
+            if extractor.calls == 2:
+                result.entities[0].surface_text = "DJI PX4"
+            return result
+
+        extractor.extract = invalid_second_chunk
+        result = process_next(self.engine, extractor)
+        self.assertEqual(result["status"], "partial_success")
+        detail = next(iter(result["chunk_errors"].values()))
+        self.assertEqual(detail["code"], "entity_surface_not_found")
+        self.assertEqual(detail["chunk_index"], 2)
+        self.assertEqual(detail["surface_text"], "DJI PX4")
+        with Session(self.engine) as session:
+            build = session.scalar(
+                select(VideoGraphBuild).where(VideoGraphBuild.content_item_id == content_id)
+            )
+            self.assertEqual(build.output_json["chunk_errors"][detail["chunk_id"]], detail)
+            self.assertEqual(len(build.output_json["chunks"]), 1)
+            self.assertIn("部分完成", build.error_message)
+        self.queue(retry=True)
+        extractor.extract = original_extract
+        self.assertEqual(process_next(self.engine, extractor)["status"], "success")
+        with Session(self.engine) as session:
+            build = session.scalar(
+                select(VideoGraphBuild).where(VideoGraphBuild.content_item_id == content_id)
+            )
+            self.assertNotIn("last_error", build.output_json)
+            self.assertIsNone(build.error_message)
+
+    def test_skips_invalid_middle_chunk_and_only_retries_that_chunk(self):
+        content_id = self.seed_video(chunks=3)
+        self.queue()
+        extractor = StubExtractor()
+        original = extractor.extract
+
+        def invalid_middle(material, chunk, context):
+            result = original(material, chunk, context)
+            if extractor.calls == 2:
+                result.entities[0].surface_text = "not in this transcript"
+            return result
+
+        extractor.extract = invalid_middle
+        result = process_next(self.engine, extractor)
+        self.assertEqual(result["status"], "partial_success")
+        self.assertEqual(extractor.calls, 3)
+        self.assertEqual(result["coverage"]["passed_chunks"], 2)
+        self.assertEqual(result["coverage"]["skipped_chunks"], 1)
+        self.assertAlmostEqual(result["coverage"]["coverage_ratio"], 2 / 3)
+        with Session(self.engine) as session:
+            self.assertEqual(overview(session)["evidence"], 2)
+            self.assertEqual(overview(session)["partial_videos"], 1)
+            self.assertEqual(video_status(session, content_id)["status"], "partial_success")
+        self.queue()
+        self.assertIsNone(process_next(self.engine, extractor))
+        self.queue(retry_partial=True)
+        extractor.extract = original
+        result = process_next(self.engine, extractor)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(extractor.calls, 4)
+        self.assertEqual(result["chunk_errors"], {})
+        self.assertTrue(result["coverage"]["complete"])
+        with Session(self.engine) as session:
+            self.assertEqual(overview(session)["evidence"], 3)
+
+    def test_all_chunks_invalid_is_failed_while_valid_empty_extractions_are_success(self):
+        self.seed_video(chunks=2)
+        self.queue()
+        extractor = StubExtractor()
+        extractor.extract = lambda *args: ChunkExtraction.model_validate({
+            "entities": [{"key": "bad", "surface_text": "missing", "entity_type": "product"}],
+        })
+        result = process_next(self.engine, extractor)
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["error_detail"]["code"], "all_chunks_invalid")
+        self.assertEqual(result["coverage"]["skipped_chunks"], 2)
+        with Session(self.engine) as session:
+            self.assertEqual(overview(session)["active_videos"], 0)
+        self.queue(retry=True)
+        extractor.extract = lambda *args: ChunkExtraction(entities=[], relations=[])
+        result = process_next(self.engine, extractor)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["coverage"]["passed_chunks"], 2)
+        self.assertEqual(result["chunk_errors"], {})
+
+    def test_schema_failure_is_skipped_but_network_failure_aborts(self):
+        self.seed_video(chunks=3)
+        self.queue()
+        extractor = StubExtractor()
+        original = extractor.extract
+
+        def schema_first(material, chunk, context):
+            result = original(material, chunk, context)
+            if extractor.calls == 1:
+                return ChunkExtraction.model_validate({"type": "json_object"})
+            return result
+
+        extractor.extract = schema_first
+        result = process_next(self.engine, extractor)
+        self.assertEqual(result["status"], "partial_success")
+        self.assertEqual(extractor.calls, 3)
+        error = next(iter(result["chunk_errors"].values()))
+        self.assertEqual(error["code"], "schema_validation_failed")
+        with Session(self.engine) as session:
+            evidence_before = overview(session)["evidence"]
+        self.queue(retry_partial=True)
+        extractor.extract = lambda *args: (_ for _ in ()).throw(RuntimeError("network failure"))
+        result = process_next(self.engine, extractor)
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["error_detail"]["code"], "model_request_error")
+        with Session(self.engine) as session:
+            self.assertEqual(overview(session)["evidence"], evidence_before)
+
+    def test_partial_new_version_keeps_previous_projection_and_reuses_unchanged_chunks(self):
+        content_id = self.seed_video(chunks=3)
+        self.queue()
+        old_result = process_next(self.engine, StubExtractor())
+        with Session(self.engine) as session, session.begin():
+            chunks = session.scalars(select(ContentChunk).where(
+                ContentChunk.content_item_id == content_id
+            ).order_by(ContentChunk.chunk_index)).all()
+            chunks[1].display_text = "PX4 uses RTK."
+        self.queue()
+        extractor = StubExtractor()
+        original = extractor.extract
+
+        def invalid_changed(material, chunk, context):
+            result = original(material, chunk, context)
+            result.entities[0].surface_text = "missing"
+            return result
+
+        extractor.extract = invalid_changed
+        result = process_next(self.engine, extractor)
+        self.assertEqual(result["status"], "partial_success")
+        self.assertEqual(extractor.calls, 1)
+        self.assertEqual(result["coverage"]["passed_chunks"], 2)
+        self.assertFalse(result["projection_activated"])
+        with Session(self.engine) as session:
+            status = video_status(session, content_id)
+            self.assertEqual(status["active_build_id"], old_result["build_id"])
+            self.assertTrue(status["source_changed"])
+            self.assertEqual(status["active_coverage"]["passed_chunks"], 3)
+            self.assertEqual(overview(session)["evidence"], 3)
+        self.queue(retry_partial=True)
+        extractor.extract = original
+        result = process_next(self.engine, extractor)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(extractor.calls, 2)
+        self.assertTrue(result["projection_activated"])
+        with Session(self.engine) as session:
+            self.assertNotEqual(
+                video_status(session, content_id)["active_build_id"], old_result["build_id"]
+            )
+            self.assertEqual(overview(session)["relations"], 2)
+
+    def test_changed_extractor_version_does_not_reuse_old_chunk_results(self):
+        self.seed_video(chunks=2)
+        self.queue()
+        process_next(self.engine, StubExtractor())
+        self.queue(version="test-v2:model")
+        extractor = StubExtractor()
+        extractor.version = "test-v2:model"
+        self.assertEqual(process_next(self.engine, extractor)["status"], "success")
+        self.assertEqual(extractor.calls, 2)
+
+    def test_retry_cannot_remove_previously_published_chunk_on_same_build(self):
+        content_id = self.seed_video(chunks=3)
+        self.queue()
+        result = process_next(self.engine, StubExtractor())
+        with Session(self.engine) as session, session.begin():
+            build = session.get(VideoGraphBuild, uuid.UUID(result["build_id"]))
+            output = dict(build.output_json)
+            chunks = dict(output["chunks"])
+            key = next(iter(chunks))
+            del chunks[key]
+            output["chunks"] = chunks
+            build.output_json = output
+            build.status = "partial_success"
+        self.queue(retry_partial=True)
+        extractor = StubExtractor()
+        extractor.extract = lambda *args: ChunkExtraction.model_validate({
+            "entities": [{"key": "bad", "surface_text": "missing", "entity_type": "product"}],
+        })
+        retried = process_next(self.engine, extractor)
+        self.assertEqual(retried["status"], "partial_success")
+        self.assertFalse(retried["projection_activated"])
+        with Session(self.engine) as session:
+            self.assertEqual(overview(session)["evidence"], 3)
+            self.assertEqual(
+                video_status(session, content_id)["active_coverage"]["passed_chunks"], 3
+            )
+
+    def test_partial_projection_can_be_withdrawn_and_restored(self):
+        content_id = self.seed_video(chunks=2)
+        self.queue()
+        extractor = StubExtractor()
+        original = extractor.extract
+
+        def invalid_last(material, chunk, context):
+            result = original(material, chunk, context)
+            if extractor.calls % 2 == 0:
+                result.entities[0].surface_text = "missing"
+            return result
+
+        extractor.extract = invalid_last
+        self.assertEqual(process_next(self.engine, extractor)["status"], "partial_success")
+        with Session(self.engine) as session, session.begin():
+            withdraw_video(session, content_id)
+        with Session(self.engine) as session:
+            self.assertEqual(overview(session)["evidence"], 0)
+        with Session(self.engine) as session, session.begin():
+            withdraw_video(session, content_id, restore=True)
+        self.queue()
+        extractor.extract = original
+        self.assertEqual(process_next(self.engine, extractor)["status"], "success")
+        self.assertEqual(extractor.calls, 3)
+
+    def test_partial_status_migration_preserves_diagnostics_on_downgrade(self):
+        content_id = self.seed_video()
+        self.queue()
+        with Session(self.engine) as session, session.begin():
+            build = session.scalar(select(VideoGraphBuild).where(
+                VideoGraphBuild.content_item_id == content_id
+            ))
+            build.status = "partial_success"
+            build.output_json = {"chunk_errors": {"one": {"code": "entity_surface_not_found"}}}
+        path = (
+            Path(__file__).resolve().parents[1]
+            / "alembic/versions/0006_video_graph_partial_success.py"
+        )
+        spec = importlib.util.spec_from_file_location("partial_migration", path)
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        with self.engine.begin() as connection:
+            with Operations.context(MigrationContext.configure(connection)):
+                migration.downgrade()
+            constraint = next(
+                c for c in inspect(connection).get_check_constraints("video_graph_builds")
+                if c["name"].endswith("status_valid")
+            )
+            self.assertNotIn("partial_success", constraint["sqltext"])
+            self.assertEqual(
+                connection.scalar(text("SELECT status FROM video_graph_builds")), "failed"
+            )
+            self.assertIsNotNone(connection.scalar(text(
+                "SELECT output_json->'chunk_errors' FROM video_graph_builds"
+            )))
+            with Operations.context(MigrationContext.configure(connection)):
+                migration.upgrade()
+            connection.execute(text("UPDATE video_graph_builds SET status='partial_success'"))
+
     def test_source_changed_during_extraction_cannot_activate(self):
         content_id = self.seed_video()
         self.queue()
@@ -404,6 +663,87 @@ class TestVideoGraphPersistence(unittest.TestCase):
             self.assertEqual(len(context.evidence), 1)
             self.assertLessEqual(len(context.context), 500)
             self.assertIn("PX4 uses GPS.", context.context)
+
+    def seed_connected_graph(self, *, noise=0, kind="transcript_segment"):
+        content_id = self.seed_video(kind=kind)
+        names = [f"AAA PX4 {index:02}" for index in range(noise)]
+        with Session(self.engine) as session, session.begin():
+            chunk = session.scalar(
+                select(ContentChunk).where(ContentChunk.content_item_id == content_id)
+            )
+            chunk.display_text = "PX4 uses GPS. GPS uses RTK. " + " ".join(names)
+        self.queue()
+        extractor = StubExtractor()
+
+        def extract(material, chunk, context):
+            result = extraction_for("PX4 uses GPS.").model_dump()
+            result["entities"].append(
+                {"key": "r", "surface_text": "RTK", "entity_type": "technology"}
+            )
+            result["entities"].extend(
+                {"key": f"n{index}", "surface_text": name, "entity_type": "product"}
+                for index, name in enumerate(names)
+            )
+            result["relations"].append(
+                {
+                    "subject": "g", "object": "r", "predicate": "uses",
+                    "quote": "GPS uses RTK.", "assertion": "uncertain",
+                    "confidence": 0.8, "qualifiers": {},
+                }
+            )
+            return ChunkExtraction.model_validate(result)
+
+        extractor.extract = extract
+        self.assertEqual(process_next(self.engine, extractor)["status"], "success")
+        return content_id
+
+    def test_relation_pairs_take_priority_over_alphabetical_isolated_entities(self):
+        content_id = self.seed_connected_graph(noise=20)
+        with Session(self.engine) as session:
+            for kwargs in ({}, {"q": "PX4"}, {"content_id": content_id}):
+                with self.subTest(filters=kwargs):
+                    bound = 3 if "content_id" in kwargs else 2
+                    graph = get_graph(session, max_nodes=bound, max_edges=3, **kwargs)
+                    relations = [edge for edge in graph.edges if edge.kind == "relation"]
+                    self.assertEqual(len(relations), 1)
+                    self.assertTrue(graph.truncated)
+                    self.assertLessEqual(len(graph.nodes), bound)
+                    self.assertLessEqual(len(graph.edges), 3)
+                    node_ids = {node.id for node in graph.nodes}
+                    self.assertTrue(all(
+                        edge.source in node_ids and edge.target in node_ids
+                        for edge in graph.edges
+                    ))
+                    self.assertFalse(any(node.label.startswith("AAA") for node in graph.nodes))
+
+    def test_adding_isolated_mentions_does_not_displace_visible_relations(self):
+        self.seed_connected_graph()
+        with Session(self.engine) as session:
+            before = get_graph(session, max_nodes=2, max_edges=1)
+        self.seed_connected_graph(noise=20, kind="video_summary")
+        with Session(self.engine) as session:
+            after = get_graph(session, max_nodes=2, max_edges=1)
+        self.assertEqual([edge.id for edge in before.edges], [edge.id for edge in after.edges])
+        self.assertEqual(len(after.edges), 1)
+
+    def test_relation_priority_preserves_focus_hops_type_and_assertion_filters(self):
+        self.seed_connected_graph(noise=20)
+        with Session(self.engine) as session:
+            px4 = uuid.UUID(
+                list_entities(session, q="PX4", entity_type="software")["items"][0]["id"]
+            )
+            one = get_graph(session, entity_id=px4, hops=1)
+            two = get_graph(session, entity_id=px4, hops=2)
+            self.assertEqual({node.label for node in one.nodes}, {"PX4", "GPS"})
+            self.assertEqual({node.label for node in two.nodes}, {"PX4", "GPS", "RTK"})
+            self.assertEqual(len(one.edges), 1)
+            self.assertEqual(len(two.edges), 2)
+            typed = get_graph(session, entity_type="technology", max_nodes=2)
+            self.assertEqual({node.label for node in typed.nodes}, {"GPS", "RTK"})
+            self.assertEqual(len(typed.edges), 1)
+            asserted = get_graph(session, assertion="asserted", max_nodes=2)
+            self.assertEqual({node.label for node in asserted.nodes}, {"PX4", "GPS"})
+            self.assertEqual(len(asserted.edges), 1)
 
     def test_empty_material_deactivates_previous_projection(self):
         content_id = self.seed_video()

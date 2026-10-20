@@ -55,7 +55,7 @@ services:
     restart: unless-stopped
 
   jobs:
-    image: ${INTELLIGENCE_RAG_IMAGE:-intelligence-rag-app:latest}
+    image: ${COLLECTOR_IMAGE:-${INTELLIGENCE_RAG_IMAGE:-intelligence-rag-app:latest}}
     build:
       context: .
       dockerfile: Dockerfile

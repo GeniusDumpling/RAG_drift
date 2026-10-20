@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
-import { getVideoGraph, getVideoGraphEvidence, getVideoGraphOverview, getVideoGraphStatus, listContents } from '../api/client';
-import type { ContentListItem, Page, VideoGraphData, VideoGraphEdge, VideoGraphEvidence, VideoGraphNode, VideoGraphOverview, VideoGraphStatus } from '../api/types';
+import { getVideoGraph, getVideoGraphEvidence, getVideoGraphOverview } from '../api/client';
+import type { Page, VideoGraphData, VideoGraphEdge, VideoGraphEvidence, VideoGraphNode, VideoGraphOverview } from '../api/types';
 import { formatErrorMessage } from '../utils/errors';
 import { safeExternalHref } from '../utils/links';
 
@@ -14,10 +14,6 @@ const PREDICATE_LABELS: Record<string, string> = {
   reports_fault: '报告故障', mitigates: '缓解', mentions: '提及',
 };
 const ASSERTION_LABELS: Record<string, string> = { asserted: '陈述', uncertain: '推测', negated: '否定' };
-const STATUS_LABELS: Record<string, string> = {
-  not_queued: '尚未构图', pending: '等待处理', running: '正在处理', success: '处理完成',
-  failed: '处理失败', obsolete: '版本已过期', withdrawn: '已撤回',
-};
 
 function secondsLabel(value: number | null): string {
   if (value === null) return '时间未知';
@@ -95,12 +91,6 @@ function GraphCanvas({ graph, focusId, selectedEdge, onNode, onEdge }: {
 export function VideoGraphPage({ onOpenContent }: { onOpenContent: (id: string) => void }) {
   const [overview, setOverview] = useState<VideoGraphOverview | null>(null);
   const [graph, setGraph] = useState<VideoGraphData | null>(null);
-  const [videos, setVideos] = useState<Page<ContentListItem> | null>(null);
-  const [videoOffset, setVideoOffset] = useState(0);
-  const [videoSearch, setVideoSearch] = useState('');
-  const [appliedVideoSearch, setAppliedVideoSearch] = useState('');
-  const [videoId, setVideoId] = useState('');
-  const [videoStatus, setVideoStatus] = useState<VideoGraphStatus | null>(null);
   const [query, setQuery] = useState('');
   const [appliedQuery, setAppliedQuery] = useState('');
   const [entityId, setEntityId] = useState('');
@@ -114,7 +104,6 @@ export function VideoGraphPage({ onOpenContent }: { onOpenContent: (id: string) 
   const [loading, setLoading] = useState(false);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
   const [error, setError] = useState('');
-  const [videoError, setVideoError] = useState('');
   const [evidenceError, setEvidenceError] = useState('');
 
   useEffect(() => {
@@ -125,53 +114,34 @@ export function VideoGraphPage({ onOpenContent }: { onOpenContent: (id: string) 
 
   useEffect(() => {
     let ignore = false;
-    setVideos(null); setVideoError('');
-    listContents({ item_type: 'video_description', q: appliedVideoSearch || undefined, limit: 10, offset: videoOffset })
-      .then((value) => { if (!ignore) setVideos(value); })
-      .catch((reason: unknown) => { if (!ignore) setVideoError(formatErrorMessage('无法加载视频', reason)); });
-    return () => { ignore = true; };
-  }, [videoOffset, appliedVideoSearch, refresh]);
-
-  useEffect(() => {
-    let ignore = false;
     setLoading(true); setError(''); setGraph(null); setSelectedEdge(null); setEvidence(null); setEvidenceOffset(0);
-    getVideoGraph({ content_item_id: videoId || undefined, entity_id: entityId || undefined,
+    getVideoGraph({ entity_id: entityId || undefined,
       q: appliedQuery || undefined, entity_type: entityType || undefined, assertion: assertion || undefined,
       hops, max_nodes: 80, max_edges: 160 })
       .then((value) => { if (!ignore) setGraph(value); })
       .catch((reason: unknown) => { if (!ignore) setError(formatErrorMessage('无法加载知识图谱', reason)); })
       .finally(() => { if (!ignore) setLoading(false); });
     return () => { ignore = true; };
-  }, [videoId, entityId, entityType, assertion, hops, appliedQuery, refresh]);
-
-  useEffect(() => {
-    let ignore = false;
-    setVideoStatus(null);
-    if (videoId) getVideoGraphStatus(videoId)
-      .then((value) => { if (!ignore) setVideoStatus(value); })
-      .catch((reason: unknown) => { if (!ignore) setVideoError(formatErrorMessage('无法读取视频构图状态', reason)); });
-    return () => { ignore = true; };
-  }, [videoId, refresh]);
+  }, [entityId, entityType, assertion, hops, appliedQuery, refresh]);
 
   useEffect(() => {
     let ignore = false;
     setEvidence(null); setEvidenceError(''); setEvidenceLoading(false);
     if (selectedEdge?.kind === 'relation') {
       setEvidenceLoading(true);
-      getVideoGraphEvidence(selectedEdge.id, { content_item_id: videoId || undefined,
+      getVideoGraphEvidence(selectedEdge.id, {
         assertion: assertion || undefined, limit: 20, offset: evidenceOffset })
         .then((value) => { if (!ignore) setEvidence(value); })
         .catch((reason: unknown) => { if (!ignore) setEvidenceError(formatErrorMessage('无法加载关系证据', reason)); })
         .finally(() => { if (!ignore) setEvidenceLoading(false); });
     }
     return () => { ignore = true; };
-  }, [selectedEdge, videoId, assertion, evidenceOffset, refresh]);
+  }, [selectedEdge, assertion, evidenceOffset, refresh]);
 
   function selectEdge(edge: VideoGraphEdge) {
-    if (edge.kind === 'mention') { if (videoId) onOpenContent(videoId); return; }
+    if (edge.kind !== 'relation') return;
     setSelectedEdge(edge); setEvidenceOffset(0);
   }
-  function selectVideo(id: string) { setVideoId(id); setEntityId(''); }
   function searchEntities(event: FormEvent) { event.preventDefault(); setAppliedQuery(query.trim()); setEntityId(''); }
   const labels = new Map(graph?.nodes.map((node) => [node.id, node.label]) ?? []);
   const relations = graph?.edges.filter((edge) => edge.kind === 'relation') ?? [];
@@ -184,28 +154,14 @@ export function VideoGraphPage({ onOpenContent }: { onOpenContent: (id: string) 
         <span>视频 {overview.active_videos} / {overview.videos}</span><span>实体 {overview.entities}</span>
         <span>关系 {overview.relations}</span><span>证据 {overview.evidence}</span>
         <span>待处理 {overview.builds.pending ?? 0} · 失败 {overview.builds.failed ?? 0}</span>
+        <span>部分完成 {overview.partial_videos ?? overview.builds.partial_success ?? 0}</span>
+        {overview.chunk_coverage && overview.chunk_coverage.videos > 0 ? <span
+          title={`已统计 ${overview.chunk_coverage.videos} 个视频的切片覆盖情况`}>
+          切片通过 {overview.chunk_coverage.passed_chunks}/{overview.chunk_coverage.total_chunks}
+          {' · '}跳过 {overview.chunk_coverage.skipped_chunks}
+          {' · '}待处理 {overview.chunk_coverage.pending_chunks}
+        </span> : null}
       </div> : null}
-      <div className="video-graph-layout">
-        <aside className="video-graph-video-list" aria-label="按视频浏览">
-          <h2>按视频浏览</h2>
-          <button type="button" className={!videoId ? 'active' : ''} onClick={() => selectVideo('')}>全部视频图谱</button>
-          <form onSubmit={(event) => { event.preventDefault(); setAppliedVideoSearch(videoSearch.trim()); setVideoOffset(0); }}>
-            <label htmlFor="graph-video-query">查找视频</label><input id="graph-video-query" value={videoSearch} onChange={(event) => setVideoSearch(event.target.value)} />
-            <button type="submit">查找</button>
-          </form>
-          {videoError ? <p role="alert" className="error-text">{videoError}</p> : null}
-          {videos ? videos.items.map((video) => <button type="button" key={video.id}
-            className={videoId === video.id ? 'active' : ''} onClick={() => selectVideo(video.id)}>{video.title || '未命名视频'}</button>) : !videoError ? <p className="muted">正在加载视频…</p> : null}
-          {videos ? <div className="button-row"><button type="button" disabled={videoOffset === 0} onClick={() => setVideoOffset(Math.max(0, videoOffset - 10))}>上一页</button>
-            <button type="button" disabled={videoOffset + 10 >= videos.total} onClick={() => setVideoOffset(videoOffset + 10)}>下一页</button></div> : null}
-          {videoStatus ? <div className="video-graph-status"><strong>{STATUS_LABELS[videoStatus.status] ?? videoStatus.status}</strong>
-            <p>字幕切片：{videoStatus.transcript_chunks}</p>
-            {videoStatus.summary_only ? <p>仅有摘要，展示实体提及。</p> : null}
-            {videoStatus.source_changed ? <p>材料已变化，当前仍显示上次成功构建的图谱。</p> : null}
-            {videoStatus.assessment ? <p>{videoStatus.assessment.reason}</p> : null}
-            {videoStatus.error ? <p className="error-text">{videoStatus.error}</p> : null}
-          </div> : null}
-        </aside>
         <div className="video-graph-workspace">
           <form className="video-graph-toolbar" onSubmit={searchEntities}>
             <label>实体名称<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如 DJI、GPS、PX4" /></label>
@@ -219,10 +175,10 @@ export function VideoGraphPage({ onOpenContent }: { onOpenContent: (id: string) 
           {loading ? <p className="status-line">正在加载图谱…</p> : null}
           {graph && graph.nodes.length === 0 ? <p className="empty-state">暂无匹配的图谱数据。视频处理完成后可在此浏览实体及字幕证据。</p> : null}
           {graph && graph.nodes.length > 0 ? <>
-            <p className="muted">{graph.nodes.length} 个节点 · {graph.edges.length} 条连接。点击实体聚焦；实线表示关系，虚线表示视频提及。</p>
-            {graph.truncated ? <p className="status-line">已限制显示范围，请搜索实体或选择视频查看局部图谱。</p> : null}
-            <GraphCanvas graph={graph} focusId={entityId || (videoId ? `video:${videoId}` : '')} selectedEdge={selectedEdge?.id ?? ''}
-              onNode={(node) => { if (node.kind === 'entity') setEntityId(node.id); else if (node.content_item_id) onOpenContent(node.content_item_id); }} onEdge={selectEdge} />
+            <p className="muted">{graph.nodes.length} 个节点 · {graph.edges.length} 条连接。点击实体聚焦，点击关系查看字幕证据。</p>
+            {graph.truncated ? <p className="status-line">已限制显示范围，请搜索实体查看局部图谱。</p> : null}
+            <GraphCanvas graph={graph} focusId={entityId} selectedEdge={selectedEdge?.id ?? ''}
+              onNode={(node) => { if (node.kind === 'entity') setEntityId(node.id); }} onEdge={selectEdge} />
           </> : null}
           <div className="video-graph-details">
             <section aria-label="关系列表"><h2>关系</h2>
@@ -254,7 +210,6 @@ export function VideoGraphPage({ onOpenContent }: { onOpenContent: (id: string) 
             </section>
           </div>
         </div>
-      </div>
     </section>
   );
 }

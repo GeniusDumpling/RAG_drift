@@ -4,10 +4,26 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 EntityType = Literal[
-    "organization", "product", "component", "software", "protocol", "technology", "method", "fault"
+    "organization",
+    "product",
+    "component",
+    "software",
+    "protocol",
+    "technology",
+    "method",
+    "fault",
+    "country",
+    "region",
 ]
 Predicate = Literal[
-    "uses", "contains", "compatible_with", "applied_to", "reports_fault", "mitigates"
+    "uses",
+    "contains",
+    "compatible_with",
+    "applied_to",
+    "reports_fault",
+    "mitigates",
+    "used_in",
+    "located_in",
 ]
 Assertion = Literal["asserted", "uncertain", "negated"]
 ShortText = Annotated[str, Field(min_length=1, max_length=255)]

@@ -6,6 +6,6 @@ const styles = readFileSync('src/styles.css', 'utf8');
 
 describe('supplier verification evidence styles', () => {
   it('keeps expanded evidence text visible on its light surface', () => {
-    expect(styles).toMatch(/\.evidence-pre\s*\{[^}]*color:\s*#161616/);
+    expect(styles).toMatch(/\.evidence-pre\s*\{[^}]*color:\s*var\(--text\)/);
   });
 });

@@ -32,6 +32,8 @@ common = importlib.import_module("discourse_common")
 storage = importlib.import_module("discourse_storage")
 ingest = importlib.import_module("discourse_ingest")
 processor = importlib.import_module("discourse_process")
+topics = importlib.import_module("discourse_topics")
+migration = importlib.import_module("discourse_migrate_topics")
 filters = importlib.import_module("discourse_filter")
 
 from app.db.base import utcnow
@@ -366,18 +368,28 @@ def test_capture_process_relationships_and_idempotent_replay(session):
     first = processor.normalize_topic(session, source, raw, policy, run)
     session.commit()
     assert first["posts_created"] == 3
-    items = {i.metadata_json["post_number"]: i for i in session.scalars(select(ContentItem))}
-    assert items[2].parent_item_id == items[1].id
-    assert items[3].parent_item_id == items[2].id
-    assert all(i.thread_root_id == items[1].id for i in items.values())
+    item = session.scalar(select(ContentItem))
+    assert first["items_created"] == 1
+    assert item.thread_root_id == item.id and item.parent_item_id is None
+    assert item.metadata_json["posts"]["103"]["reply_to_post_number"] == 2
+    assert item.metadata_json["post_count"] == 3
+    assert "Set EKF parameter value 3" in item.cleaned_text
     chunks = session.scalars(select(ContentChunk)).all()
+    assert all(c.content_item_id == item.id for c in chunks)
+    assert {c.chunk_metadata_json["post_id"] for c in chunks} == {101, 102, 103}
+    assert all(
+        c.chunk_metadata_json["canonical_url"].endswith(
+            "/" + str(c.chunk_metadata_json["post_number"])
+        )
+        for c in chunks
+    )
     assert any("Question: PX4 EKF" in c.embed_text for c in chunks)
     assert any("Parent reply: Set EKF parameter value 2" in c.embed_text for c in chunks)
     second = processor.normalize_topic(session, source, raw, policy, run)
     session.commit()
     assert second["deduped"] == 3
     assert second["chunks_created"] == 0
-    assert session.scalar(select(func.count()).select_from(ContentItem)) == 3
+    assert session.scalar(select(func.count()).select_from(ContentItem)) == 1
     assert session.scalar(select(func.count()).select_from(ContentChunk)) == len(chunks)
 
 
@@ -398,7 +410,7 @@ def test_edits_update_identity_and_retire_old_chunks(session):
     assert outcome["posts_created"] == 0
     assert outcome["posts_updated"] == 3  # Reply embedding context also changes.
     assert root.id == root_id
-    assert session.scalar(select(func.count()).select_from(ContentItem)) == 3
+    assert session.scalar(select(func.count()).select_from(ContentItem)) == 1
     assert (
         session.scalar(
             select(func.count())
@@ -427,11 +439,17 @@ def test_new_reply_old_topic_and_removed_post(session):
         session, source, snapshot(session, source, run, data), filters.load_policy(), run
     )
     session.commit()
-    old = session.scalar(
-        select(ContentItem).where(ContentItem.metadata_json["post_id"].as_integer() == 102)
+    old = session.scalar(select(ContentItem)).metadata_json["posts"]["102"]
+    assert old["source_visibility"] == "missing"
+    assert not old["rag_eligible"]
+    assert all(
+        c.embed_status == "obsolete"
+        for c in session.scalars(
+            select(ContentChunk).where(
+                ContentChunk.chunk_metadata_json["post_id"].as_integer() == 102
+            )
+        )
     )
-    assert old.metadata_json["source_visibility"] == "missing"
-    assert not old.metadata_json["rag_eligible"]
 
 
 def test_filter_mixed_categories_and_courtesy_without_losing_confirmations():
@@ -563,16 +581,16 @@ def test_removed_post_restored_rebuilds_searchable_chunks(session):
     )
     session.commit()
     assert outcome["posts_created"] == 0
-    restored = session.scalar(
-        select(ContentItem).where(ContentItem.metadata_json["post_id"].as_integer() == 102)
-    )
-    assert restored.metadata_json["rag_eligible"]
+    restored = session.scalar(select(ContentItem))
+    assert restored.metadata_json["posts"]["102"]["rag_eligible"]
     assert (
         session.scalar(
             select(func.count())
             .select_from(ContentChunk)
             .where(
-                ContentChunk.content_item_id == restored.id, ContentChunk.embed_status == "pending"
+                ContentChunk.content_item_id == restored.id,
+                ContentChunk.embed_status == "pending",
+                ContentChunk.chunk_metadata_json["post_id"].as_integer() == 102,
             )
         )
         > 0
@@ -663,3 +681,427 @@ def test_vector_limit_not_consumed_by_obsolete_rows_without_points(session):
         session.commit()
     result = processor.embed_pending(session, source.id, limit=1, indexer=FakeIndexer())
     assert result["embedded"] == 1
+
+
+def seed_legacy_topic(session, source, run, data):
+    """Represent the v2 layout with original per-post bodies and fingerprints."""
+    raw = snapshot(session, source, run, data)
+    processor.normalize_topic(session, source, raw, filters.load_policy(), run)
+    session.commit()
+    root = session.scalar(select(ContentItem))
+    original_meta = dict(root.metadata_json)
+    chunks = session.scalars(select(ContentChunk)).all()
+    old_items = {}
+    for state in original_meta["posts"].values():
+        number = state["post_number"]
+        item = (
+            root
+            if number == 1
+            else ContentItem(
+                source_site_id=source.id,
+                raw_page_id=raw.id,
+                crawl_run_id=run.id,
+                content_hash="placeholder",
+                cleaned_text="",
+                canonical_url=state["canonical_url"],
+                item_type="comment",
+                dedup_key="placeholder-" + str(number),
+            )
+        )
+        if number != 1:
+            session.add(item)
+        item.item_type = "thread" if number == 1 else "comment"
+        item.author_id = uuid.UUID(state["author_id"])
+        item.title = data["title"] if number == 1 else f'Reply {number} · {data["title"]}'
+        item.cleaned_text = state["cleaned_text"]
+        item.raw_text = state["raw_text"]
+        item.summary_text = state["raw_text"][:240]
+        item.canonical_url = state["canonical_url"]
+        item.tags = list(root.tags)
+        item.structured_by = topics.POST_CHUNK_VERSION
+        item.content_hash = processor.stable_hash(state["raw_text"])
+        item.dedup_key = processor.stable_hash(
+            f'discourse:{source.base_url}:post:{state["post_id"]}'
+        )
+        item.metadata_json = {
+            **state,
+            "forum": "px4",
+            "topic_id": data["id"],
+            "topic_filter": original_meta["topic_filter"],
+        }
+        session.flush()
+        old_items[number] = item
+    # First free all root indices, then restore each post's local indices.
+    for c in chunks:
+        c.chunk_index += 1000
+    session.flush()
+    for c in chunks:
+        meta = c.chunk_metadata_json
+        c.content_item_id = old_items[meta["post_number"]].id
+        c.chunk_index = meta["post_chunk_index"]
+        c.char_start, c.char_end = meta["post_char_start"], meta["post_char_end"]
+        c.chunk_metadata_json = {
+            key: meta[key]
+            for key in (
+                "post_id",
+                "topic_id",
+                "processing_fingerprint",
+                "chunker_version",
+                "embed_text_hash",
+                "start_char",
+                "end_char",
+            )
+        }
+    for number, item in old_items.items():
+        item.thread_root_id = root.id
+        item.parent_item_id = None if number == 1 else old_items[number - 1].id
+    session.commit()
+    return root, old_items, raw
+
+
+def test_legacy_migration_preserves_chunks_references_and_replay(session):
+    source, _, run = environment(session)
+    root, items, raw = seed_legacy_topic(session, source, run, topic(3))
+    root_id = root.id
+    event = CrawlRunEvent(
+        crawl_run_id=run.id,
+        related_content_item_id=items[3].id,
+        stage="test",
+        level="info",
+        event_type="test",
+        message="reply reference",
+    )
+    session.add(event)
+    session.commit()
+    before = migration.chunk_digest(session.scalars(select(ContentChunk)).all())
+    item, count = topics.migrate_legacy_topic(session, source, 7)
+    session.commit()
+    assert count == 2 and item.id == root_id
+    assert item.dedup_key == topics.topic_key(source.base_url, 7)
+    assert session.scalar(select(func.count()).select_from(ContentItem)) == 1
+    assert migration.chunk_digest(session.scalars(select(ContentChunk)).all()) == before
+    session.refresh(event)
+    assert event.related_content_item_id == root_id
+    assert len(item.metadata_json["posts"]) == 3
+    # Unchanged v2 fingerprints retain all old chunks on the first v3 replay.
+    outcome = processor.normalize_topic(session, source, raw, filters.load_policy(), run)
+    session.commit()
+    assert outcome["deduped"] == 3 and outcome["chunks_created"] == 0
+    assert topics.migrate_legacy_topic(session, source, 7)[1] == 0
+    assert migration.chunk_digest(session.scalars(select(ContentChunk)).all()) == before
+    for chunk in session.scalars(select(ContentChunk)):
+        meta = chunk.chunk_metadata_json
+        state = item.metadata_json["posts"][str(meta["post_id"])]
+        assert (
+            item.cleaned_text[chunk.char_start : chunk.char_end]
+            == state["cleaned_text"][meta["post_char_start"] : meta["post_char_end"]]
+        )
+
+
+def test_auto_migration_and_only_changed_reply_is_rechunked(session):
+    source, _, run = environment(session)
+    data = topic(3)
+    root, _, raw = seed_legacy_topic(session, source, run, data)
+    original = {c.id: c.embed_text for c in session.scalars(select(ContentChunk))}
+    replay = processor.normalize_topic(session, source, raw, filters.load_policy(), run)
+    session.commit()
+    assert replay["items_merged"] == 2 and replay["chunks_created"] == 0
+    data["post_stream"]["posts"][2]["raw"] += " Use the revised PX4 EKF diagnostic settings."
+    outcome = processor.normalize_topic(
+        session, source, snapshot(session, source, run, data), filters.load_policy(), run
+    )
+    session.commit()
+    assert outcome["posts_updated"] == 1
+    assert outcome["deduped"] == 2
+    assert session.scalar(select(func.count()).select_from(ContentItem)) == 1
+    assert session.scalar(select(ContentItem)).id == root.id
+    for c in session.scalars(select(ContentChunk)):
+        if c.id in original:
+            assert c.embed_text == original[c.id]
+            assert (c.embed_status == "obsolete") == (c.chunk_metadata_json["post_id"] == 103)
+
+
+def test_migration_keeps_obsolete_generations_and_filtered_posts(session):
+    source, _, run = environment(session)
+    data = topic(3)
+    data["post_stream"]["posts"][2]["raw"] = "Thank you!"
+    root, old, _ = seed_legacy_topic(session, source, run, data)
+    # Simulate an old obsolete generation whose index is higher than active chunks.
+    c = session.scalar(select(ContentChunk).where(ContentChunk.content_item_id == old[2].id))
+    obsolete = ContentChunk(
+        content_item_id=old[2].id,
+        chunk_index=50,
+        display_text="old",
+        embed_text="old",
+        char_start=0,
+        char_end=3,
+        embed_status="obsolete",
+        chunk_metadata_json=dict(c.chunk_metadata_json),
+    )
+    session.add(obsolete)
+    session.commit()
+    before = migration.chunk_digest(session.scalars(select(ContentChunk)).all())
+    topics.migrate_legacy_topic(session, source, 7)
+    session.commit()
+    assert migration.chunk_digest(session.scalars(select(ContentChunk)).all()) == before
+    assert obsolete.content_item_id == root.id
+    assert obsolete.char_start is None and obsolete.char_end is None
+    assert len(root.metadata_json["posts"]) == 3
+    assert not root.metadata_json["posts"]["103"]["rag_eligible"]
+    assert "Thank you!" in root.cleaned_text
+
+
+def test_append_reply_preserves_existing_chunks_and_topic_offsets(session):
+    source, _, run = environment(session)
+    processor.normalize_topic(
+        session, source, snapshot(session, source, run, topic(2)), filters.load_policy(), run
+    )
+    session.commit()
+    old = {c.id: (c.embed_text, c.chunk_index) for c in session.scalars(select(ContentChunk))}
+    processor.normalize_topic(
+        session, source, snapshot(session, source, run, topic(3)), filters.load_policy(), run
+    )
+    session.commit()
+    root = session.scalar(select(ContentItem))
+    assert root.metadata_json["reply_count"] == 2
+    for c in session.scalars(select(ContentChunk)):
+        if c.id in old:
+            assert (c.embed_text, c.chunk_index) == old[c.id]
+            assert c.embed_status == "pending"
+        state = root.metadata_json["posts"][str(c.chunk_metadata_json["post_id"])]
+        assert c.char_start >= state["char_start"]
+        assert c.char_end <= state["char_end"]
+
+
+def qdrant_legacy(session, source, run):
+    import hashlib
+
+    from app.services.embedding_reindex import _build_payload
+    from qdrant_client import QdrantClient
+    from qdrant_client.http import models
+
+    root, _, _ = seed_legacy_topic(session, source, run, topic(2))
+    client = QdrantClient(":memory:")
+    client.create_collection(
+        "forum-test",
+        vectors_config=models.VectorParams(
+            size=3,
+            distance=models.Distance.COSINE,
+        ),
+    )
+    url = "http://forum-test:6333"
+    for c in session.scalars(select(ContentChunk)):
+        owner = session.get(ContentItem, c.content_item_id)
+        client.upsert(
+            "forum-test",
+            points=[
+                models.PointStruct(
+                    id=str(c.id),
+                    vector=[1.0, 0.0, 0.0],
+                    payload=_build_payload(content_chunk=c, content_item=owner),
+                )
+            ],
+        )
+        c.vector_point_id = c.qdrant_point_id = str(c.id)
+        c.vector_backend = "qdrant"
+        c.embed_status = "success"
+        c.chunk_metadata_json = {
+            **c.chunk_metadata_json,
+            "vector_collection": "forum-test",
+            "vector_store_id": hashlib.sha256(url.encode()).hexdigest(),
+        }
+    session.commit()
+    return root, client, url
+
+
+def test_vector_payload_migration_is_retryable_without_embedding(session, monkeypatch):
+    from app.services import embeddings
+
+    source, _, run = environment(session)
+    root, client, url = qdrant_legacy(session, source, run)
+    ids = [str(c.id) for c in session.scalars(select(ContentChunk))]
+    before = {
+        str(p.id): p.vector for p in client.retrieve("forum-test", ids=ids, with_vectors=True)
+    }
+    topics.migrate_legacy_topic(session, source, 7)
+    session.commit()
+    monkeypatch.setattr(
+        embeddings, "build_embedding_service", lambda *a, **k: pytest.fail("model called")
+    )
+    original = client.batch_update_points
+    monkeypatch.setattr(
+        client,
+        "batch_update_points",
+        lambda **kw: (_ for _ in ()).throw(RuntimeError("temporary vector outage")),
+    )
+    failed = topics.sync_vector_payloads(session, source.id, url=url, client=client)
+    assert failed["payloads_failed"] == len(ids)
+    assert len(topics.payload_rows(session, source.id)) == len(ids)
+    monkeypatch.setattr(client, "batch_update_points", original)
+    done = topics.sync_vector_payloads(session, source.id, url=url, client=client)
+    assert done["payloads_updated"] == len(ids) and done["payloads_failed"] == 0
+    assert not topics.payload_rows(session, source.id)
+    for point in client.retrieve("forum-test", ids=ids, with_vectors=True):
+        assert point.vector == before[str(point.id)]
+        assert point.payload["content_item_id"] == str(root.id)
+        assert point.payload["canonical_url"].endswith("/" + str(point.payload["post_number"]))
+        assert point.payload["author_name"] == "user" + str(point.payload["post_number"])
+
+
+def test_migration_preview_backup_and_apply_are_idempotent(session, tmp_path, monkeypatch):
+    import gzip
+    import json
+
+    import qdrant_client
+
+    source, _, run = environment(session)
+    root, client, url = qdrant_legacy(session, source, run)
+    monkeypatch.setattr(qdrant_client, "QdrantClient", lambda **kwargs: client)
+    preview = migration.migrate_forum(session, source)
+    assert preview["legacy_items"] == 2
+    assert session.scalar(select(func.count()).select_from(ContentItem)) == 2
+    result = migration.migrate_forum(
+        session,
+        source,
+        apply=True,
+        backup_dir=tmp_path,
+        url=url,
+        store_url=url,
+    )
+    assert result["items_before"] == 2 and result["items_after"] == 1
+    assert result["payloads_failed"] == 0
+    with gzip.open(result["backup"], "rt") as f:
+        backup = json.load(f)
+    assert len(backup["items"]) == 2 and len(backup["vectors"]) > 0
+    assert (
+        migration.chunk_digest(session.scalars(select(ContentChunk)).all())
+        == backup["chunk_digest"]
+    )
+    again = migration.migrate_forum(
+        session,
+        source,
+        apply=True,
+        backup_dir=tmp_path,
+        url=url,
+        store_url=url,
+    )
+    assert again["items_merged"] == 0 and again["items_after"] == 1
+    assert session.scalar(select(ContentItem)).id == root.id
+
+
+@pytest.mark.asyncio
+async def test_retrieval_keeps_reply_author_link_and_snapshot(session):
+    from app.schemas.search import SearchFilters
+    from app.services.retrieval import _hydrate_and_rank_evidence, _SearchHit
+
+    source, _, run = environment(session)
+    raw = snapshot(session, source, run, topic(2))
+    processor.normalize_topic(session, source, raw, filters.load_policy(), run)
+    session.commit()
+    root = session.scalar(select(ContentItem))
+    c = session.scalar(
+        select(ContentChunk).where(
+            ContentChunk.chunk_metadata_json["post_id"].as_integer() == 102,
+        )
+    )
+
+    class AsyncAdapter:
+        async def execute(self, statement):
+            return session.execute(statement)
+
+    evidence = await _hydrate_and_rank_evidence(
+        AsyncAdapter(),
+        hits=[
+            _SearchHit(
+                chunk_id=c.id,
+                content_item_id=root.id,
+                score=0.9,
+                matched_by="vector",
+                vector_score=0.9,
+            )
+        ],
+        filters=SearchFilters(),
+        top_k=5,
+        snippet_terms=[],
+    )
+    assert len(evidence) == 1
+    assert evidence[0].content_item_id == root.id
+    assert evidence[0].canonical_url.endswith("/t/7/2")
+    assert evidence[0].author_name == "user2"
+    assert evidence[0].raw_page_id == raw.id
+
+
+@pytest.mark.asyncio
+async def test_old_reply_detail_id_resolves_to_topic(session, engine):
+    from app.repositories.contents import ContentsRepository
+
+    if engine.dialect.name != "postgresql":
+        pytest.skip("PostgreSQL JSONB alias lookup")
+    source, _, run = environment(session)
+    root, old, _ = seed_legacy_topic(session, source, run, topic(2))
+    old_reply_id = old[2].id
+    topics.migrate_legacy_topic(session, source, 7)
+    session.commit()
+
+    class AsyncAdapter:
+        async def execute(self, statement):
+            return session.execute(statement)
+
+        async def scalars(self, statement):
+            return session.scalars(statement)
+
+    detail = await ContentsRepository(AsyncAdapter()).get_content_detail(old_reply_id)
+    assert detail.item.id == root.id
+    assert detail.chunks
+    assert all(c.content_item_id == root.id for c in detail.chunks)
+
+
+def test_payload_query_does_not_duplicate_topic_bodies_per_chunk(session, engine):
+    from sqlalchemy import event
+
+    source, _, run = environment(session)
+    processor.normalize_topic(
+        session, source, snapshot(session, source, run, topic(20)), filters.load_policy(), run
+    )
+    for c in session.scalars(select(ContentChunk)):
+        c.chunk_metadata_json = {**c.chunk_metadata_json, "vector_payload_pending": True}
+    session.commit()
+    statements = []
+
+    def record(conn, cursor, statement, parameters, context, many):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        rows = topics.payload_rows(session, source.id)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    assert len(rows) >= 20
+    assert len(statements) == 2
+    assert "content_items.cleaned_text" not in statements[0].split("FROM")[0]
+    assert "content_items.metadata_json" not in statements[0].split("FROM")[0]
+    assert len({id(item) for _, item in rows}) == 1
+
+
+def test_migration_accepts_some_topics_already_using_topic_items(session, tmp_path):
+    source, _, run = environment(session)
+    seed_legacy_topic(session, source, run, topic(3))
+    data = topic(2, topic_id=8)
+    for p in data["post_stream"]["posts"]:
+        p["id"] += 100
+    data["post_stream"]["stream"] = [p["id"] for p in data["post_stream"]["posts"]]
+    processor.normalize_topic(
+        session, source, snapshot(session, source, run, data), filters.load_policy(), run
+    )
+    session.commit()
+    result = migration.migrate_forum(
+        session,
+        source,
+        apply=True,
+        backup_dir=tmp_path,
+        url="http://unused:6333",
+        store_url="http://unused:6333",
+    )
+    assert result["items_before"] == 4 and result["items_after"] == 2
+    assert result["items_merged"] == 2
+    assert sum(len(i.metadata_json["posts"]) for i in session.scalars(select(ContentItem))) == 5

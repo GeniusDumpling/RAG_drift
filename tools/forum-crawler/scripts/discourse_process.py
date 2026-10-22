@@ -38,9 +38,16 @@ from discourse_storage import (
     queue_summary,
     source_and_job,
 )
+from discourse_topics import (
+    LAYOUT,
+    POST_CHUNK_VERSION,
+    PROCESSOR_VERSION,
+    layout_topic,
+    migrate_legacy_topic,
+    sync_vector_payloads,
+    topic_key,
+)
 from sqlalchemy import and_, create_engine, or_, select
-
-PROCESSOR_VERSION = "discourse-v2.1"
 
 
 def obsolete_chunks(session, item, reason):
@@ -89,45 +96,57 @@ def normalize_topic(session, source, snapshot, policy, run):
     topic = payload["topic"]
     posts = sorted(topic["post_stream"]["posts"], key=lambda p: int(p["post_number"]))
     visible = set(topic["post_stream"]["stream"])
-    if {p["id"] for p in posts} != visible:
+    if {p["id"] for p in posts} != visible or len(visible) != len(posts):
         raise ValueError("Snapshot visible ID coverage is incomplete")
+    root_post = next(p for p in posts if int(p["post_number"]) == 1)
+    if len({int(p["post_number"]) for p in posts}) != len(posts):
+        raise ValueError("Duplicate post numbers in snapshot")
     forum = source.config_json["forum"]
     decision = classify_topic(forum, topic, posts, payload.get("category_path", []), policy)
     title = str(topic.get("title") or f'Topic {topic["id"]}')
     base = source.base_url.rstrip("/")
     tags = [t["name"] if isinstance(t, dict) else str(t) for t in topic.get("tags") or []]
     tags = list(dict.fromkeys([forum, *tags]))
-    root_post = next(p for p in posts if int(p["post_number"]) == 1)
     root_text = post_text(root_post)
     by_number = {int(p["post_number"]): p for p in posts}
-    items = {}
-    stats = {"posts_created": 0, "posts_updated": 0, "deduped": 0, "chunks_created": 0}
+    item, merged = migrate_legacy_topic(session, source, topic["id"])
+    created = item is None
+    if created:
+        item = ContentItem(
+            source_site_id=source.id,
+            raw_page_id=snapshot.id,
+            crawl_run_id=run.id,
+            item_type="thread",
+            canonical_url=f'{base}/t/{topic["id"]}',
+            cleaned_text="",
+            content_hash=stable_hash(""),
+            dedup_key=topic_key(base, topic["id"]),
+            metadata_json={"forum": forum, "topic_id": topic["id"], "forum_item_layout": LAYOUT},
+        )
+        session.add(item)
+        session.flush()
+    # Copy nested state so SQLAlchemy sees the complete JSON assignment below.
+    states = {key: dict(value) for key, value in item.metadata_json.get("posts", {}).items()}
+    chunks = session.scalars(
+        select(ContentChunk).where(ContentChunk.content_item_id == item.id)
+    ).all()
+    chunks_by_post = {}
+    for chunk in chunks:
+        chunks_by_post.setdefault(str(chunk.chunk_metadata_json["post_id"]), []).append(chunk)
+    next_index = max((c.chunk_index for c in chunks), default=-1) + 1
+    stats = {
+        "posts_created": 0,
+        "posts_updated": 0,
+        "deduped": 0,
+        "chunks_created": 0,
+        "items_created": int(created),
+        "items_merged": merged,
+    }
     for post in posts:
         pid = int(post["id"])
+        key = str(pid)
         number = int(post["post_number"])
-        key = stable_hash(f"discourse:{base}:post:{pid}")
-        candidates = session.scalars(
-            select(ContentItem)
-            .where(
-                ContentItem.source_site_id == source.id,
-                or_(
-                    ContentItem.dedup_key == key,
-                    ContentItem.metadata_json["post_id"].as_integer() == pid,
-                ),
-            )
-            .order_by(ContentItem.created_at, ContentItem.id)
-        ).all()
-        item = next(
-            (c for c in candidates if c.dedup_key == key), candidates[0] if candidates else None
-        )
-        for duplicate in candidates:
-            if duplicate is not item:
-                obsolete_chunks(session, duplicate, "superseded legacy duplicate")
-                duplicate.metadata_json = {
-                    **duplicate.metadata_json,
-                    "superseded_by": str(item.id),
-                    "rag_eligible": False,
-                }
+        previous = states.get(key)
         role = classify_post(post)
         eligible = decision["decision"] == "keep" and role["indexable"]
         raw = post_text(post)
@@ -148,82 +167,60 @@ def normalize_topic(session, source, snapshot, policy, run):
                     "eligible": eligible,
                     "role": role,
                     "policy": policy["version"],
-                    "processor": PROCESSOR_VERSION,
+                    "processor": POST_CHUNK_VERSION,
                     "chunker": CHUNKER_VERSION,
                 },
                 ensure_ascii=False,
                 sort_keys=True,
             )
         )
-        created = item is None
-        if created:
-            item = ContentItem(
-                source_site_id=source.id,
-                raw_page_id=snapshot.id,
-                crawl_run_id=run.id,
-                item_type="thread" if number == 1 else "comment",
-                canonical_url=f'{base}/t/{topic["id"]}/{number}',
-                cleaned_text=body,
-                content_hash=stable_hash(raw),
-                dedup_key=key,
-                metadata_json={},
-            )
-            session.add(item)
-            session.flush()
         changed = (
-            item.metadata_json.get("processing_fingerprint") != fingerprint
-            or item.metadata_json.get("rag_eligible") != eligible
-            or item.metadata_json.get("source_visibility") != "visible"
+            previous is None
+            or previous.get("processing_fingerprint") != fingerprint
+            or previous.get("rag_eligible") != eligible
+            or previous.get("source_visibility") != "visible"
         )
-        item.raw_page_id = snapshot.id
-        item.author_id = get_author(session, source.id, post, base).id
-        item.item_type = "thread" if number == 1 else "comment"
-        item.title = title if number == 1 else f"Reply {number} · {title}"
-        item.canonical_url = f'{base}/t/{topic["id"]}/{number}'
-        item.source_url = f"{base}/posts/{pid}.json"
-        item.published_at = iso_to_dt(post.get("created_at"))
-        item.language = source.default_language
-        item.raw_text = raw
-        item.cleaned_text = body
-        item.summary_text = raw[:240]
-        item.tags = tags
-        item.structured_by = PROCESSOR_VERSION
-        item.content_hash = stable_hash(raw)
-        item.dedup_key = key
-        item.metadata_json = {
-            **item.metadata_json,
-            "forum": forum,
-            "topic_id": topic["id"],
+        author = get_author(session, source.id, post, base)
+        states[key] = {
+            **(previous or {}),
             "post_id": pid,
             "post_number": number,
             "reply_to_post_number": post.get("reply_to_post_number"),
-            "category_id": topic.get("category_id"),
-            "category_path": payload.get("category_path", []),
             "source_updated_at": post.get("updated_at"),
             "source_version": post.get("version"),
             "accepted_answer": bool(post.get("accepted_answer")),
-            "has_accepted_answer": topic.get("has_accepted_answer"),
             "resolution_status": "accepted" if post.get("accepted_answer") else "unverified",
-            "topic_filter": decision,
             "post_role": role["role"],
             "rag_eligible": eligible,
             "processing_fingerprint": fingerprint,
             "source_visibility": "visible",
+            "author_id": str(author.id),
+            "author_name": post.get("username", "unknown"),
+            "published_at": (
+                iso_to_dt(post["created_at"]).isoformat() if post.get("created_at") else None
+            ),
+            "canonical_url": f'{base}/t/{topic["id"]}/{number}',
+            "raw_page_id": str(snapshot.id),
+            "raw_text": raw,
+            "cleaned_text": body,
         }
-        if created:
+        if previous is None:
             stats["posts_created"] += 1
         elif changed:
             stats["posts_updated"] += 1
         else:
             stats["deduped"] += 1
         if changed:
-            obsolete_chunks(session, item, "replaced or filtered forum content")
+            for old in chunks_by_post.get(key, []):
+                if old.embed_status != "obsolete":
+                    old.embed_status = "obsolete"
+                    old.embed_error = "replaced or filtered forum content"
             if eligible:
                 built = build_chunks(
-                    item_type=item.item_type,
+                    item_type="thread" if number == 1 else "comment",
                     title=title,
                     cleaned_text=body,
-                    summary_text=item.summary_text,
+                    summary_text=raw[:240],
                     tags=tags,
                     thread_title=title,
                 )
@@ -237,49 +234,64 @@ def normalize_topic(session, source, snapshot, policy, run):
                         )
                         if p
                     )
-                    session.add(
-                        ContentChunk(
-                            content_item_id=item.id,
-                            chunk_index=chunk.chunk_index,
-                            char_start=chunk.start_char,
-                            char_end=chunk.end_char,
-                            display_text=chunk.display_text,
-                            embed_text=embed,
-                            token_count=max(1, len(embed.split())),
-                            embed_status="pending",
-                            chunk_metadata_json={
-                                **chunk.chunk_metadata_json,
-                                "ingest_source": "discourse_api_v2",
-                                "topic_id": topic["id"],
-                                "post_id": pid,
-                                "processing_fingerprint": fingerprint,
-                            },
-                        )
+                    row = ContentChunk(
+                        content_item_id=item.id,
+                        chunk_index=next_index,
+                        char_start=chunk.start_char,
+                        char_end=chunk.end_char,
+                        display_text=chunk.display_text,
+                        embed_text=embed,
+                        token_count=max(1, len(embed.split())),
+                        embed_status="pending",
+                        chunk_metadata_json={
+                            **chunk.chunk_metadata_json,
+                            "ingest_source": "discourse_api_v3",
+                            "topic_id": topic["id"],
+                            "post_id": pid,
+                            "post_chunk_index": chunk.chunk_index,
+                            "post_char_start": chunk.start_char,
+                            "post_char_end": chunk.end_char,
+                            "processing_fingerprint": fingerprint,
+                        },
                     )
+                    session.add(row)
+                    chunks.append(row)
+                    next_index += 1
                     stats["chunks_created"] += 1
-        items[number] = item
-    root = items[1]
-    for number, item in items.items():
-        item.thread_root_id = root.id
-        item.parent_item_id = (
-            None
-            if number == 1
-            else items.get(int(by_number[number].get("reply_to_post_number") or 1), root).id
-        )
-    # Confirmed stream removal within a successfully complete visible topic.
-    for old in session.scalars(
-        select(ContentItem).where(
-            ContentItem.source_site_id == source.id,
-            ContentItem.metadata_json["topic_id"].as_integer() == int(topic["id"]),
-        )
-    ).all():
-        if old.metadata_json.get("post_id") not in visible:
-            obsolete_chunks(session, old, "no longer visible in complete topic stream")
-            old.metadata_json = {
-                **old.metadata_json,
-                "rag_eligible": False,
-                "source_visibility": "missing",
-            }
+    # Only a complete visible stream can confirm that an individual post disappeared.
+    for key, state in states.items():
+        if int(key) not in visible:
+            state["rag_eligible"] = False
+            state["source_visibility"] = "missing"
+            for chunk in chunks_by_post.get(key, []):
+                if chunk.embed_status != "obsolete":
+                    chunk.embed_status = "obsolete"
+                    chunk.embed_error = "no longer visible in complete topic stream"
+    item.raw_page_id = snapshot.id
+    item.author_id = get_author(session, source.id, root_post, base).id
+    item.title = title
+    item.published_at = iso_to_dt(root_post.get("created_at"))
+    item.language = source.default_language
+    item.summary_text = root_text[:240]
+    item.tags = tags
+    item.structured_by = PROCESSOR_VERSION
+    item.thread_root_id = item.id
+    item.parent_item_id = None
+    # Post-specific fields live in states/chunks; root fields are retained for
+    # compatibility with older readers that only understand topic metadata.
+    item.metadata_json = {
+        **item.metadata_json,
+        "forum": forum,
+        "topic_id": topic["id"],
+        "post_id": int(root_post["id"]),
+        "post_number": 1,
+        "category_id": topic.get("category_id"),
+        "category_path": payload.get("category_path", []),
+        "topic_filter": decision,
+        "has_accepted_answer": topic.get("has_accepted_answer"),
+        "source_visibility": "visible",
+    }
+    layout_topic(session, item, states, chunks)
     session.flush()
     return {**stats, "decision": decision["decision"]}
 
@@ -319,6 +331,8 @@ def process_forum(session, forum, args, policy):
     tasks = session.scalars(query.limit(args.limit)).all()
     stats = {
         "topics_processed": 0,
+        "items_created": 0,
+        "items_merged": 0,
         "posts_created": 0,
         "posts_updated": 0,
         "deduped": 0,
@@ -339,7 +353,14 @@ def process_forum(session, forum, args, policy):
             task.process_attempts = 0
             task.last_processed_at = utcnow()
             session.commit()
-            for key in ("posts_created", "posts_updated", "deduped", "chunks_created"):
+            for key in (
+                "posts_created",
+                "posts_updated",
+                "deduped",
+                "chunks_created",
+                "items_created",
+                "items_merged",
+            ):
                 stats[key] += outcome[key]
             stats[outcome["decision"]] += 1
             stats["topics_processed"] += 1
@@ -386,8 +407,8 @@ def embed_pending(session, source_id, *, limit, indexer=None):
     from app.services.embeddings import build_embedding_service
     from app.services.retrieval import QdrantIndexer
 
-    rows = session.execute(
-        select(ContentChunk, ContentItem)
+    chunks = session.scalars(
+        select(ContentChunk)
         .join(ContentItem, ContentItem.id == ContentChunk.content_item_id)
         .where(
             ContentItem.source_site_id == source_id,
@@ -405,6 +426,13 @@ def embed_pending(session, source_id, *, limit, indexer=None):
         .order_by(ContentChunk.id)
         .limit(limit)
     ).all()
+    owners = {
+        item.id: item
+        for item in session.scalars(
+            select(ContentItem).where(ContentItem.id.in_({c.content_item_id for c in chunks}))
+        )
+    }
+    rows = [(c, owners[c.content_item_id]) for c in chunks]
     # Do not initialize a paid model or remote collection if there is no actual work.
     if not rows:
         return {"embedded": 0, "vectors_deleted": 0, "vector_failed": 0}
@@ -460,7 +488,7 @@ def embed_pending(session, source_id, *, limit, indexer=None):
                     payload={
                         **_build_payload(content_chunk=chunk, content_item=item),
                         "topic_id": item.metadata_json.get("topic_id"),
-                        "post_id": item.metadata_json.get("post_id"),
+                        "post_id": chunk.chunk_metadata_json.get("post_id"),
                         "thread_root_id": str(item.thread_root_id) if item.thread_root_id else None,
                         "parent_item_id": str(item.parent_item_id) if item.parent_item_id else None,
                     },
@@ -522,13 +550,26 @@ def process(args, *, engine=None):
                         results.append({"forum": forum, "status": "skipped"})
                         continue
                     result = process_forum(session, forum, args, policy)
-                    if args.embed:
-                        source = session.scalar(
-                            select(SourceSite).where(
-                                SourceSite.name
-                                == f'Discourse: {forum} ({FORUMS[forum].split("://")[1]})'
-                            )
+                    source = session.scalar(
+                        select(SourceSite).where(
+                            SourceSite.name
+                            == f'Discourse: {forum} ({FORUMS[forum].split("://")[1]})'
                         )
+                    )
+                    payload_stats = sync_vector_payloads(
+                        session, source.id, url=get_settings().qdrant_url, limit=args.embed_limit
+                    )
+                    result.update(payload_stats)
+                    if payload_stats["payloads_failed"]:
+                        result["status"] = "partial"
+                        processing_run = session.get(CrawlRun, uuid.UUID(result["run_id"]))
+                        processing_run.status = "partial"
+                        processing_run.error_count += payload_stats["payloads_failed"]
+                        processing_run.error_message = (
+                            "Vector metadata update pending; retry processing"
+                        )
+                        session.commit()
+                    if args.embed:
                         vector_stats = embed_pending(session, source.id, limit=args.embed_limit)
                         result.update(vector_stats)
                         processing_run = session.get(CrawlRun, uuid.UUID(result["run_id"]))

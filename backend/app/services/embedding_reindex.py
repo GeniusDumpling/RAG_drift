@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from app.db.base import utcnow
 from app.models.content import ContentChunk, ContentItem
@@ -45,18 +46,39 @@ async def reindex_embeddings(
     else:
         indexer.ensure_collection()
 
-    rows = (
-        await session.execute(
-            select(ContentChunk, ContentItem)
-            .join(ContentItem, ContentChunk.content_item_id == ContentItem.id)
+    chunks = (
+        await session.scalars(
+            select(ContentChunk)
             .where(ContentChunk.embed_status != "obsolete")
             .order_by(ContentChunk.id.asc())
         )
     ).all()
+    owners = {
+        item.id: item
+        for item in (
+            await session.scalars(
+                select(ContentItem)
+                .where(ContentItem.id.in_({c.content_item_id for c in chunks}))
+                .options(
+                    load_only(
+                        ContentItem.id,
+                        ContentItem.source_site_id,
+                        ContentItem.item_type,
+                        ContentItem.canonical_url,
+                        ContentItem.title,
+                        ContentItem.published_at,
+                        ContentItem.language,
+                        ContentItem.tags,
+                    )
+                )
+            )
+        ).all()
+    }
 
     succeeded = 0
     failed = 0
-    for content_chunk, content_item in rows:
+    for content_chunk in chunks:
+        content_item = owners[content_chunk.content_item_id]
         try:
             point_id = indexer.upsert_chunk(
                 chunk_id=content_chunk.id,
@@ -82,7 +104,7 @@ async def reindex_embeddings(
 
     await session.commit()
     return ReindexSummary(
-        total=len(rows),
+        total=len(chunks),
         succeeded=succeeded,
         failed=failed,
         provider=_provider_name(embedding),
@@ -95,7 +117,7 @@ async def reindex_embeddings(
 
 
 def _build_payload(*, content_chunk: ContentChunk, content_item: ContentItem) -> dict[str, Any]:
-    return {
+    payload = {
         "chunk_id": str(content_chunk.id),
         "content_item_id": str(content_item.id),
         "source_site_id": str(content_item.source_site_id),
@@ -108,6 +130,30 @@ def _build_payload(*, content_chunk: ContentChunk, content_item: ContentItem) ->
         "language": content_item.language,
         "tags": list(content_item.tags),
     }
+    provenance = content_chunk.chunk_metadata_json or {}
+    if provenance.get("forum_item_layout") == "topic-v1":
+        payload.update(
+            {
+                key: provenance.get(key)
+                for key in (
+                    "topic_id",
+                    "post_id",
+                    "post_number",
+                    "reply_to_post_number",
+                    "post_type",
+                    "canonical_url",
+                    "author_id",
+                    "author_name",
+                    "published_at",
+                    "raw_page_id",
+                    "accepted_answer",
+                    "resolution_status",
+                )
+            }
+        )
+        payload["thread_root_id"] = str(content_item.id)
+        payload["parent_item_id"] = None
+    return payload
 
 
 def _mark_success(

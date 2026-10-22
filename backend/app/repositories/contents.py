@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import utcnow
@@ -170,9 +170,7 @@ class ContentsRepository:
                 )
             )
 
-        total = await self.session.scalar(
-            select(func.count(ContentItem.id)).where(*where_clauses)
-        )
+        total = await self.session.scalar(select(func.count(ContentItem.id)).where(*where_clauses))
         result = await self.session.execute(
             select(ContentItem, RawPage.fetched_at, Author.display_name)
             .join(RawPage, ContentItem.raw_page_id == RawPage.id)
@@ -195,7 +193,17 @@ class ContentsRepository:
             .join(SourceSite, ContentItem.source_site_id == SourceSite.id)
             .join(CrawlRun, ContentItem.crawl_run_id == CrawlRun.id)
             .outerjoin(Author, ContentItem.author_id == Author.id)
-            .where(ContentItem.id == content_item_id)
+            .where(
+                or_(
+                    ContentItem.id == content_item_id,
+                    and_(
+                        ContentItem.metadata_json["forum_item_layout"].as_string() == "topic-v1",
+                        ContentItem.metadata_json["legacy_item_ids"].contains(
+                            [str(content_item_id)]
+                        ),
+                    ),
+                )
+            )
         )
         row = result.one_or_none()
         if row is None:
@@ -203,7 +211,7 @@ class ContentsRepository:
 
         chunks_result = await self.session.scalars(
             select(ContentChunk)
-            .where(ContentChunk.content_item_id == content_item_id)
+            .where(ContentChunk.content_item_id == row[0].id)
             .order_by(ContentChunk.chunk_index.asc())
         )
         chunks = list(chunks_result)

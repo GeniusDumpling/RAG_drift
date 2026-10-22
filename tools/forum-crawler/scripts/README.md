@@ -10,7 +10,7 @@ ArduPilot / PX4 使用 Discourse 公开 JSON API。采集、清洗切片、向�
 # 日常增量：发现新主帖和新回复，按主题补齐全部公开正文，只保存原始数据。
 .venv/bin/python tools/forum-crawler/scripts/discourse_ingest.py --json
 
-# 原始归档 → 分类过滤 → 主帖/回复关联 → 切片。此命令不访问论坛、不调用向量模型。
+# 原始归档 → 分类过滤 → 每个主题一个 item → 按主帖/回复切片。不访问论坛、不调用向量模型。
 .venv/bin/python tools/forum-crawler/scripts/discourse_process.py --json
 
 # 在加工后执行向量化，并重试此前失败的向量任务。
@@ -68,12 +68,43 @@ bash tools/forum-crawler/scripts/run_scheduled_backfill.sh
 - 以 `post_stream.stream` 为当前可见 ID 清单，批量补齐正文；缺少正文或主帖时不生成“完整”快照。
 - 完整组装的主题另存为 `parser_profile=discourse_topic_v2` 快照，任务引用最新快照。
 - 原始抓取和完整快照先提交，再由独立处理脚本生成帖子及切片。
-- 帖子以规范化论坛地址与 `post_id` 识别；关键词、浏览量、点赞数不参与身份或正文版本判断。
+- 一个主题对应一个 `content_items`，身份为规范化论坛地址与 `topic_id`；其全部主帖/回复切片的 `content_item_id` 相同。
+- item 的 `cleaned_text` 按楼层包含全部可见正文；`metadata_json.posts` 保存每条帖子的正文、来源、过滤结果和处理指纹。无价值回复保留正文，但不生成检索切片。
+- chunk 保留 `post_id`、楼层、作者、时间、回复对象、原文链接、快照引用，以及帖子内切片编号；检索证据使用对应回复的信息。
 - 新旧正文和处理策略一致时不重复切片；正文、父回复上下文或策略版本变化时，保留旧原始快照，淘汰旧切片并创建新切片。
-- 回复同时保存 `thread_root_id` 和 `parent_item_id`；向量文本附加原问题和必要父回复上下文。
+- 主题 item 的 `thread_root_id` 指向自身，`parent_item_id` 为空；回复关系使用帖子状态/chunk 的 `reply_to_post_number`。向量文本附加原问题和必要父回复上下文。
+- 每条帖子独立判断版本。新增回复不替换已有切片；编辑主帖或父回复时，仅更新正文或嵌入上下文受影响的帖子。`chunk_index` 在 item 内唯一、只递增，按楼层展示时使用 `post_number`、`post_chunk_index` 排序。
+- chunk 字符区间对应整个 item 的 `cleaned_text`；帖子内区间另存为 `post_char_start/post_char_end`。旧版本切片退出检索，当前字符区间置空，原始快照继续保留。
 - 删除/隐藏的主题不会因为一次 403/404 被自动清空；错误任务延迟重试。完整主题快照中消失的帖子会退出检索。
 - 向量化开启后，过期切片的旧向量引用保留到删除成功；失败可以再次运行 `--embed`。
-- 旧版本跨关键词造成的同源重复帖子在被重新处理时归并到一个稳定记录，旧重复切片退出检索，不删除历史内容记录。
+- 处理旧 `discourse-v2.1` 主题时会在事务中归并为 `discourse-v3.0`，保留主帖 item ID 和全部 chunk ID/文本/向量。未知旧版本或重复主帖会报错，避免错误归并。
+- 向量归属/引用变更通过 chunk 元数据中的 `vector_payload_pending` 持久化重试；处理脚本会更新 Qdrant payload，无需开启 `--embed`，也不会调用向量模型。
+
+## 已入库数据迁移
+
+先停用旧版本采集进程。迁移保持原始归档、采集游标和任务状态；仅处理指定 ArduPilot/PX4 来源。
+
+```bash
+# 默认只读预览
+.venv/bin/python tools/forum-crawler/scripts/discourse_migrate_topics.py
+
+# 每站事务提交前备份 item/chunk 及向量数据，再归并并更新 Qdrant 元数据
+.venv/bin/python tools/forum-crawler/scripts/discourse_migrate_topics.py --apply
+```
+
+备份默认写入 `data/backups/forum-topic-<UTC 时间>/`，可用 `--backup-dir` 指定新目录。
+迁移保留主帖 ID；回复 item 删除前先迁移 chunk 和审计引用。未适配的实体/视频投影引用会阻止事务提交。
+PostgreSQL 提交后更新 Qdrant；向量服务失败时保留待更新标记，再次执行 `--apply` 可续跑，不重复迁移已完成主题。
+跨库提交之间可能短暂缺少部分检索结果，应在迁移完成、待更新数归零后恢复查询使用。
+
+宿主机访问地址与原向量记录使用的 Docker 地址不同时，可指定：
+
+```bash
+.venv/bin/python tools/forum-crawler/scripts/discourse_migrate_topics.py --apply \
+  --qdrant-url http://localhost:6333 --vector-store-url http://qdrant:6333
+```
+
+`--qdrant-url` 是实际访问地址，`--vector-store-url` 是旧记录的存储身份；脚本会核对身份和每个 point 的 chunk ID。
 
 增量分页每成功一页，就在同一事务中持久化主题任务和扫描位置。扫描未触达上次游标时，
 只保存扫描位置，不提前提升完成水位。达到 `--max-pages` 后下次续跑。

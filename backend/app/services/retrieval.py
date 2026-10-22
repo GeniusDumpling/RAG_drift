@@ -14,7 +14,7 @@ from qdrant_client.http import models as qdrant_models
 from sqlalchemy import String, case, func, literal, or_, select
 from sqlalchemy import cast as sql_cast
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, defer, load_only
 
 from app.models.content import Author, ContentChunk, ContentItem
 from app.models.control import SourceSite
@@ -418,6 +418,10 @@ async def _keyword_search(
     )
     stmt = (
         select(ContentChunk, ContentItem, candidates.c.keyword_score)
+        .options(load_only(
+            ContentItem.id, ContentItem.title, ContentItem.summary_text,
+            ContentItem.tags, ContentItem.created_at,
+        ))
         .join(ContentItem, ContentChunk.content_item_id == ContentItem.id)
         .join(candidates, candidates.c.chunk_id == ContentChunk.id)
         .where(candidates.c.content_rank <= 2)
@@ -685,6 +689,8 @@ async def _hydrate_and_rank_evidence(
             Author.display_name,
             thread_root.summary_text,
         )
+        .options(defer(ContentItem.metadata_json), defer(ContentItem.raw_text),
+                 defer(ContentItem.cleaned_text))
         .join(ContentItem, ContentChunk.content_item_id == ContentItem.id)
         .join(SourceSite, ContentItem.source_site_id == SourceSite.id)
         .outerjoin(Author, ContentItem.author_id == Author.id)
@@ -697,6 +703,10 @@ async def _hydrate_and_rank_evidence(
     )
     rows = (await session.execute(stmt)).all()
     row_by_chunk_id = {row[0].id: row for row in rows}
+    video_ids = {row[1].id for row in rows if row[1].item_type == "video_description"}
+    descriptions = dict((await session.execute(
+        select(ContentItem.id, ContentItem.cleaned_text).where(ContentItem.id.in_(video_ids))
+    )).all()) if video_ids else {}
 
     evidence: list[EvidenceObject] = []
     for hit in hits:
@@ -711,18 +721,26 @@ async def _hydrate_and_rank_evidence(
         if hit.content_item_id is not None and hit.content_item_id != content_item.id:
             continue
         is_video = content_item.item_type == "video_description"
+        provenance = content_chunk.chunk_metadata_json or {}
+        if provenance.get("forum_item_layout") != "topic-v1":
+            provenance = {}
+        post_published_at = provenance.get("published_at")
+        if post_published_at:
+            post_published_at = datetime.fromisoformat(post_published_at.replace("Z", "+00:00"))
         evidence.append(
             EvidenceObject(
                 chunk_id=content_chunk.id,
                 content_item_id=content_item.id,
-                raw_page_id=content_item.raw_page_id,
+                raw_page_id=(
+                    _uuid_from_payload(provenance, "raw_page_id") or content_item.raw_page_id
+                ),
                 source_site_id=content_item.source_site_id,
                 title=content_item.title,
                 snippet=_snippet(content_chunk.display_text, terms=snippet_terms),
-                canonical_url=content_item.canonical_url,
+                canonical_url=provenance.get("canonical_url") or content_item.canonical_url,
                 source_site_name=source_site_name,
-                author_name=author_name,
-                published_at=content_item.published_at,
+                author_name=provenance.get("author_name") or author_name,
+                published_at=post_published_at or content_item.published_at,
                 item_type=content_item.item_type,
                 score=hit.score,
                 vector_score=hit.vector_score,
@@ -730,7 +748,7 @@ async def _hydrate_and_rank_evidence(
                 matched_by=hit.matched_by,
                 thread_summary=thread_summary,
                 video_url=content_item.canonical_url if is_video else None,
-                description_text=content_item.cleaned_text if is_video else None,
+                description_text=descriptions.get(content_item.id) if is_video else None,
             )
         )
 

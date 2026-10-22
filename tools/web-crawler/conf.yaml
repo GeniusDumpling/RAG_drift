@@ -1,0 +1,18 @@
+# 每个关键词独立搜索一次；top_k 是候选网页上限，不保证成功抓取数量。
+search:
+  keywords:
+    - 无人机 飞控 技术
+  top_k: 20                   # 每个关键词 1–50 条，重复 URL 在本轮只抓一次
+  edition: standard
+  recency_filter: none         # none | week | month | semiyear | year
+  domain_filter: []            # 可选，最多 20 个站点
+  timeout: 30                  # 秒
+
+crawl:
+  enabled: true               # false 时仅搜索，正文保持空，标记 search_only
+  timeout: 30
+  retries: 2                  # 连接错误、429 和部分 5xx 的额外重试次数
+  delay: 1.0                  # 相邻网页之间的间隔（秒）
+
+output:
+  directory: ./output         # 相对于本配置文件；每次运行创建独立子目录

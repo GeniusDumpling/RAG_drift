@@ -367,6 +367,7 @@ Neo4j、视频图谱和 iFixit 集成测试使用各自文档指定的测试连�
 - [系统总述与进展](docs/system-overview-and-progress.md) · [历史数据库概览（2026-10-09）](docs/intelligence-database-summary.md)
 - [Linux / WSL 部署](docs/linux-server-deployment.md) · [Docker 部署](docs/docker-deploy.md) · [部署验证记录](docs/deployment-validation.md)
 - [论坛采集与加工](tools/forum-crawler/scripts/README.md) · [定时任务控制](docs/scheduled-task-control.md)
+- [通用网页采集：百度搜索、原文证据及标准化 JSONL](tools/web-crawler/README.md)
 - [AI 问答实现](docs/ai-chat.md) · [AI 问答部署验收（2026-10-21）](docs/ai-chat-deployment-2026-10-21.md)
 - [型号检索排序修复与验证（2026-10-21）](docs/retrieval-ranking-fix-2026-10-21.md)
 - [视频知识图谱](tools/video-knowledge-graph/README.md) · [Neo4j 迁移指南](docs/neo4j-migration.md) · [迁移结果](docs/neo4j-migration-report-2026-10-21.md)

@@ -1,0 +1,11 @@
+# Code-only forum release on an existing validated application/collector runtime.
+# Build separately for both runtime images; browser/model dependencies are retained.
+ARG BASE_IMAGE=intelligence-rag-app:latest
+FROM ${BASE_IMAGE}
+WORKDIR /app
+COPY backend/app/services/retrieval.py backend/app/services/embedding_reindex.py backend/app/services/query_matching.py ./backend/app/services/
+COPY backend/app/repositories/contents.py ./backend/app/repositories/contents.py
+COPY tools/forum-crawler/scripts ./tools/forum-crawler/scripts
+# The API imports the installed wheel; collector scripts prepend /app/backend.
+# Update both locations without changing dependencies or unrelated application code.
+RUN python -c "import sysconfig; from pathlib import Path; from shutil import copy2; target=Path(sysconfig.get_path('purelib'))/'app'; [copy2(Path('backend/app')/name, target/name) for name in ('services/retrieval.py', 'services/embedding_reindex.py', 'services/query_matching.py', 'repositories/contents.py')]"

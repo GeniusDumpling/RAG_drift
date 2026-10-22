@@ -66,3 +66,81 @@ def test_deepseek_answer_client_returns_grounded_content() -> None:
 
     assert answer == "根据证据得出结论。[1]"
     assert received["url"] == "https://deepseek.example/v1/chat/completions"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'data: {"choices":[{"delta":{"content":"完整答案[1]"}}]}\n\ndata: [DONE]\n\n',
+        'data: {"choices":[{"delta":{}}]}\n\n'
+        'data: {"choices":[{"delta":{"content":"完整答案[1]"}}]}\n\ndata: [DONE]\n\n',
+    ],
+)
+async def test_stream_reads_provider_sse_and_sends_full_context(monkeypatch, body) -> None:
+    import json
+
+    import httpx
+    from app.services.answer_generation import DeepSeekAnswerClient
+
+    received = {}
+
+    def handler(request):
+        received.update(json.loads(request.content))
+        return httpx.Response(200, text=body, headers={"Content-Type": "text/event-stream"})
+
+    client_class = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: client_class(transport=httpx.MockTransport(handler), **kwargs),
+    )
+    client = DeepSeekAnswerClient(
+        base_url="https://model.test", api_key="test", model="test", timeout_seconds=10
+    )
+    history = [{"role": "user", "content": "先前的问题"}]
+    output = "".join(
+        [
+            delta
+            async for delta in client.stream(
+                "追问",
+                [_evidence("短摘要")],
+                context="完整切片证据",
+                history=history,
+            )
+        ]
+    )
+    assert output == "完整答案[1]"
+    assert received["stream"] is True
+    assert "完整切片证据" in received["messages"][-1]["content"]
+    assert received["messages"][1] == history[0]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "data: [DONE]\n\n",
+        'data: {"choices":[{"delta":{"content":"未完成"}}]}\n\n',
+        'data: {"error":{"message":"timeout"}}\n\n',
+        "data: not-json\n\n",
+        'data: {"choices":[{"delta":{"content":"截断"},"finish_reason":"length"}]}\n\n'
+        "data: [DONE]\n\n",
+    ],
+)
+async def test_stream_rejects_empty_broken_and_truncated_answers(monkeypatch, body) -> None:
+    import httpx
+    from app.services.answer_generation import AnswerGenerationError, DeepSeekAnswerClient
+
+    client_class = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: client_class(
+            transport=httpx.MockTransport(lambda request: httpx.Response(200, text=body)),
+            **kwargs,
+        ),
+    )
+    client = DeepSeekAnswerClient(
+        base_url="https://model.test", api_key="test", model="test", timeout_seconds=10
+    )
+    with pytest.raises(AnswerGenerationError):
+        _ = [delta async for delta in client.stream("问题", [], context="证据", history=[])]

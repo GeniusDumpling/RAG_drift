@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -9,9 +10,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_env: str = Field(default="dev", alias="APP_ENV")
-    database_browser_enabled: bool = Field(
-        default=False, alias="DATABASE_BROWSER_ENABLED"
-    )
+    database_browser_enabled: bool = Field(default=False, alias="DATABASE_BROWSER_ENABLED")
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
     api_port: int = Field(default=8000, alias="API_PORT")
     database_url: str = Field(
@@ -33,21 +32,23 @@ class Settings(BaseSettings):
     agent_timeout_seconds: int = Field(default=20, alias="AGENT_TIMEOUT_SECONDS")
     worker_poll_interval_seconds: int = Field(default=2, alias="WORKER_POLL_INTERVAL_SECONDS")
 
+    video_graph_backend: Literal["postgres", "neo4j"] = Field(
+        default="postgres", alias="VIDEO_GRAPH_BACKEND"
+    )
+    neo4j_uri: str = Field(default="bolt://localhost:7687", alias="NEO4J_URI")
+    neo4j_user: str = Field(default="neo4j", alias="NEO4J_USER")
+    neo4j_password: str | None = Field(default=None, alias="NEO4J_PASSWORD")
+    neo4j_database: str = Field(default="neo4j", alias="NEO4J_DATABASE")
+
     # VLM settings
-    vlm_base_url: str = Field(
-        default="https://api.siliconflow.cn/v1", alias="VLM_BASE_URL"
-    )
+    vlm_base_url: str = Field(default="https://api.siliconflow.cn/v1", alias="VLM_BASE_URL")
     vlm_api_key: str | None = Field(default=None, alias="VLM_API_KEY")
-    vlm_model: str = Field(
-        default="Qwen/Qwen3-Omni-30B-A3B-Instruct", alias="VLM_MODEL"
-    )
+    vlm_model: str = Field(default="Qwen/Qwen3-Omni-30B-A3B-Instruct", alias="VLM_MODEL")
 
     # Literature research settings
     literature_llm_provider: str = Field(default="deepseek", alias="LITERATURE_LLM_PROVIDER")
     deepseek_api_key: str | None = Field(default=None, alias="DEEPSEEK_API_KEY")
-    deepseek_base_url: str = Field(
-        default="https://api.deepseek.com/v1", alias="DEEPSEEK_BASE_URL"
-    )
+    deepseek_base_url: str = Field(default="https://api.deepseek.com/v1", alias="DEEPSEEK_BASE_URL")
     deepseek_model: str = Field(default="deepseek-chat", alias="DEEPSEEK_MODEL")
     literature_browser_profile_dir: Path = Field(
         default=Path("~/.intelligence-rag/ieee-profile").expanduser(),

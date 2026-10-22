@@ -1,3 +1,4 @@
+from app.models.chat import ChatSession, ChatTurn
 from app.models.content import Author, ContentChunk, ContentItem, RawPage
 from app.models.control import CrawlJob, CrawlRun, CrawlRunEvent, SourceSite
 from app.models.literature import (
@@ -21,6 +22,8 @@ from app.models.video_graph import (
 __all__ = [
     "AgentCall",
     "Author",
+    "ChatSession",
+    "ChatTurn",
     "ContentChunk",
     "ContentEntityMention",
     "ContentItem",

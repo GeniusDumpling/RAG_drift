@@ -1,0 +1,4 @@
+# Install the repository itself for SQLAlchemy, psycopg, Qdrant and backend settings.
+Pillow>=10,<13
+# Optional for prepare; required for real tokenizer validation before indexing.
+transformers>=4.40,<5

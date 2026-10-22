@@ -6,12 +6,12 @@
 
 用法示例：
 
-    python3 skills/video-crawler/scripts/discourse_search.py \
+    python3 tools/forum-crawler/scripts/discourse_search.py \
         --query "MAVLink security" \
         --forums ardupilot px4 \
         --json
 
-    python3 skills/video-crawler/scripts/discourse_search.py \
+    python3 tools/forum-crawler/scripts/discourse_search.py \
         --query "GPS spoofing" \
         --forum px4 \
         --category-id 4 \
@@ -26,38 +26,23 @@ import html
 import json
 import sys
 from typing import Any
-from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
-USER_AGENT = "Mozilla/5.0 (compatible; IntelligenceRAGDiscourseSearch/0.1)"
-
-# 论坛标识 → 根地址。dronecode 已合并进 px4，这里统一指向 px4 即可。
-FORUMS: dict[str, str] = {
-    "ardupilot": "https://discuss.ardupilot.org",
-    "px4": "https://discuss.px4.io",
-    "dronecode": "https://discuss.px4.io",  # 301 → PX4，不再单独采集
-}
-
-
-class DiscourseError(RuntimeError):
-    """搜索失败或参数错误。"""
+from discourse_common import ALIASES, FORUMS, DiscourseClient, DiscourseError, canonical_forums
 
 
 def _http_get_json(url: str) -> dict[str, Any]:
-    request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-    try:
-        with urlopen(request, timeout=30) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        message = exc.headers.get("Location") or body
-        raise DiscourseError(f"HTTP {exc.code}: {message}") from exc
-    except URLError as exc:
-        raise DiscourseError(f"网络错误：{exc.reason}") from exc
+    from urllib.parse import urlsplit
+
+    parsed = urlsplit(url)
+    return DiscourseClient(f"{parsed.scheme}://{parsed.netloc}").get(
+        parsed.path + (f"?{parsed.query}" if parsed.query else "")
+    )
 
 
-def _normalize_post(post: dict[str, Any], base: str, topics: dict[int, dict[str, Any]]) -> dict[str, Any]:
+def _normalize_post(
+    post: dict[str, Any], base: str, topics: dict[int, dict[str, Any]]
+) -> dict[str, Any]:
     """把一个 Discourse search.json 返回的 post 对象规范化为候选。
 
     search.json 的 post 对象本身不含标题和 slug，这些位于响应顶层的
@@ -89,23 +74,41 @@ def search_forum(
     base: str,
     max_results: int = 10,
     category_id: int | None = None,
+    client: DiscourseClient | None = None,
+    max_pages: int = 3,
 ) -> dict[str, Any]:
     """调用某论坛的 /search.json 返回一页规范化候选。"""
-    params: dict[str, str] = {"q": query.strip(), "limit": str(max_results)}
-    if category_id:
-        params["category"] = str(category_id)
-    result = _http_get_json(f"{base}/search.json?{urlencode(params)}")
-    topics = {(t.get("id") or 0): t for t in (result.get("topics") or []) if isinstance(t, dict)}
-    posts = result.get("posts") or []
-    # Discourse 的 search.json 会忽略单个请求的 limit 上限，这里在代码层面截断。
-    candidates = [_normalize_post(p, base, topics) for p in posts[:max_results] if isinstance(p, dict)]
+    if not query.strip() or max_results < 1 or max_pages < 1:
+        raise ValueError("Query and positive result/page limits are required")
+    client = client or DiscourseClient(base)
+    search_query = query.strip() + (f" category:{category_id}" if category_id else "")
+    candidates = []
+    seen = set()
+    has_more = False
+    result = {}
+    for page in range(1, max_pages + 1):
+        result = client.get(f"/search.json?{urlencode({'q': search_query, 'page': page})}")
+        topics = {int(t["id"]): t for t in result.get("topics", [])}
+        posts = result.get("posts") or []
+        for post in posts:
+            if isinstance(post, dict) and post.get("id") not in seen:
+                seen.add(post.get("id"))
+                candidates.append(_normalize_post(post, base, topics))
+        grouped = result.get("grouped_search_result") or {}
+        has_more = bool(grouped.get("more_full_page_results") or grouped.get("more_posts"))
+        if len(candidates) >= max_results:
+            has_more = has_more or len(candidates) > max_results
+            break
+        if not posts or not has_more:
+            break
+    candidates = candidates[:max_results]
     return {
         "forum": forum,
         "base": base,
         "query": query.strip(),
         "max_results": max_results,
         "count": len(candidates),
-        "has_more": bool(result.get("has_more")),
+        "has_more": has_more,
         "search_type": (result.get("grouped_search_result") or {}).get("type"),
         "items": candidates,
     }
@@ -113,16 +116,23 @@ def search_forum(
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--query", required=True, help="Search 关键词（如 MAVLink security / GPS spoofing）")
+    parser.add_argument(
+        "--query", required=True, help="Search 关键词（如 MAVLink security / GPS spoofing）"
+    )
     parser.add_argument(
         "--forums",
         nargs="+",
-        choices=tuple(FORUMS),
+        choices=tuple([*FORUMS, *ALIASES]),
         default=list(FORUMS),
         help="要搜索的论坛标识，空格分隔，默认全部（ardupilot px4）",
     )
-    parser.add_argument("--forum", dest="forums_override", help="兼容单数参数，与 --forums 等价")
-    parser.add_argument("--max-results", type=int, default=10, help="每个论坛返回的最大帖子数，默认 10")
+    parser.add_argument(
+        "--forum", dest="forums_override", choices=[*FORUMS, *ALIASES], help="单个论坛"
+    )
+    parser.add_argument("--max-pages", type=int, default=3)
+    parser.add_argument(
+        "--max-results", type=int, default=10, help="每个论坛返回的最大帖子数，默认 10"
+    )
     parser.add_argument("--category-id", type=int, default=None, help="限定板块 category_id，可选")
     parser.add_argument("--json", action="store_true", help="输出 JSON（默认）")
     return parser.parse_args(argv)
@@ -130,8 +140,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    if not 1 <= args.max_results <= 50:
-        print("错误：--max-results 必须在 1 到 50 之间", file=sys.stderr)
+    if not 1 <= args.max_results <= 500 or args.max_pages < 1 or not args.query.strip():
+        print("错误：需要非空关键词、正页数，max-results 范围 1..500", file=sys.stderr)
         return 1
     if args.forums_override:
         chosen = [args.forums_override]
@@ -140,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
 
     per_forum: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
-    for forum in chosen:
+    for forum in canonical_forums(chosen):
         base = FORUMS[forum]
         try:
             per_forum.append(
@@ -150,6 +160,7 @@ def main(argv: list[str] | None = None) -> int:
                     base=base,
                     max_results=args.max_results,
                     category_id=args.category_id,
+                    max_pages=args.max_pages,
                 )
             )
         except DiscourseError as exc:

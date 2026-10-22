@@ -175,6 +175,35 @@ export type SearchQueryRead = {
   created_at: ISODateTime;
 };
 
+export type AnswerRequest = SearchRequest & { session_id?: UUID };
+
+export type GenerationInfo = {
+  status: 'generated' | 'fallback' | 'no_evidence' | 'cancelled' | 'error';
+  model: string | null;
+  reason: string | null;
+  latency_ms: number;
+  total_latency_ms: number;
+  evidence_count: number;
+  context_chars: number;
+  context_chunk_ids: UUID[];
+  retrieval_query: string | null;
+  rewrite_status: string;
+};
+
+export type ChatSession = {
+  id: UUID; title: string; created_at: ISODateTime; updated_at: ISODateTime;
+};
+
+export type ChatTurn = {
+  id: UUID; session_id: UUID; query: string; answer: string;
+  status: 'pending' | 'completed' | 'cancelled' | 'error';
+  supporting_evidence: EvidenceObject[];
+  generation: GenerationInfo | null;
+  created_at: ISODateTime;
+};
+
+export type ChatSessionDetail = { session: ChatSession; turns: ChatTurn[] };
+
 export type EvidenceObject = {
   chunk_id: UUID;
   content_item_id: UUID;
@@ -205,7 +234,17 @@ export type AnswerResponse = {
   query: SearchQueryRead;
   answer: string;
   supporting_evidence: EvidenceObject[];
+  generation?: GenerationInfo;
+  session_id?: UUID | null;
+  turn_id?: UUID | null;
 };
+
+export type AnswerStreamEvent =
+  | { event: 'status'; data: { stage: 'retrieving' | 'generating' } }
+  | { event: 'delta'; data: { text: string } }
+  | { event: 'reset'; data: { text: string; generation: GenerationInfo } }
+  | { event: 'evidence'; data: { query_id: UUID; turn_id: UUID | null; supporting_evidence: EvidenceObject[] } }
+  | { event: 'done'; data: AnswerResponse };
 
 export type DatabaseTableCount = {
   table_name: string;

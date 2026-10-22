@@ -175,7 +175,10 @@ def _download_video_stream(video_url: str, output_dir: Path) -> Path:
     except ImportError as exc:
         raise EvidenceCollectionError("需要安装 yt-dlp 才能提取临时关键帧") from exc
     options: dict[str, object] = {
-        "format": "bestvideo[height<=480][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[height<=480][vcodec^=vp9]+bestaudio/best",
+        "format": (
+            "bestvideo[height<=480][vcodec^=avc1]+bestaudio[ext=m4a]/"
+            "bestvideo[height<=480][vcodec^=vp9]+bestaudio/best"
+        ),
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
@@ -842,6 +845,13 @@ def ingest_video_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
                 embed_text=chunk.embed_text,
                 payload={
                     "content_item_id": str(content.id),
+                    "source_site_id": str(content.source_site_id),
+                    "item_type": content.item_type,
+                    "language": content.language,
+                    "tags": content.tags,
+                    "published_at": (
+                        content.published_at.isoformat() if content.published_at else None
+                    ),
                     "video_url": canonical_url,
                     "description_text": summary[:500],
                 },

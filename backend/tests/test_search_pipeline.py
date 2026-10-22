@@ -9,7 +9,7 @@ from app.models.content import ContentChunk, ContentItem, RawPage
 from app.models.search import SearchQuery
 from app.repositories.contents import ContentsRepository, CreatedContent, stable_hash
 from app.repositories.sources import SourcesRepository
-from app.schemas.search import SearchFilters, SearchRequest
+from app.schemas.search import AnswerRequest, SearchFilters, SearchRequest
 from app.services import search as search_service_module
 from app.services.retrieval import (
     _MEMORY_COLLECTIONS,
@@ -1054,7 +1054,7 @@ def test_merge_hits_deduplicates_by_chunk_id_when_vector_hit_lacks_content_item_
     assert merged[0].chunk_id == chunk_id
     assert merged[0].content_item_id == content_item_id
     assert merged[0].matched_by == "hybrid"
-    assert merged[0].score == pytest.approx(0.8)
+    assert merged[0].score == pytest.approx(0.74)
 
 
 def test_vector_filter_payload_and_memory_matching_include_published_dates() -> None:
@@ -1130,7 +1130,7 @@ def test_keyword_score_applies_entity_boost() -> None:
         raw_page_id=uuid.uuid4(),
         crawl_run_id=uuid.uuid4(),
         item_type="doc_page",
-        title="mavic3 telemetry guide",
+        title="mavic3 guide",
         canonical_url="https://docs.example.com/guide",
         cleaned_text="telemetry manual",
         tags=["mavic3"],
@@ -1196,3 +1196,169 @@ async def test_keyword_retrieval_does_not_return_entity_only_match(
     result_ids = {evidence.content_item_id for evidence in result.evidence}
     assert keyword_match.content_item.id in result_ids
     assert entity_only.content_item.id not in result_ids
+
+
+async def test_model_phrase_survives_over_1000_newer_numeric_keyword_matches(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.retrieval import _keyword_score_sql_expression, _normalized_terms
+
+    settings = _use_memory_vector_backend(monkeypatch)
+    monkeypatch.setattr(QdrantIndexer, "search_chunks", lambda self, **kwargs: [])
+    source_id, run_id = await _create_retrieval_source_run(db_session, url_path="model-rank")
+    old = datetime(2025, 1, 1, tzinfo=UTC)
+    exact = _build_single_chunk_content(
+        source_id=source_id, run_id=run_id, url_path="mavic-3-pro",
+        item_type="video_description", title="Introducing DJI Mavic 3 Pro",
+        cleaned_text="DJI Mavic 3 Pro has three cameras.", summary_text=None,
+        tags=[], created_at=old,
+    )
+    noise = [
+        _build_single_chunk_content(
+            source_id=source_id, run_id=run_id, url_path=f"numeric-noise-{index}",
+            item_type="post", title=f"Reply 3 · Protocol report {index}",
+            cleaned_text="Protocol issue 3 with telemetry.",
+            summary_text="Protocol problem.", tags=[], created_at=old + timedelta(days=1),
+        )
+        for index in range(1001)
+    ]
+    records = [exact, *noise]
+    db_session.add_all([r[0] for r in records])
+    await db_session.flush()
+    db_session.add_all([r[1] for r in records])
+    await db_session.flush()
+    db_session.add_all([r[2] for r in records])
+    await db_session.flush()
+    service = SearchService(db_session, settings=settings, embedding=_FixedEmbeddingService())
+    for query in ["Mavic 3 Pro", "介绍一下Mavic 3 Pro"]:
+        response = await service.search(SearchRequest(query=query, top_k=3))
+        assert [e.content_item_id for e in response.evidence] == [exact[1].id]
+        assert response.query.query_trace_json["retrieval"]["model_phrases"] == ["mavic 3 pro"]
+        terms = _normalized_terms(keyword_terms=query.split(), raw_query=query)
+        rows = (await db_session.execute(
+            select(ContentItem, ContentChunk, _keyword_score_sql_expression(terms))
+            .select_from(ContentChunk)
+            .join(ContentItem, ContentChunk.content_item_id == ContentItem.id)
+            .where(ContentItem.id.in_([exact[1].id, noise[0][1].id]))
+        )).all()
+        for item, chunk, sql_score in rows:
+            assert float(sql_score) == pytest.approx(_keyword_score(item, chunk, terms))
+
+
+async def test_search_and_answer_diversify_before_truncating_long_video(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _use_memory_vector_backend(monkeypatch)
+    settings.deepseek_api_key = None
+    monkeypatch.setattr(QdrantIndexer, "search_chunks", lambda self, **kwargs: [])
+    source_id, run_id = await _create_retrieval_source_run(db_session, url_path="long-video")
+    records = [
+        _build_single_chunk_content(
+            source_id=source_id, run_id=run_id, url_path=f"mavic-video-{index}",
+            item_type="video_description", title=f"Mavic 3 Pro camera source {index}",
+            cleaned_text="Mavic 3 Pro camera specifications.", summary_text=None,
+            tags=[], created_at=datetime(2025, 1, 3 - index, tzinfo=UTC),
+        )
+        for index in range(3)
+    ]
+    db_session.add_all([r[0] for r in records])
+    await db_session.flush()
+    db_session.add_all([r[1] for r in records])
+    await db_session.flush()
+    db_session.add_all([r[2] for r in records])
+    for index in range(1, 40):
+        db_session.add(ContentChunk(
+            content_item_id=records[0][1].id, chunk_index=index,
+            display_text="Mavic 3 Pro camera specifications.",
+            embed_text="Mavic 3 Pro camera specifications.", embed_status="pending",
+        ))
+    await db_session.commit()
+    service = SearchService(db_session, settings=settings, embedding=_FixedEmbeddingService())
+    expected_ids = {r[1].id for r in records}
+    for filters in [SearchFilters(), SearchFilters(item_type="video_description")]:
+        result = await service.search(SearchRequest(query="Mavic 3 Pro", filters=filters, top_k=3))
+        assert len(result.evidence) == 3
+        assert {e.content_item_id for e in result.evidence} == expected_ids
+    answer = await service.answer(AnswerRequest(query="介绍一下Mavic 3 Pro", top_k=3))
+    assert len(answer.supporting_evidence) == 3
+    assert {e.content_item_id for e in answer.supporting_evidence} == expected_ids
+
+
+async def test_legacy_video_vectors_without_type_reach_authoritative_sql_filter(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _use_memory_vector_backend(monkeypatch)
+    indexer = QdrantIndexer(
+        settings.qdrant_url, settings.qdrant_collection, _FixedEmbeddingService()
+    )
+    indexer.ensure_collection()
+    expected_id = None
+    for index, kind in enumerate(["doc_page", "video_description"]):
+        created, _ = await _create_retrieval_content(
+            db_session, url_path=f"legacy-vector-{index}", title="Camera evidence",
+            cleaned_text="Camera specifications and footage.",
+        )
+        created.content_item.item_type = kind
+        if kind == "video_description":
+            expected_id = created.content_item.id
+        indexer.upsert_chunk(
+            chunk_id=created.chunks[0].id, embed_text="legacy semantic probe",
+            payload={"content_item_id": str(created.content_item.id)},
+        )
+    await db_session.flush()
+    result = await retrieve_evidence(
+        db_session, raw_query="unrelatedneedle", optimized_query_text="legacy semantic probe",
+        keyword_terms=["unrelatedneedle"], filters=SearchFilters(item_type="video_description"),
+        top_k=3, qdrant_url=settings.qdrant_url, qdrant_collection=settings.qdrant_collection,
+        embedding=_FixedEmbeddingService(),
+    )
+    assert result.trace["vector"]["hit_count"] == 2
+    assert [e.content_item_id for e in result.evidence] == [expected_id]
+    assert result.evidence[0].matched_by == "vector"
+
+
+async def test_video_ingestion_writes_filterable_vector_metadata(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib.util
+    import os
+    import sys
+    from pathlib import Path
+
+    path = (Path(__file__).parents[2] / "tools/video-crawler/scripts"
+            / "youtube_transcript_evidence.py")
+    monkeypatch.syspath_prepend(str(path.parent))
+    spec = importlib.util.spec_from_file_location("video_metadata_regression", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
+    settings = Settings(
+        _env_file=None, SYNC_DATABASE_URL=os.environ["TEST_DATABASE_URL"],
+        QDRANT_URL=f"memory://video-metadata-{uuid.uuid4()}",
+    )
+    monkeypatch.setattr("app.core.config.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "app.services.embeddings.build_embedding_service", lambda _: _FixedEmbeddingService()
+    )
+    payloads = []
+
+    def record_vector(self: object, *, chunk_id: uuid.UUID, embed_text: str, payload: dict) -> str:
+        payloads.append(payload)
+        return str(chunk_id)
+
+    monkeypatch.setattr(QdrantIndexer, "upsert_chunk", record_vector)
+    result = module.ingest_video_evidence({
+        "title": "Mavic 3 Pro metadata regression",
+        "video_page_url": "https://www.youtube.com/watch?v=metadata-test",
+        "video_summary": "Mavic 3 Pro has three cameras.",
+        "segments": [{"start_seconds": 0, "end_seconds": 2, "text": "Mavic 3 Pro camera"}],
+    })
+    assert result["status"] == "success"
+    assert payloads
+    for payload in payloads:
+        assert payload["item_type"] == "video_description"
+        assert payload["source_site_id"]
+        assert payload["language"] == "zh"
+        assert "youtube" in payload["tags"]
+        assert "published_at" in payload

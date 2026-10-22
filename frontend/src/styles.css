@@ -180,3 +180,8 @@ progress { width: 100%; height: 8px; accent-color: #0f62fe; }.login-notice { pad
 .video-graph-evidence blockquote { margin: 12px 0; padding-left: 12px; border-left: 3px solid #a7bfec; white-space: pre-wrap; }
 .video-graph-evidence button { margin-left: 12px; }
 @media (max-width: 1000px) { .video-graph-details { grid-template-columns: 1fr; } }
+
+.chat-session-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; max-width: 420px; }
+.chat-session-controls select { min-width: 160px; max-width: 260px; }
+.chat-citation { margin: 0 0 4px; color: #0f62fe; font-weight: 600; }
+.chat-fallback { margin: 12px 0 0; padding: 10px; background: #fff1e6; color: #8a3800; font-size: .8rem; }

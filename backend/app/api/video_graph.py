@@ -2,10 +2,14 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import create_engine
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import get_session
+from app.core.config import get_settings
 from app.schemas.video_graph import (
     Assertion,
     EntityType,
@@ -21,7 +25,29 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 async def _query(session: AsyncSession, callback: Any) -> Any:
     try:
-        return await session.run_sync(callback)
+        settings = get_settings()
+        if settings.video_graph_backend == "neo4j":
+
+            def query_neo4j():
+                from neo4j.exceptions import Neo4jError, ServiceUnavailable
+
+                from app.services.neo4j_graph.queries import GraphQueries
+                from app.services.neo4j_graph.store import GraphStore
+
+                engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+                try:
+                    with GraphStore(settings) as store, Session(engine) as source:
+                        store.ensure_ready()
+                        return callback(source, GraphQueries(store))
+                except (Neo4jError, ServiceUnavailable, ValueError) as exc:
+                    raise HTTPException(
+                        status_code=503, detail="Neo4j 图谱不可用，请检查连接及迁移状态"
+                    ) from exc
+                finally:
+                    engine.dispose()
+
+            return await run_in_threadpool(query_neo4j)
+        return await session.run_sync(lambda sync: callback(sync, queries))
     except ProgrammingError as exc:
         if getattr(exc.orig, "sqlstate", None) == "42P01":
             await session.rollback()
@@ -33,7 +59,7 @@ async def _query(session: AsyncSession, callback: Any) -> Any:
 
 @router.get("/overview")
 async def overview(session: SessionDep) -> Any:
-    return await _query(session, queries.overview)
+    return await _query(session, lambda sync, service: service.overview(sync))
 
 
 @router.get("/entities")
@@ -47,7 +73,7 @@ async def entities(
 ) -> Any:
     return await _query(
         session,
-        lambda sync: queries.list_entities(
+        lambda sync, service: service.list_entities(
             sync,
             q=q,
             entity_type=entity_type,
@@ -72,7 +98,7 @@ async def graph(
 ) -> Any:
     return await _query(
         session,
-        lambda sync: queries.get_graph(
+        lambda sync, service: service.get_graph(
             sync,
             entity_id=entity_id,
             content_id=content_item_id,
@@ -97,7 +123,7 @@ async def evidence(
 ) -> Any:
     return await _query(
         session,
-        lambda sync: queries.relation_evidence(
+        lambda sync, service: service.relation_evidence(
             sync,
             relation_id,
             content_id=content_item_id,
@@ -110,7 +136,7 @@ async def evidence(
 
 @router.get("/videos/{content_id}/status")
 async def video_status(content_id: uuid.UUID, session: SessionDep) -> Any:
-    result = await _query(session, lambda sync: queries.video_status(sync, content_id))
+    result = await _query(session, lambda sync, service: service.video_status(sync, content_id))
     if result is None:
         raise HTTPException(status_code=404, detail="找不到视频")
     return result
@@ -118,4 +144,4 @@ async def video_status(content_id: uuid.UUID, session: SessionDep) -> Any:
 
 @router.post("/retrieve", response_model=GraphRetrieveResponse)
 async def retrieve(payload: GraphRetrieveRequest, session: SessionDep) -> Any:
-    return await _query(session, lambda sync: queries.retrieve_context(sync, payload))
+    return await _query(session, lambda sync, service: service.retrieve_context(sync, payload))

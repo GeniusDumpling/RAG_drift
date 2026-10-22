@@ -7,9 +7,10 @@ job="${1:-}"
 case "$job" in
   video-collect) command=(tools/video-crawler/scripts/run_scheduled_collect.sh); entrypoint=/bin/bash ;;
   discourse-collect) command=(tools/forum-crawler/scripts/run_scheduled_discourse.sh); entrypoint=/bin/bash ;;
+  discourse-backfill) command=(tools/forum-crawler/scripts/run_scheduled_backfill.sh); entrypoint=/bin/bash ;;
   supplier-pipeline) command=(tools/supplier-information/pipeline.py); entrypoint=python ;;
   supplier-verify) command=(tools/supplier-information/supplier_verify.py); entrypoint=python ;;
-  *) echo "Usage: $0 {video-collect|discourse-collect|supplier-pipeline|supplier-verify}" >&2; exit 64 ;;
+  *) echo "Usage: $0 {video-collect|discourse-collect|discourse-backfill|supplier-pipeline|supplier-verify}" >&2; exit 64 ;;
 esac
 if [[ $# == 2 && "$2" == --validate ]]; then
   entrypoint=python
@@ -22,6 +23,7 @@ mkdir -p -- "$lock_dir"
 # Supplier verification and collection share mutable output files.
 lock_job="$job"
 [[ "$job" != supplier-* ]] || lock_job=supplier
+[[ "$job" != discourse-* ]] || lock_job=discourse
 exec 9>"$lock_dir/$lock_job.lock"
 flock -n 9 || { echo "Job $job already running; skipped"; exit 0; }
 name="${JOB_CONTAINER_PREFIX:-intelligence-rag}-$job"

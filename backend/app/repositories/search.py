@@ -96,6 +96,22 @@ class SearchRepository:
             await self.session.scalar(select(SearchQuery).where(SearchQuery.id == search_query_id)),
         )
 
+    async def record_generation(
+        self, search_query_id: UUID, *, answer: str, generation: dict[str, Any],
+        supporting_evidence: list[dict[str, Any]],
+    ) -> SearchQuery:
+        query = await self.get_search_query(search_query_id)
+        if query is None:
+            raise ValueError("Search query not found")
+        query.query_trace_json = {**query.query_trace_json, "generation": generation}
+        query.result_summary_json = {
+            **query.result_summary_json, "answer": answer,
+            "generation": generation, "supporting_evidence": supporting_evidence,
+        }
+        await self.session.commit()
+        await self.session.refresh(query)
+        return query
+
 
 async def create_search_query(
     session: AsyncSession,

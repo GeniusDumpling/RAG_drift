@@ -41,6 +41,7 @@ class AnswerRequest(BaseModel):
     mode: Literal["answer"] = "answer"
     filters: SearchFilters = Field(default_factory=SearchFilters)
     top_k: int = Field(default=10, ge=1, le=50)
+    session_id: uuid.UUID | None = None
 
     @field_validator("query")
     @classmethod
@@ -93,7 +94,46 @@ class SearchResponse(BaseModel):
     evidence: list[EvidenceObject]
 
 
+class GenerationInfo(BaseModel):
+    status: Literal["generated", "fallback", "no_evidence", "cancelled", "error"] = "generated"
+    model: str | None = None
+    reason: str | None = None
+    latency_ms: int = 0
+    total_latency_ms: int = 0
+    evidence_count: int = 0
+    context_chars: int = 0
+    context_chunk_ids: list[uuid.UUID] = Field(default_factory=list)
+    retrieval_query: str | None = None
+    rewrite_status: str = "not_needed"
+
+
 class AnswerResponse(BaseModel):
     query: SearchQueryRead
     answer: str
     supporting_evidence: list[EvidenceObject]
+    generation: GenerationInfo = Field(default_factory=GenerationInfo)
+    session_id: uuid.UUID | None = None
+    turn_id: uuid.UUID | None = None
+
+
+class ChatSessionRead(OrmBaseModel):
+    id: uuid.UUID
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatTurnRead(OrmBaseModel):
+    id: uuid.UUID
+    session_id: uuid.UUID
+    query: str
+    answer: str
+    status: str
+    supporting_evidence: list[EvidenceObject]
+    generation: GenerationInfo | None = None
+    created_at: datetime
+
+
+class ChatSessionDetail(BaseModel):
+    session: ChatSessionRead
+    turns: list[ChatTurnRead]

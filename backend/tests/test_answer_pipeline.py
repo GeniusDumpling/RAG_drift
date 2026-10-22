@@ -73,7 +73,7 @@ def test_answer_returns_summary_with_supporting_evidence(monkeypatch: pytest.Mon
     assert "[1]" in payload["answer"]
 
 
-def test_answer_limits_supporting_evidence_to_synthesized_top_three(
+def test_answer_uses_more_than_three_diverse_sources_within_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -141,12 +141,12 @@ def test_answer_limits_supporting_evidence_to_synthesized_top_three(
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload["supporting_evidence"]) == 3
+    assert len(payload["supporting_evidence"]) == 5
     assert "[1]" in payload["answer"]
     assert "[2]" in payload["answer"]
     assert "[3]" in payload["answer"]
-    assert "[4]" not in payload["answer"]
-    assert "[5]" not in payload["answer"]
+    assert "[4]" in payload["answer"]
+    assert "[5]" in payload["answer"]
     for citation_index, evidence in enumerate(payload["supporting_evidence"], start=1):
         assert f"[{citation_index}] {evidence['snippet']}" in payload["answer"]
 

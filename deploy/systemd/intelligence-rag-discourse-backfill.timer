@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule Intelligence RAG discourse historical backfill
+
+[Timer]
+OnCalendar=*-*-* *:05:00 Asia/Shanghai
+Persistent=true
+AccuracySec=1min
+Unit=intelligence-rag-discourse-backfill.service
+
+[Install]
+WantedBy=timers.target

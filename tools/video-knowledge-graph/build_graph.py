@@ -113,10 +113,26 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     settings = get_settings()
     engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    store = None
     try:
+        if (
+            settings.video_graph_backend == "neo4j"
+            and args.command != "inventory"
+            and not getattr(args, "dry_run", False)
+        ):
+            from app.services.neo4j_graph.store import GraphStore
+
+            store = GraphStore(settings)
+            store.initialize()
+            store.ensure_ready()
         if args.command in {"withdraw", "restore"}:
             with Session(engine) as session, session.begin():
-                withdraw_video(session, args.content_id, restore=args.command == "restore")
+                if store:
+                    if load_material(session, args.content_id) is None:
+                        raise ValueError("找不到视频记录")
+                    store.withdraw(args.content_id, restore=args.command == "restore")
+                else:
+                    withdraw_video(session, args.content_id, restore=args.command == "restore")
             emit({"status": args.command, "content_item_id": str(args.content_id)})
             return 0
         if args.command == "inventory" or args.dry_run:
@@ -133,20 +149,37 @@ def main(argv: list[str] | None = None) -> int:
         )
         failed = False
         while True:
-            with Session(engine) as session, session.begin():
-                scan = enqueue_videos(
-                    session,
+            if store:
+                from app.services.neo4j_graph.worker import enqueue_videos as enqueue_neo4j
+
+                scan = enqueue_neo4j(
+                    engine,
+                    store,
                     extractor_version=version,
                     content_ids=args.content_id,
                     retry_failed=args.retry_failed,
                     retry_partial=args.retry_partial,
                 )
+            else:
+                with Session(engine) as session, session.begin():
+                    scan = enqueue_videos(
+                        session,
+                        extractor_version=version,
+                        content_ids=args.content_id,
+                        retry_failed=args.retry_failed,
+                        retry_partial=args.retry_partial,
+                    )
             emit({"stage": "scan", **scan})
             if args.command == "scan":
                 return 0
             assert extractor is not None
             for _ in range(args.limit):
-                result = process_next(engine, extractor, content_ids=args.content_id)
+                if store:
+                    from app.services.neo4j_graph.worker import process_next as process_neo4j
+
+                    result = process_neo4j(engine, store, extractor, content_ids=args.content_id)
+                else:
+                    result = process_next(engine, extractor, content_ids=args.content_id)
                 if result is None:
                     break
                 emit(result)
@@ -173,6 +206,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
     finally:
+        if store:
+            store.close()
         engine.dispose()
 
 

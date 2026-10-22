@@ -38,6 +38,7 @@ API_PATH_PREFIXES = (
     "/search",
     "/answer",
     "/search-queries",
+    "/chat-sessions",
     "/literature-runs",
     "/literature-papers",
     "/literature-artifacts",

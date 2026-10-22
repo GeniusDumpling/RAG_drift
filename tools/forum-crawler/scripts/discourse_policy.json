@@ -1,0 +1,20 @@
+{
+  "version": "2026-10-21.1",
+  "forums": {
+    "ardupilot": {
+      "exclude_category_slugs": ["for-sale", "wanted-jobs", "rants-raves", "marketing"],
+      "technical_category_slugs": [
+        "arducopter", "arduplane", "ardurover", "sub", "antennatracker",
+        "ground-control-software", "hardware", "ap-sync", "apsync",
+        "development-team", "ardupilot-lua-scripting"
+      ]
+    },
+    "px4": {
+      "exclude_category_slugs": ["looking-for-jobs", "looking-for-devs", "random", "site-feedback"],
+      "technical_category_slugs": [
+        "px4", "flight-testing", "pixhawk", "mavlink", "mavsdk",
+        "qgroundcontrol", "ros", "guides"
+      ]
+    }
+  }
+}

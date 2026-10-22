@@ -56,10 +56,11 @@ if args[0] == 'inspect':
     def calls(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()]
 
-    def test_four_jobs_use_isolated_named_compose_runs(self):
+    def test_five_jobs_use_isolated_named_compose_runs(self):
         expected = {
             "video-collect": "tools/video-crawler/scripts/run_scheduled_collect.sh",
             "discourse-collect": "tools/forum-crawler/scripts/run_scheduled_discourse.sh",
+            "discourse-backfill": "tools/forum-crawler/scripts/run_scheduled_backfill.sh",
             "supplier-pipeline": "tools/supplier-information/pipeline.py",
             "supplier-verify": "tools/supplier-information/supplier_verify.py",
         }
@@ -111,6 +112,18 @@ if args[0] == 'inspect':
         self.assertIn("-c", run)
         self.assertIn("compile(", run[run.index("-c") + 1])
         self.assertNotIn("--scheduled", run)
+
+    def test_forum_jobs_share_a_host_lock(self):
+        import fcntl
+
+        lockdir = Path(self.env["JOB_LOCK_DIR"])
+        lockdir.mkdir()
+        with (lockdir / "discourse.lock").open("w") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            for job in ("discourse-collect", "discourse-backfill"):
+                result = self.run_job(job)
+                self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.log.exists())
 
     def test_systemd_templates_are_host_only(self):
         service = ROOT / "deploy/systemd/intelligence-rag-video-collect.service"

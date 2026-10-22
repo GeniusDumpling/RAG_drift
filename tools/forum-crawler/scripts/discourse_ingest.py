@@ -1,24 +1,11 @@
 #!/usr/bin/env python3
-"""把 Discourse 论坛按关键词搜索命中的帖子导入 RAG。
+# ruff: noqa: E402
+"""Archive complete public Discourse topics in PostgreSQL; processing runs separately.
 
-流程：按关键词调用各论坛 `/search.json` 发现候选 → 查重 →
-    对每个候选调用 `/posts/{id}.json` 取全文(raw) → 落四层存储
-    （Source/Job/Run + RawPage + Author + ContentItem + ContentChunk）。
-
-设计对齐 `ingest_dji_lito.py`：
-- 原始 API JSON 保留在 `raw_pages.raw_json`；
-- 每个命中帖子作为 `item_type="post"` 独立入库；
-- 单个帖子失败不影响其余候选（每个候选在独立 try/except 中处理）；
-- 去重键 = {source_id}:{canonical_url}:post:{content_hash}。
-
-用法示例（仓库根目录）：
-
-    python3 skills/forum-crawler/scripts/discourse_ingest.py \
-        --query "GPS spoofing jamming" \
-        --forums ardupilot px4 \
-        --max-results 10 \
-        --request-delay 0.3 \
-        --json
+Default: incremental public post stream (new topics AND replies).
+--mode backfill: resumable history scan with an independent cursor.
+--forums px4 --topic-id 49575: archive specific topics.
+--query 'GPS spoofing': legacy manual search discovery, never used by the timer.
 """
 
 from __future__ import annotations
@@ -26,399 +13,407 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
-from datetime import UTC, datetime
+from datetime import timedelta
 from pathlib import Path
-from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.parse import quote
-from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT))
 
-from sqlalchemy import create_engine, select, text  # noqa: E402
-from sqlalchemy.orm import Session  # noqa: E402
-
-from app.core.config import get_settings  # noqa: E402
-from app.db.base import utcnow  # noqa: E402
-from app.models.content import Author, ContentChunk, ContentItem, RawPage  # noqa: E402
-from app.models.control import CrawlJob, CrawlRun, SourceSite  # noqa: E402
-from app.repositories.contents import stable_hash  # noqa: E402
-from app.services.chunking import build_chunks  # noqa: E402
-
-# 复用 DJI ingest 的通用工具（同目录，均为纯函数）。
-# 以顶层模块运行时相对导入不可用，故用普通导入。
-from ingest_dji_lito import add_event, compact_json, existing_item
-
-USER_AGENT = "Mozilla/5.0 (compatible; IntelligenceRAGDiscourseIngest/0.1)"
-
-# 论坛标识 → 根地址。dronecode 已合并进 px4。
-FORUMS: dict[str, str] = {
-    "ardupilot": "https://discuss.ardupilot.org",
-    "px4": "https://discuss.px4.io",
-    "dronecode": "https://discuss.px4.io",  # 301 → PX4
-}
-
-
-class DiscourseError(RuntimeError):
-    """触发失败或网络错误。"""
-
-
-def fetch_json(url: str) -> dict[str, Any]:
-    request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-    try:
-        with urlopen(request, timeout=30) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        raise DiscourseError(f"HTTP {exc.code}") from exc
-    except URLError as exc:
-        raise DiscourseError(f"网络错误：{exc.reason}") from exc
+from app.core.config import get_settings
+from app.db.base import utcnow
+from app.models.content import RawPage
+from app.models.control import CrawlRun
+from discourse_common import (
+    ALIASES,
+    FORUMS,
+    DiscourseClient,
+    DiscourseError,
+    canonical_forums,
+    fetch_topic,
+    iso_to_dt,
+)
+from discourse_storage import (
+    TOPIC_PROFILE,
+    ForumSyncState,
+    ForumTopicTask,
+    add_event,
+    archive_response,
+    enqueue,
+    ensure_storage,
+    forum_session,
+    queue_summary,
+    source_and_job,
+)
+from sqlalchemy import create_engine, select
 
 
-def iso_to_dt(value: Any) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(UTC)
-    except (ValueError, TypeError):
-        return None
-
-
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--query", required=True, help="Discourse 搜索词（如 GPS spoofing / MAVLink security）")
+    parser.add_argument("--forums", nargs="+", choices=[*FORUMS, *ALIASES], default=list(FORUMS))
+    parser.add_argument("--forum", choices=[*FORUMS, *ALIASES])
     parser.add_argument(
-        "--forums",
-        nargs="+",
-        choices=tuple(FORUMS),
-        default=list(FORUMS),
-        help="要采集的论坛标识，空格分隔，默认 all（ardupilot px4）",
+        "--mode", choices=["incremental", "backfill", "search"], default="incremental"
     )
-    parser.add_argument("--max-results", type=int, default=10, help="每个论坛最多入库的帖子数，默认 10")
-    parser.add_argument("--category-id", type=int, default=None, help="限定搜索板块 category_id，可选")
-    parser.add_argument("--request-delay", type=float, default=0.3, help="每次 API 请求间隔，默认 0.3s")
-    parser.add_argument("--language", default="en", help="帖子默认语言，默认 en")
-    parser.add_argument("--json", action="store_true", help="输出 JSON（默认）")
-    return parser.parse_args(argv)
+    parser.add_argument("--query", help="Legacy manual keyword discovery")
+    parser.add_argument("--topic-id", type=int, nargs="+")
+    parser.add_argument("--max-pages", type=int, default=10)
+    parser.add_argument("--max-topics", "--max-results", dest="max_topics", type=int, default=20)
+    parser.add_argument("--category-id", type=int, help="Manual search category")
+    parser.add_argument("--since", help="Backfill created-at cutoff, e.g. 2024-10-21 (UTC)")
+    parser.add_argument("--request-delay", type=float, default=1.0)
+    parser.add_argument("--timeout", type=float, default=30)
+    parser.add_argument("--retries", type=int, default=3)
+    parser.add_argument("--refresh-hours", type=float, default=24)
+    parser.add_argument("--refresh-limit", type=int, default=3)
+    parser.add_argument("--language", default="en")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(argv)
+    args.forums = canonical_forums([args.forum] if args.forum else args.forums)
+    if args.max_pages < 1 or args.max_topics < 1 or args.refresh_limit < 0:
+        parser.error("max-pages/max-topics must be positive; refresh-limit must be nonnegative")
+    if args.request_delay < 0 or args.timeout <= 0 or args.retries < 0 or args.refresh_hours <= 0:
+        parser.error("Invalid delay, timeout, retries or refresh interval")
+    if args.topic_id and (any(tid < 1 for tid in args.topic_id) or len(args.forums) != 1):
+        parser.error("Explicit topic IDs must be positive and require exactly one forum")
+    if args.query:
+        if not args.query.strip():
+            parser.error("query must not be empty")
+        args.mode = "search"
+    if args.mode == "search" and not args.query:
+        parser.error("search mode requires --query")
+    if args.since and (args.mode != "backfill" or iso_to_dt(args.since) is None):
+        parser.error("since requires backfill mode and an ISO date")
+    return args
 
 
-def get_source_and_job(session: Session, *, forum: str, base: str, query: str, language: str) -> tuple[SourceSite, CrawlJob]:
-    host = base.removeprefix("https://").removeprefix("http://").split("/")[0]
-    source_name = f"Discourse: {forum} ({host})"
-    source = session.scalar(select(SourceSite).where(SourceSite.name == source_name).limit(1))
-    if source is None:
-        source = SourceSite(
-            name=source_name,
-            site_type="forum",
-            base_url=base,
-            allowed_domains=[host],
-            fetch_mode="http_api",
-            default_language=language,
-            active=True,
-            config_json={"kind": "discourse", "forum": forum, "base": base, "api_base": base},
+def discover_stream(session, source, state, client, run, *, mode, max_pages, since=None):
+    """Commit queued topics and each discovery checkpoint in one transaction."""
+    data = dict(state.state_json)
+    if mode == "backfill" and data.get("backfill_complete"):
+        return {"discovered_posts": 0, "discovery_complete": True}
+    if mode == "backfill":
+        cutoff = iso_to_dt(since)
+        if "backfill_since" in data and data["backfill_since"] != since:
+            raise ValueError("Backfill cutoff already checkpointed; keep the original --since")
+        data["backfill_since"] = since
+        before = data.get("backfill_before")
+        floor = -1
+    else:
+        cutoff = None
+        floor = int(data.get("watermark", 0))
+        before = data.get("scan_before")
+    discovered = 0
+    complete = False
+    for _ in range(max_pages):
+        path = "/posts.json" + (f"?before={before}" if before else "")
+        session.commit()
+        payload = client.get(path)
+        posts = payload.get("latest_posts")
+        if not isinstance(posts, list) or any(
+            not isinstance(p, dict) or not p.get("id") or not p.get("topic_id") for p in posts
+        ):
+            raise DiscourseError("Invalid public post page; cursor unchanged")
+        ids = [int(p["id"]) for p in posts]
+        if ids != sorted(set(ids), reverse=True) or (before and any(pid >= before for pid in ids)):
+            raise DiscourseError("Public post page did not advance; cursor unchanged")
+        archive_response(session, source, run, path, payload)
+        selected = [p for p in posts if int(p["id"]) > floor]
+        if cutoff:
+            selected = [p for p in selected if (iso_to_dt(p.get("created_at")) or cutoff) >= cutoff]
+        enqueue(
+            session,
+            source.id,
+            [int(p["topic_id"]) for p in selected],
+            priority=10 if mode == "backfill" else 0,
         )
-        session.add(source)
-        session.flush()
+        discovered += len(selected)
+        run.discovered_count = (run.discovered_count or 0) + len(selected)
+        complete = not posts or (mode == "incremental" and min(ids) <= floor)
+        if mode == "backfill":
+            # Imported posts can have backdated created_at: cutoff filters, never
+            # stops an ID scan early. Explicit --topic-id also retrieves old roots.
+            data["backfill_before"] = min(ids) if ids else before
+            data["backfill_complete"] = complete
+        else:
+            if ids and not data.get("scan_head"):
+                data["scan_head"] = max(ids)
+            # Bootstrap one recent page. History must not stall new-post discovery.
+            complete = complete or "watermark" not in data
+            if complete:
+                data["watermark"] = data.pop("scan_head", floor)
+                data.pop("scan_before", None)
+            else:
+                data["scan_before"] = min(ids)
+        state.state_json = dict(data)
+        state.updated_at = utcnow()
+        session.commit()
+        before = min(ids) if ids else before
+        if complete:
+            break
+    return {"discovered_posts": discovered, "discovery_complete": complete}
 
-    job_name = f"Discourse {forum} 关键词检索采集"
-    job = session.scalar(select(CrawlJob).where(CrawlJob.source_site_id == source.id, CrawlJob.name == job_name).limit(1))
-    if job is None:
-        job = CrawlJob(
-            source_site_id=source.id,
-            name=job_name,
-            trigger_mode="manual",
-            cron_expr=None,
-            seed_config_json={"query": query, "max_results": None, "category_id": None, "base": base},
-            parser_profile="discourse_api",
-            max_pages=None,
-            enabled=True,
-            agent_policy_json={"extraction_mode": "deterministic_api_mapping"},
-            last_run_at=None,
-            next_run_at=None,
+
+def refresh_topics(session, source_id, *, hours, limit):
+    if not limit:
+        return
+    tasks = session.scalars(
+        select(ForumTopicTask)
+        .where(
+            ForumTopicTask.source_site_id == source_id,
+            ForumTopicTask.capture_status == "captured",
+            ForumTopicTask.last_captured_at < utcnow() - timedelta(hours=hours),
         )
-        session.add(job)
-        session.flush()
-    return source, job
+        .order_by(ForumTopicTask.last_captured_at)
+        .limit(limit)
+    ).all()
+    for task in tasks:
+        task.capture_status = "pending"
+        task.next_attempt_at = utcnow()
+        task.priority = 20
+    session.commit()
 
 
-def get_author(session: Session, source_id: Any, username: str, base: str) -> Author:
-    external_id = username or "未知用户"
-    author = session.scalar(
-        select(Author).where(Author.source_site_id == source_id, Author.external_author_id == external_id).limit(1)
-    )
-    if author is not None:
-        return author
-    author = Author(
-        source_site_id=source_id,
-        display_name=username or "未知用户",
-        handle=username or None,
-        profile_url=f"{base}/u/{quote(username)}" if username else None,
-        external_author_id=external_id,
-        raw_json={"username": username},
-    )
-    session.add(author)
-    session.flush()
-    return author
+def capture_tasks(session, source, run, client, categories, *, limit):
+    stats = {"topics_captured": 0, "posts_archived": 0, "raw_pages_created": 0, "failed": 0}
+    errors = []
+    tasks = session.scalars(
+        select(ForumTopicTask)
+        .where(
+            ForumTopicTask.source_site_id == source.id,
+            ForumTopicTask.capture_status.in_(["pending", "retry"]),
+            ForumTopicTask.next_attempt_at <= utcnow(),
+        )
+        .order_by(ForumTopicTask.priority, ForumTopicTask.next_attempt_at, ForumTopicTask.queued_at)
+        .limit(limit)
+    ).all()
+    session.commit()
+    for task in tasks:
 
+        def archive(path, payload):
+            archive_response(session, source, run, path, payload)
+            session.commit()  # Raw pages survive an incomplete topic or later parsing failure.
+            stats["raw_pages_created"] += 1
 
-def create_discourse_post(
-    session: Session,
-    *,
-    source: SourceSite,
-    run: CrawlRun,
-    post_payload: dict[str, Any],
-    candidate: dict[str, Any],
-    base: str,
-    query: str,
-    language: str,
-) -> tuple[ContentItem | None, RawPage | None, int]:
-    post_id = int(post_payload.get("id") or candidate["post_id"])
-    username = candidate["username"]
-    title = candidate["topic_title"]
-    canonical_url = f"{base}/t/{candidate.get('topic_slug') or candidate['topic_url_slug']}/{candidate['topic_id']}/{candidate['post_number']}".rstrip("/")
-    raw = str(post_payload.get("raw") or candidate.get("blurb") or "").strip()
-    if not raw:
-        raw = f"[该帖子正文为空，原始 JSON 已保留在 Raw page 中。]"
-
-    cleaned = "\n\n".join(
-        part for part in [f"主题：{title}", f"作者：{username}", f"内容：{raw}", f"来源：keyword={query} | url={canonical_url}"] if part
-    )
-
-    if existing_item(session, source.id, canonical_url, "post", cleaned) is not None:
-        return None, None, 0
-
-    body_json = compact_json(post_payload)
-    raw_page = RawPage(
-        source_site_id=source.id,
-        crawl_run_id=run.id,
-        requested_url=f"{base}/posts/{post_id}.json",
-        final_url=canonical_url,
-        http_status=200,
-        content_type="application/json",
-        response_headers_json={"x-ingest-adapter": "discourse_api"},
-        raw_html=body_json,
-        raw_text=raw,
-        raw_json=post_payload,
-        fetched_at=utcnow(),
-        fetch_error=None,
-        parser_profile="discourse_api",
-        extraction_method="deterministic_api_mapping",
-        extraction_confidence=1.0,
-        parse_status="parsed",
-        parse_error=None,
-        body_hash=stable_hash(body_json),
-    )
-    session.add(raw_page)
-    session.flush()
-
-    tags = [c.strip() for c in query.replace(",", " ").split() if c.strip()]
-    content = ContentItem(
-        source_site_id=source.id,
-        raw_page_id=raw_page.id,
-        crawl_run_id=run.id,
-        author_id=get_author(session, source.id, username, base).id,
-        parent_item_id=None,
-        thread_root_id=None,
-        item_type="post",
-        title=title,
-        canonical_url=canonical_url,
-        source_url=f"{base}/posts/{post_id}.json",
-        published_at=iso_to_dt(post_payload.get("created_at")),
-        language=language,
-        raw_text=raw,
-        cleaned_text=cleaned,
-        summary_text=raw[:240] or None,
-        structured_by="discourse_api_importer",
-        extraction_confidence=1.0,
-        tags=tags or ["discourse"],
-        metadata_json={
-            "forum": candidate.get("forum"),
-            "query": query,
-            "post_id": post_id,
-            "post_number": candidate.get("post_number"),
-            "category_id": candidate.get("category_id"),
-            "like_count": post_payload.get("like_count"),
-            "base": base,
-        },
-        content_hash=stable_hash(cleaned),
-        dedup_key=stable_hash(f"{source.id}:{canonical_url}:post:{stable_hash(cleaned)}"),
-        search_tsv=None,
-    )
-    session.add(content)
-    session.flush()
-
-    chunk_count = 0
-    for built in build_chunks(item_type="post", title=title, cleaned_text=cleaned, summary_text=raw[:240] or None, tags=tags, thread_title=title):
-        session.add(
-            ContentChunk(
-                content_item_id=content.id,
-                chunk_index=built.chunk_index,
-                char_start=built.start_char,
-                char_end=built.end_char,
-                display_text=built.display_text,
-                embed_text=built.embed_text,
-                token_count=built.token_count,
-                chunk_metadata_json={**built.chunk_metadata_json, "ingest_source": "discourse_api"},
-                qdrant_point_id=None,
-                vector_backend=None,
-                vector_point_id=None,
-                embedded_at=None,
-                embed_status="pending",
-                embed_error=None,
+        try:
+            topic = fetch_topic(client, task.topic_id, archive=archive)
+            category_map = {int(c["id"]): c for c in categories}
+            category_path = []
+            category = category_map.get(int(topic.get("category_id") or 0))
+            seen = set()
+            while category and category["id"] not in seen:
+                seen.add(category["id"])
+                category_path.insert(
+                    0, {k: category.get(k) for k in ("id", "name", "slug", "parent_category_id")}
+                )
+                category = category_map.get(category.get("parent_category_id"))
+            snapshot = archive_response(
+                session,
+                source,
+                run,
+                f"/t/{task.topic_id}.json",
+                {"topic": topic, "category_path": category_path, "complete": True},
+                profile=TOPIC_PROFILE,
             )
-        )
-        chunk_count += 1
-    session.flush()
-    return content, raw_page, chunk_count
+            if task.snapshot_id:
+                previous = session.get(RawPage, task.snapshot_id)
+                if previous and previous.parse_status in ("pending", "failed"):
+                    previous.parse_status = "superseded"
+            task.snapshot_id = snapshot.id
+            task.capture_status = "captured"
+            task.process_status = "pending"
+            task.attempts = 0
+            task.last_error = None
+            task.last_captured_at = utcnow()
+            task.next_process_at = utcnow()
+            task.process_attempts = 0
+            task.process_error = None
+            session.commit()
+            stats["topics_captured"] += 1
+            stats["posts_archived"] += len(topic["post_stream"]["posts"])
+            stats["raw_pages_created"] += 1
+        except Exception as exc:
+            session.rollback()
+            task.attempts += 1
+            task.capture_status = "retry"
+            task.last_error = str(exc)[:2000]
+            wait = max(getattr(exc, "retry_after", 0), min(3600, 30 * 2 ** min(task.attempts, 7)))
+            if getattr(exc, "status", None) in (403, 404, 410):
+                wait = max(wait, min(604800, 3600 * 2 ** min(task.attempts, 8)))
+            task.next_attempt_at = utcnow() + timedelta(seconds=wait)
+            add_event(session, run.id, "fetch", "topic_failed", task.last_error, level="error")
+            session.commit()
+            stats["failed"] += 1
+            errors.append({"topic_id": task.topic_id, "error": task.last_error})
+    return stats, errors
 
 
-def ingest_forum(
-    session: Session,
-    *,
-    forum: str,
-    base: str,
-    query: str,
-    max_results: int,
-    category_id: int | None,
-    request_delay: float,
-    language: str,
-) -> dict[str, Any]:
-    source, job = get_source_and_job(session, forum=forum, base=base, query=query, language=language)
+def collect_forum(session, forum, args, client=None):
+    base = FORUMS[forum]
+    source, job = source_and_job(session, forum, base, args.language)
+    # Exclusive forum lock means a prior running record belongs to an interrupted run.
+    for abandoned in session.scalars(
+        select(CrawlRun).where(CrawlRun.crawl_job_id == job.id, CrawlRun.status == "running")
+    ).all():
+        abandoned.status = "failed"
+        abandoned.finished_at = utcnow()
+        abandoned.error_message = "Previous collector interrupted; durable queue retained"
+        abandoned.error_count = max(1, abandoned.error_count)
     run = CrawlRun(
         source_site_id=source.id,
         crawl_job_id=job.id,
         trigger_type="manual",
-        execution_mode="deterministic_api_import",
+        execution_mode="discourse_capture",
         seed_url=base,
         status="running",
         started_at=utcnow(),
-        config_snapshot_json={"query": query, "forums": [forum], "max_results": max_results, "category_id": category_id, "language": language},
+        config_snapshot_json={
+            "mode": args.mode,
+            "max_pages": args.max_pages,
+            "max_topics": args.max_topics,
+            "query": args.query,
+        },
     )
     session.add(run)
+    state = session.get(ForumSyncState, forum)
+    if state is None:
+        state = ForumSyncState(forum=forum, source_site_id=source.id, state_json={})
+        session.add(state)
     session.flush()
-    add_event(session, run.id, stage="discover", event_type="run_started", message=f"开始采集 Discourse {forum}：keyword={query}", related_url=base, counters={"query": query, "max_results": max_results}, trace={"adapter": "discourse_api", "base": base})
+    add_event(session, run.id, "discover", "run_started", f"Capture {forum}: {args.mode}")
     session.commit()
-
-    # 1) search.json 发现候选
-    params = {"q": query.strip(), "limit": max_results}
-    if category_id:
-        params["category"] = str(category_id)
-    search_url = f"{base}/search.json?q={quote(query.strip())}" + (f"&category={category_id}" if category_id else "")
-    search_payload = fetch_json(search_url)
-    topics = {(t.get("id") or 0): t for t in (search_payload.get("topics") or []) if isinstance(t, dict)}
-    posts = search_payload.get("posts") or []
-    candidates: list[dict[str, Any]] = []
-    for p in posts[:max_results]:
-        if not isinstance(p, dict):
-            continue
-        topic = topics.get(int(p.get("topic_id") or 0)) or {}
-        candidates.append(
-            {
-                "forum": forum,
-                "post_id": int(p.get("id") or 0),
-                "topic_id": int(p.get("topic_id") or 0),
-                "post_number": int(p.get("post_number") or 1),
-                "topic_url_slug": str(topic.get("slug") or ""),
-                "topic_title": str(topic.get("title") or "")[:300],
-                "username": str(p.get("username") or ""),
-                "category_id": int(topic.get("category_id") or p.get("category_id") or 0),
-                "created_at": str(p.get("created_at") or ""),
-                "blurb": str(p.get("blurb") or "")[:500],
-            }
-        )
-    add_event(session, run.id, stage="discover", event_type="search_fetched", message=f"keyword={query} 命中 {len(candidates)} 个帖子候选", related_url=search_url, counters={"discovered_posts": len(candidates)}, trace={"api": search_url})
-    session.commit()
-
-    stats = {"posts_created": 0, "raw_pages_created": 0, "chunks_created": 0, "deduped": 0, "fetched_count": 0, "failed": 0}
-    errors: list[str] = []
-
-    # 2) 逐个候选取全文并入库（独立 try/except，单条失败不影响其余）
-    for index, candidate in enumerate(candidates, start=1):
-        post_id = candidate["post_id"]
+    client = client or DiscourseClient(
+        base, delay=args.request_delay, timeout=args.timeout, retries=args.retries
+    )
+    errors = []
+    discovery = {"discovered_posts": 0, "discovery_complete": False}
+    stats = {"topics_captured": 0, "posts_archived": 0, "raw_pages_created": 0, "failed": 0}
+    try:
+        data = dict(state.state_json)
+        categories = data.get("categories", [])
+        fetched_at = iso_to_dt(data.get("categories_fetched_at"))
+        if not fetched_at or fetched_at < utcnow() - timedelta(days=1):
+            session.commit()
+            try:
+                site = client.get("/site.json")
+                categories = site["categories"]
+                if not isinstance(categories, list):
+                    raise DiscourseError("Invalid category tree")
+                archive_response(session, source, run, "/site.json", site)
+                state.state_json = {
+                    **data,
+                    "categories": categories,
+                    "categories_fetched_at": utcnow().isoformat(),
+                }
+                session.commit()
+            except Exception as exc:
+                session.rollback()
+                errors.append({"stage": "categories", "error": str(exc)})
         try:
-            time.sleep(request_delay)
-            post_payload = fetch_json(f"{base}/posts/{post_id}.json")
-            stats["fetched_count"] += 1
-            content, _raw_page, chunks = create_discourse_post(
-                session, source=source, run=run, post_payload=post_payload, candidate=candidate, base=base, query=query, language=language
-            )
-            if content is None:
-                stats["deduped"] += 1
+            if args.topic_id:
+                enqueue(session, source.id, args.topic_id)
+                session.commit()
+                discovery = {"discovered_posts": 0, "discovery_complete": True}
+            elif args.mode == "search":
+                from discourse_search import search_forum
+
+                found = search_forum(
+                    forum,
+                    args.query,
+                    base=base,
+                    max_results=args.max_topics,
+                    category_id=args.category_id,
+                    client=client,
+                    max_pages=args.max_pages,
+                )
+                enqueue(session, source.id, [p["topic_id"] for p in found["items"]])
+                session.commit()
+                discovery = {
+                    "discovered_posts": found["count"],
+                    "discovery_complete": not found["has_more"],
+                }
             else:
-                stats["posts_created"] += 1
-                stats["raw_pages_created"] += 1
-                stats["chunks_created"] += chunks
-                add_event(session, run.id, stage="parse", event_type="post_imported", message=f"已入库帖子 post={post_id}: {candidate['topic_title'][:60]}", related_url=None, content_item_id=content.id, counters={"post_index": index})
-            session.commit()
-        except Exception as exc:  # noqa: BLE001 - 单条失败应继续
-            stats["failed"] += 1
-            errors.append(f"post={post_id}: {exc}")
+                discovery = discover_stream(
+                    session,
+                    source,
+                    state,
+                    client,
+                    run,
+                    mode=args.mode,
+                    max_pages=args.max_pages,
+                    since=args.since,
+                )
+        except Exception as exc:
             session.rollback()
-            add_event(session, run.id, stage="fetch", event_type="post_failed", level="error", message=f"帖子 post={post_id} 入库失败: {exc}")
-            session.commit()
-
-    run = session.get(CrawlRun, run.id)
-    assert run is not None
-    run.status = "success" if not errors else ("partial" if stats["posts_created"] else "failed")
+            errors.append({"stage": "discovery", "error": str(exc)})
+        refresh_topics(session, source.id, hours=args.refresh_hours, limit=args.refresh_limit)
+        stats, failures = capture_tasks(
+            session, source, run, client, categories, limit=args.max_topics
+        )
+        errors.extend(failures)
+    except Exception as exc:
+        session.rollback()
+        errors.append({"stage": "capture", "error": str(exc)})
+    run.status = "success" if not errors else ("partial" if stats["topics_captured"] else "failed")
     run.finished_at = utcnow()
-    run.discovered_count = len(candidates)
-    run.fetched_count = stats["fetched_count"]
-    run.parsed_count = stats["posts_created"]
-    run.extracted_count = stats["posts_created"]
-    run.deduped_count = stats["deduped"]
-    run.chunked_count = stats["chunks_created"]
-    run.embedded_count = 0
+    run.discovered_count = max(run.discovered_count, discovery["discovered_posts"])
+    run.fetched_count = stats["posts_archived"]
     run.error_count = len(errors)
-    run.error_message = "; ".join(errors) if errors else None
+    run.error_message = json.dumps(errors, ensure_ascii=False) if errors else None
     job.last_run_at = run.finished_at
-    add_event(session, run.id, stage="finalize", event_type="run_finished", message=f"Discourse {forum} 采集完成：posts {stats['posts_created']}，chunks {stats['chunks_created']}，dedup {stats['deduped']}，failed {stats['failed']}。", related_url=base, counters={**stats, "errors": len(errors)})
+    add_event(session, run.id, "finalize", "run_finished", run.status, counters=stats)
     session.commit()
+    return {
+        "forum": forum,
+        "run_id": str(run.id),
+        "status": run.status,
+        **discovery,
+        **stats,
+        **queue_summary(session, source.id),
+        "watermark": state.state_json.get("watermark"),
+        "scan_before": state.state_json.get("scan_before"),
+        "backfill_before": state.state_json.get("backfill_before"),
+        "errors": errors,
+    }
 
-    # 同步持久化的 chunk 计数，抵御 chunking 实现变更
-    actual_chunks = session.execute(
-        text("select count(*) from content_chunks cc join content_items ci on cc.content_item_id=ci.id where ci.crawl_run_id=:run"),
-        {"run": str(run.id)},
-    ).scalar_one()
-    if int(actual_chunks) != run.chunked_count:
-        run.chunked_count = int(actual_chunks)
-        session.commit()
 
-    return {"forum": forum, "base": base, "source_id": str(source.id), "job_id": str(job.id), "run_id": str(run.id), "status": run.status, "posts_discovered": len(candidates), **stats, "chunked_count": run.chunked_count, "errors": errors}
-
-
-def ingest(args: argparse.Namespace) -> dict[str, Any]:
-    if args.max_results < 1 or args.max_results > 50:
-        raise SystemExit("--max-results 必须在 1 到 50 之间")
-    engine = create_engine(get_settings().sync_database_url)
-    per_forum: list[dict[str, Any]] = []
-    with Session(engine) as session:
+def ingest(args, *, engine=None):
+    owned = engine is None
+    engine = engine or create_engine(
+        get_settings().sync_database_url, pool_pre_ping=True, connect_args={"connect_timeout": 10}
+    )
+    results = []
+    try:
+        ensure_storage(engine)
         for forum in args.forums:
-            base = FORUMS[forum]
-            result = ingest_forum(
-                session,
-                forum=forum,
-                base=base,
-                query=args.query,
-                max_results=args.max_results,
-                category_id=args.category_id,
-                request_delay=args.request_delay,
-                language=args.language,
-            )
-            per_forum.append(result)
-    return {"status": "success", "query": args.query, "results": per_forum}
+            try:
+                with forum_session(engine, forum) as session:
+                    results.append(
+                        collect_forum(session, forum, args)
+                        if session is not None
+                        else {"forum": forum, "status": "skipped", "reason": "already running"}
+                    )
+            except Exception as exc:
+                results.append({"forum": forum, "status": "failed", "error": str(exc)[:2000]})
+        statuses = {r["status"] for r in results}
+        status = "success" if statuses <= {"success", "skipped"} else "failed"
+        if status == "failed" and ("success" in statuses or "partial" in statuses):
+            status = "partial"
+        return {"status": status, "results": results}
+    finally:
+        if owned:
+            engine.dispose()
 
 
-def main() -> None:
-    args = parse_args()
-    result = ingest(args)
-    if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-    else:
-        for key, value in result.items():
-            print(f"{key}: {value}")
+def main(argv=None):
+    args = parse_args(argv)
+    try:
+        result = ingest(args)
+    except Exception as exc:
+        result = {"status": "failed", "error": str(exc)[:2000]}
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if result["status"] == "success" else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

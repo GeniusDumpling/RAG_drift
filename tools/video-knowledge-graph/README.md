@@ -6,6 +6,10 @@
 
 第一版只处理 PostgreSQL 中 `item_type=video_description` 的记录，从 `content_chunks` 的 `transcript_segment` 抽取实体和关系，不依赖 Qdrant 是否索引成功。没有字幕时，仅从 `video_summary` 提取实体提及；没有这两种切片时记录空结果，不从未知文本类型推断关系。原始视频与切片保持原样。
 
+## 图谱存储后端
+
+默认 `VIDEO_GRAPH_BACKEND=postgres`；迁移后的 `neo4j` 后端将图谱、构图任务、租约及检查点全部保存在 Neo4j，PostgreSQL 仅提供源视频与字幕。下文 PostgreSQL 图谱表、SQL 领取锁及级联删除描述适用于旧后端；Neo4j 的部署、迁移校验、视频锁和删除对账语义见 [Neo4j 迁移指南](../../docs/neo4j-migration.md)。两个后端复用抽取和校验规则，命令及 API 保持兼容。
+
 ## 开始使用
 
 先只读盘点，未迁移时也可运行，不调用模型、不写图谱表：

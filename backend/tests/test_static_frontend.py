@@ -42,11 +42,12 @@ def test_create_app_uses_index_fallback_for_frontend_routes(tmp_path: Path) -> N
     assert "frontend shell" in response.text
 
 
-def test_create_app_does_not_fallback_for_unknown_api_paths(tmp_path: Path) -> None:
+@pytest.mark.parametrize("path", ["/search/not-a-real-api-route", "/chat-sessions/unknown/route"])
+def test_create_app_does_not_fallback_for_unknown_api_paths(tmp_path: Path, path: str) -> None:
     dist_dir = _write_frontend_dist(tmp_path)
     client = TestClient(create_app(frontend_dist_dir=dist_dir))
 
-    response = client.get("/search/not-a-real-api-route")
+    response = client.get(path)
 
     assert response.status_code == 404
     assert "frontend shell" not in response.text

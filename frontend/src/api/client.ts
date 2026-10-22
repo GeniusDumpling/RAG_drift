@@ -1,5 +1,9 @@
 import type {
+  AnswerRequest,
   AnswerResponse,
+  AnswerStreamEvent,
+  ChatSession,
+  ChatSessionDetail,
   ContentDetail,
   ContentListItem,
   CrawlJob,
@@ -203,7 +207,7 @@ export function cancelLiteratureRun(id: UUID): Promise<LiteratureRun> {
   return jsonPost<LiteratureRun>(`/literature-runs/${id}/cancel`, {});
 }
 
-export function answer(requestBody: SearchRequest): Promise<AnswerResponse> {
+export function answer(requestBody: AnswerRequest): Promise<AnswerResponse> {
   return jsonPost<AnswerResponse>('/answer', {
     ...requestBody,
     mode: 'answer',
@@ -214,6 +218,63 @@ export function answer(requestBody: SearchRequest): Promise<AnswerResponse> {
 export function getLiteratureArtifactUrl(id: UUID): string {
   const base = API_BASE_URL.replace(/\/+$/, '');
   return `${base}/literature-artifacts/${id}/download`;
+}
+
+export function listChatSessions(signal?: AbortSignal): Promise<ChatSession[]> {
+  return request('/chat-sessions', { signal });
+}
+
+export function createChatSession(signal?: AbortSignal): Promise<ChatSession> {
+  return request('/chat-sessions', { method: 'POST', signal });
+}
+
+export function getChatSession(id: UUID, signal?: AbortSignal): Promise<ChatSessionDetail> {
+  return request(`/chat-sessions/${encodeURIComponent(id)}`, { signal });
+}
+
+export async function streamAnswer(
+  body: AnswerRequest,
+  onEvent: (event: AnswerStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL.replace(/\/+$/, '')}/answer/stream`, {
+    method: 'POST', signal,
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify({ ...body, mode: 'answer' }),
+  });
+  if (!response.ok) throw new Error(await response.text());
+  if (!response.body) throw new Error('浏览器未提供流式响应');
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let completed = false;
+  try {
+    while (!completed) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      let boundary: RegExpMatchArray | null;
+      while ((boundary = buffer.match(/\r?\n\r?\n/))) {
+        const frame = buffer.slice(0, boundary.index);
+        buffer = buffer.slice(boundary.index! + boundary[0].length);
+        const lines = frame.split(/\r?\n/);
+        const event = lines.find((line) => line.startsWith('event:'))?.slice(6).trim();
+        const data = lines.filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trimStart()).join('\n');
+        if (!event || !data) continue;
+        const parsed = JSON.parse(data);
+        if (event === 'error') throw new Error(parsed.message || '问答处理失败');
+        if (['status', 'evidence', 'delta', 'reset', 'done'].includes(event)) {
+          onEvent({ event, data: parsed } as AnswerStreamEvent);
+        }
+        if (event === 'done') { completed = true; break; }
+      }
+      if (done) break;
+    }
+    if (!completed) throw new Error('回答连接中断，内容可能不完整，请重试');
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
 }
 
 export function getSupplierOverview(): Promise<SupplierOverview> {

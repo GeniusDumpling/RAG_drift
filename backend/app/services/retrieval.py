@@ -1,7 +1,7 @@
+import asyncio
 import inspect
 import logging
 import math
-import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -20,6 +20,13 @@ from app.models.content import Author, ContentChunk, ContentItem
 from app.models.control import SourceSite
 from app.schemas.search import EvidenceObject, SearchFilters
 from app.services.embeddings import EmbeddingService
+from app.services.query_matching import (
+    lexical_terms,
+    matches_term,
+    model_phrases,
+    term_pattern,
+    term_weights,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +67,6 @@ class _MemoryCollection:
 
 
 _MEMORY_COLLECTIONS: dict[tuple[str, str], _MemoryCollection] = {}
-_TERM_RE = re.compile(r"[\w-]+", re.UNICODE)
 _OBSOLETE_EMBED_STATUS = "obsolete"
 DEFAULT_VECTOR_SCORE_THRESHOLD = 0.20
 _KEYWORD_MINIMUM_MATCH_SCORE = 0.20
@@ -270,6 +276,7 @@ async def retrieve_evidence(
     qdrant_collection: str,
     embedding: EmbeddingService,
     entity_hints: Sequence[str] = (),
+    max_per_content: int = 1,
 ) -> RetrievalResult:
     vector_hits: list[VectorSearchHit] = []
     vector_trace: dict[str, Any] = {
@@ -280,14 +287,16 @@ async def retrieve_evidence(
     }
     try:
         vector_trace["attempted"] = True
-        vector_hits = QdrantIndexer(
+        indexer = QdrantIndexer(
             url=qdrant_url,
             collection=qdrant_collection,
             embedding=embedding,
-        ).search_chunks(
+        )
+        vector_hits = await asyncio.to_thread(
+            indexer.search_chunks,
             query_text=optimized_query_text,
             filters=_vector_filter_payload(filters),
-            top_k=max(top_k * 2, top_k),
+            top_k=min(max(top_k * 4, 50), 600),
         )
         vector_trace["hit_count"] = len(vector_hits)
     except Exception as exc:  # pragma: no cover - exact Qdrant failures are environment-specific.
@@ -313,6 +322,7 @@ async def retrieve_evidence(
         filters=filters,
         top_k=top_k,
         snippet_terms=snippet_terms,
+        max_per_content=max_per_content,
     )
     if filters.item_type == "video_description":
         evidence = _deduplicate_video_evidence(evidence, top_k)
@@ -322,6 +332,8 @@ async def retrieve_evidence(
             "vector": vector_trace,
             "keyword": {"hit_count": len(keyword_hits)},
             "entity_hints": list(entity_hints),
+            "model_phrases": model_phrases(raw_query),
+            "ranking_version": "phrase-coverage-v1",
             "merged_hit_count": len(merged_hits),
             "hydrated_evidence_count": len(evidence),
             "component_scores": [
@@ -374,29 +386,43 @@ async def _keyword_search(
 
     term_clauses = []
     for term in terms:
-        pattern = _ilike_pattern(term)
+        pattern = term_pattern(term)
         term_clauses.extend(
             [
-                ContentItem.title.ilike(pattern, escape="\\"),
-                ContentItem.summary_text.ilike(pattern, escape="\\"),
-                ContentChunk.display_text.ilike(pattern, escape="\\"),
-                ContentChunk.embed_text.ilike(pattern, escape="\\"),
-                sql_cast(ContentItem.tags, String).ilike(pattern, escape="\\"),
+                ContentItem.title.op("~*")(pattern),
+                ContentItem.summary_text.op("~*")(pattern),
+                ContentChunk.display_text.op("~*")(pattern),
+                ContentChunk.embed_text.op("~*")(pattern),
+                sql_cast(ContentItem.tags, String).op("~*")(pattern),
             ]
         )
 
     candidate_limit = _keyword_candidate_limit(limit)
     keyword_score_expr = _keyword_score_sql_expression(terms, entity_terms=entity_terms)
-    stmt = (
-        select(ContentChunk, ContentItem, keyword_score_expr.label("keyword_score"))
+    candidates = (
+        select(
+            ContentChunk.id.label("chunk_id"),
+            keyword_score_expr.label("keyword_score"),
+            func.row_number().over(
+                partition_by=ContentItem.id,
+                order_by=(keyword_score_expr.desc(), ContentChunk.chunk_index, ContentChunk.id),
+            ).label("content_rank"),
+        )
         .join(ContentItem, ContentChunk.content_item_id == ContentItem.id)
         .where(
             _searchable_chunk_predicate(),
             *_content_filter_clauses(filters),
             or_(*term_clauses),
         )
+        .subquery()
+    )
+    stmt = (
+        select(ContentChunk, ContentItem, candidates.c.keyword_score)
+        .join(ContentItem, ContentChunk.content_item_id == ContentItem.id)
+        .join(candidates, candidates.c.chunk_id == ContentChunk.id)
+        .where(candidates.c.content_rank <= 2)
         .order_by(
-            keyword_score_expr.desc(),
+            candidates.c.keyword_score.desc(),
             ContentItem.created_at.desc(),
             ContentChunk.chunk_index.asc(),
             ContentChunk.id.asc(),
@@ -459,7 +485,9 @@ def _merge_hits(
 
 
 def _sort_hits_by_score(hits: list[_SearchHit]) -> list[_SearchHit]:
-    return sorted(hits, key=lambda hit: hit.score, reverse=True)
+    return sorted(
+        hits, key=lambda hit: (hit.score, hit.vector_score or 0.0), reverse=True
+    )
 
 
 def _merge_hit(merged: dict[UUID, _SearchHit], incoming: _SearchHit) -> None:
@@ -522,7 +550,7 @@ def _normalize_search_hit(hit: _SearchHit) -> _SearchHit:
         return _SearchHit(
             chunk_id=hit.chunk_id,
             content_item_id=hit.content_item_id,
-            score=keyword_score,
+            score=0.85 * keyword_score,
             matched_by="keyword",
             vector_score=hit.vector_score,
             keyword_score=keyword_score,
@@ -571,10 +599,11 @@ def _clamp_unit_score(score: float) -> float:
 
 
 def _hybrid_score(*, vector_score: float | None, keyword_score: float | None) -> float:
-    component_scores = [score for score in (vector_score, keyword_score) if score is not None]
-    if not component_scores:
-        return 0.0
-    return min(max(component_scores) + 0.1, 1.0)
+    vector = vector_score or 0.0
+    keyword = keyword_score or 0.0
+    # Keep semantic similarity, discount lexical-only evidence, and reward agreement
+    # proportionally rather than letting any weak keyword hit saturate the score.
+    return min(max(vector, 0.85 * keyword) + 0.1 * min(vector, keyword), 1.0)
 
 
 def _max_optional(left: float | None, right: float | None) -> float | None:
@@ -592,60 +621,27 @@ def _keyword_candidate_limit(limit: int) -> int:
 def _keyword_score_sql_expression(
     terms: Sequence[str], *, entity_terms: Sequence[str] = ()
 ) -> Any:
+    weights = term_weights(terms)
     score_expr: Any = literal(0.0)
-    for term in terms:
-        score_expr = _add_term_score(score_expr, term)
+    for term, weight in zip(terms, weights, strict=True):
+        pattern = term_pattern(term)
+        score_expr = score_expr + weight * func.greatest(
+            case((ContentItem.title.op("~*")(pattern), 0.50), else_=0.0),
+            case((ContentItem.summary_text.op("~*")(pattern), 0.30), else_=0.0),
+            case((or_(
+                ContentChunk.display_text.op("~*")(pattern),
+                ContentChunk.embed_text.op("~*")(pattern),
+            ), 0.20), else_=0.0),
+            case((sql_cast(ContentItem.tags, String).op("~*")(pattern), 0.10), else_=0.0),
+        )
+    score_expr = score_expr / (0.5 * max(sum(weights), 1.0))
     for term in entity_terms:
-        # 实体词是强信号：标题命中额外加权，标签命中显著加权
-        pattern = _ilike_pattern(term)
-        score_expr = (
-            score_expr
-            + case(
-                (ContentItem.title.ilike(pattern, escape="\\"), 0.45),
-                else_=0.0,
-            )
-            + case(
-                (sql_cast(ContentItem.tags, String).ilike(pattern, escape="\\"), 0.35),
-                else_=0.0,
-            )
+        pattern = term_pattern(term)
+        score_expr = score_expr + (
+            case((ContentItem.title.op("~*")(pattern), 0.45), else_=0.0)
+            + case((sql_cast(ContentItem.tags, String).op("~*")(pattern), 0.35), else_=0.0)
         )
-
-    return case(
-        (
-            score_expr > 0.0,
-            func.least(func.greatest(score_expr, _KEYWORD_MINIMUM_MATCH_SCORE), 1.0),
-        ),
-        else_=0.0,
-    )
-
-
-def _add_term_score(score_expr: Any, term: str) -> Any:
-    pattern = _ilike_pattern(term)
-    return (
-        score_expr
-        + case(
-            (ContentItem.title.ilike(pattern, escape="\\"), 0.50),
-            else_=0.0,
-        )
-        + case(
-            (ContentItem.summary_text.ilike(pattern, escape="\\"), 0.30),
-            else_=0.0,
-        )
-        + case(
-            (
-                or_(
-                    ContentChunk.display_text.ilike(pattern, escape="\\"),
-                    ContentChunk.embed_text.ilike(pattern, escape="\\"),
-                ),
-                0.20,
-            ),
-            else_=0.0,
-        )
-        + case(
-            (sql_cast(ContentItem.tags, String).ilike(pattern, escape="\\"), 0.10),
-            else_=0.0,
-        )
-    )
+    return func.least(score_expr, 1.0)
 
 
 def _datetime_sort_value(value: datetime) -> float:
@@ -669,6 +665,7 @@ async def _hydrate_and_rank_evidence(
     filters: SearchFilters,
     top_k: int,
     snippet_terms: Sequence[str],
+    max_per_content: int = 1,
 ) -> list[EvidenceObject]:
     if not hits:
         return []
@@ -740,7 +737,27 @@ async def _hydrate_and_rank_evidence(
     evidence.sort(
         key=lambda item: (-item.score, hit_rank_by_chunk_id.get(item.chunk_id, len(hits)))
     )
-    return evidence[:top_k]
+    # Filter and diversify before top_k. Otherwise a long video's chunks occupy
+    # the whole shortlist, and deduplication later cannot recover lost sources.
+    if filters.item_type == "video_description":
+        evidence = [
+            item for item in evidence
+            if not (item.description_text or "").startswith("视频内容与无人机无关")
+        ]
+        max_per_content = 1
+    selected: list[EvidenceObject] = []
+    counts: dict[UUID, int] = {}
+    for allowance in range(1, max_per_content + 1):
+        for item in evidence:
+            if counts.get(item.content_item_id, 0) != allowance - 1:
+                continue
+            if any(previous.chunk_id == item.chunk_id for previous in selected):
+                continue
+            selected.append(item)
+            counts[item.content_item_id] = allowance
+            if len(selected) >= top_k:
+                return selected
+    return selected
 
 
 def _keyword_score(
@@ -750,34 +767,25 @@ def _keyword_score(
     *,
     entity_terms: Sequence[str] = (),
 ) -> float:
+    weights = term_weights(terms)
+    chunk_text = f"{content_chunk.display_text}\n{content_chunk.embed_text}"
     score = 0.0
-    tags = [tag.casefold() for tag in content_item.tags]
-    chunk_text = f"{content_chunk.display_text}\n{content_chunk.embed_text}".casefold()
-    for term in terms:
-        normalized = term.casefold()
-        if content_item.title is not None and normalized in content_item.title.casefold():
-            score += 0.50
-        if (
-            content_item.summary_text is not None
-            and normalized in content_item.summary_text.casefold()
-        ):
-            score += 0.30
-        if normalized in chunk_text:
-            score += 0.20
-        if any(normalized in tag for tag in tags):
-            score += 0.10
-
-    # 实体词是强信号：标题/标签命中可获得额外加权，使其在软加权重排下沉到更靠前
+    for term, weight in zip(terms, weights, strict=True):
+        score += weight * max(
+            0.50 if matches_term(content_item.title, term) else 0.0,
+            0.30 if matches_term(content_item.summary_text, term) else 0.0,
+            0.20 if matches_term(chunk_text, term) else 0.0,
+            0.10 if any(matches_term(tag, term) for tag in content_item.tags) else 0.0,
+        )
+    if score == 0.0:
+        return 0.0
+    score /= 0.5 * max(sum(weights), 1.0)
     for term in entity_terms:
-        normalized = term.casefold()
-        if content_item.title is not None and normalized in content_item.title.casefold():
+        if matches_term(content_item.title, term):
             score += 0.45
-        if any(normalized in tag for tag in tags):
+        if any(matches_term(tag, term) for tag in content_item.tags):
             score += 0.35
-
-    if score > 0.0:
-        return max(score, _KEYWORD_MINIMUM_MATCH_SCORE)
-    return 0.0
+    return min(score, 1.0)
 
 
 def _hit_has_acceptable_evidence_score(hit: _SearchHit) -> bool:
@@ -843,12 +851,20 @@ def _qdrant_filter(filters: dict[str, Any]) -> qdrant_models.Filter | None:
     for key in ("source_site_id", "item_type", "language"):
         value = filters.get(key)
         if isinstance(value, str) and value:
-            conditions.append(
-                qdrant_models.FieldCondition(
-                    key=key,
-                    match=qdrant_models.MatchValue(value=value),
-                )
+            condition = qdrant_models.FieldCondition(
+                key=key, match=qdrant_models.MatchValue(value=value)
             )
+            if key == "item_type":
+                # Older video vectors lack item_type. Let them reach hydration,
+                # where PostgreSQL always enforces the authoritative type filter.
+                conditions.append(qdrant_models.Filter(should=[
+                    condition,
+                    qdrant_models.IsEmptyCondition(
+                        is_empty=qdrant_models.PayloadField(key=key)
+                    ),
+                ]))
+            else:
+                conditions.append(condition)
     tags = filters.get("tags")
     if isinstance(tags, list):
         for tag in tags:
@@ -879,6 +895,8 @@ def _qdrant_filter(filters: dict[str, Any]) -> qdrant_models.Filter | None:
 def _memory_payload_matches(payload: Mapping[str, Any], filters: Mapping[str, Any]) -> bool:
     for key in ("source_site_id", "item_type", "language"):
         expected = filters.get(key)
+        if key == "item_type" and payload.get(key) in (None, []):
+            continue
         if expected is not None and payload.get(key) != expected:
             return False
     expected_tags = filters.get("tags")
@@ -920,19 +938,7 @@ def _as_utc(value: datetime) -> datetime:
 
 
 def _normalized_terms(*, keyword_terms: Sequence[str], raw_query: str) -> list[str]:
-    candidates: list[str] = []
-    candidates.extend(keyword_terms)
-    candidates.extend(_TERM_RE.findall(raw_query))
-
-    terms: list[str] = []
-    seen: set[str] = set()
-    for candidate in candidates:
-        term = candidate.strip().casefold()
-        if not term or term in seen:
-            continue
-        seen.add(term)
-        terms.append(term)
-    return terms
+    return lexical_terms(keyword_terms, raw_query)
 
 
 def _dedupe_terms(terms: Sequence[str]) -> list[str]:

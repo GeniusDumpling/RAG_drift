@@ -269,6 +269,8 @@ bash deploy/run-job.sh video-collect
 printf 'video exit=%s\n' "$?"
 bash deploy/run-job.sh discourse-collect
 printf 'forum exit=%s\n' "$?"
+bash deploy/run-job.sh discourse-backfill
+printf 'forum backfill exit=%s\n' "$?"
 bash deploy/run-job.sh supplier-pipeline
 printf 'supplier exit=%s\n' "$?"
 bash deploy/run-job.sh supplier-verify
@@ -280,7 +282,8 @@ printf 'verify exit=%s\n' "$?"
 | 任务 | 验收条件 |
 | --- | --- |
 | 视频 | 输出本轮结果，按 success、duplicate、字幕/流失败等实际分类查看。新增成功数量可能为 0，不能当作“已入库成功”。 |
-| 论坛 | 输出采集/去重/入库结果，未出现未处理异常。 |
+| 论坛增量 | 输出主题和回复归档、加工结果，未出现未处理异常。 |
+| 论坛历史回填 | 输出本轮扫描和归档结果、持久化续跑位置；单轮达到预算不代表全站历史已完成。 |
 | 供应商抽取 | 日志阶段完成，未出现 `status=failed`；无新 URL 时可能跳过分析。 |
 | 供应商验证 | 完成验证，或报告没有待验证记录。 |
 
@@ -306,7 +309,7 @@ systemctl --user list-timers --all --no-pager
 systemctl list-timers --all --no-pager
 ```
 
-预期：没有正在调度同样四类任务的旧条目。如果存在，先只停用对应采集条目；不要删除其他 cron 任务。
+预期：没有重复调度这些任务的旧条目。论坛增量与历史回填分别调度；如果存在重复条目，先只停用对应条目，不要删除其他 cron 任务。
 
 ### 9.2 准备模板
 
@@ -342,18 +345,19 @@ sudo systemctl daemon-reload
 
 预期：verify 无错误，daemon-reload 无输出。不要忽略 `Unit docker.service not found` 或执行路径不存在等错误。
 
-### 9.4 启用四个 timer
+### 9.4 启用五个 timer
 
 ```bash
 sudo systemctl enable --now \
   intelligence-rag-video-collect.timer \
   intelligence-rag-discourse-collect.timer \
+  intelligence-rag-discourse-backfill.timer \
   intelligence-rag-supplier-pipeline.timer \
   intelligence-rag-supplier-verify.timer
 systemctl list-timers 'intelligence-rag-*' --no-pager
 ```
 
-预期：显示四个 timer，各有下一次执行时间。默认按服务器本地时区：视频双数小时 :00、供应商抽取双数小时 :15、论坛双数小时 :30、供应商验证奇数小时 :45。
+预期：显示五个 timer，各有下一次执行时间。论坛时间固定为北京时间：增量在偶数小时 :30，历史回填在每小时 :05；视频、供应商抽取和供应商验证仍按服务器本地时区的原配置执行。
 
 WSL 停止或 Windows 睡眠期间不会采集；恢复后 Persistent timer 可以补触发，但不保证 Docker Desktop 已就绪。
 

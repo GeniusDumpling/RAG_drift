@@ -10,6 +10,7 @@ services:
       DATABASE_BROWSER_ENABLED: "true"
       API_HOST: 0.0.0.0
       API_PORT: 8000
+      DRONE_DOCUMENTS_DIR: /data/dji-documents
       DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/intelligence_rag
       SYNC_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/intelligence_rag
       QDRANT_URL: http://qdrant:6333
@@ -38,6 +39,7 @@ services:
       SCHEDULER_SOCKET: /run/rag-scheduler/control.sock
       SCHEDULER_TOKEN_FILE: /run/rag-scheduler/token
     volumes:
+      - ${DJI_DOCUMENTS_DIR:-./data/DJI无人机文档}:/data/dji-documents:ro
       - ${SCHEDULER_BRIDGE_DIR:-./data/scheduler}:/run/rag-scheduler:ro
       - ${MODEL_CACHE_DIR:-./model-cache/huggingface}:/models/huggingface
     depends_on:

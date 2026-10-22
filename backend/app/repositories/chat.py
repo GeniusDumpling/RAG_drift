@@ -1,11 +1,12 @@
 from datetime import timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import utcnow
 from app.models.chat import ChatSession, ChatTurn
+from app.models.search import AgentCall, SearchQuery
 from app.schemas.search import AnswerResponse, ChatSessionDetail, ChatSessionRead, ChatTurnRead
 
 
@@ -54,6 +55,45 @@ class ChatRepository:
             session=ChatSessionRead.model_validate(item),
             turns=[ChatTurnRead.model_validate(turn) for turn in turns],
         )
+
+    async def delete_session(self, session_id: UUID) -> None:
+        # Serialize against begin_turn, which locks the same parent row before generating.
+        item = await self.session.scalar(
+            select(ChatSession).where(ChatSession.id == session_id).with_for_update()
+        )
+        if item is None:
+            raise ChatSessionNotFound("找不到对话")
+        pending = await self.session.scalar(
+            select(ChatTurn).where(ChatTurn.session_id == session_id, ChatTurn.status == "pending")
+        )
+        if pending is not None and pending.created_at > utcnow() - timedelta(minutes=10):
+            await self.session.rollback()
+            raise ChatSessionBusy("此对话仍在生成回答，请先停止生成后再删除")
+        query_ids = list(
+            (
+                await self.session.scalars(
+                    select(ChatTurn.search_query_id)
+                    .where(ChatTurn.session_id == session_id, ChatTurn.search_query_id.is_not(None))
+                    .distinct()
+                )
+            ).all()
+        )
+        await self.session.delete(item)
+        await self.session.flush()  # The database cascades deletion to this session's turns.
+        if query_ids:
+            # Answers also live in query diagnostics. Remove those snapshots, while protecting
+            # a query if it happens to be referenced by another conversation.
+            orphan_queries = select(SearchQuery.id).where(
+                SearchQuery.id.in_(query_ids),
+                ~exists().where(ChatTurn.search_query_id == SearchQuery.id),
+            )
+            await self.session.execute(
+                delete(AgentCall).where(AgentCall.related_search_query_id.in_(orphan_queries))
+            )
+            await self.session.execute(
+                delete(SearchQuery).where(SearchQuery.id.in_(orphan_queries))
+            )
+        await self.session.commit()
 
     async def begin_turn(self, session_id: UUID, query: str) -> ChatTurn:
         item = await self.session.scalar(

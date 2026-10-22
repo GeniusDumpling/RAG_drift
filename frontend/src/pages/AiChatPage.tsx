@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { createChatSession, getChatSession, listChatSessions, streamAnswer } from '../api/client';
+import { createChatSession, deleteChatSession, getChatSession, listChatSessions, streamAnswer } from '../api/client';
 import type { ChatSession, ChatSessionDetail, EvidenceObject, GenerationInfo } from '../api/types';
 import { EvidenceCard } from '../components/EvidenceCard';
 import { formatErrorMessage } from '../utils/errors';
@@ -58,6 +58,8 @@ export function AiChatPage({ initialQuery = '', onOpenContent }: AiChatPageProps
   const [sessionId, setSessionId] = useState('');
   const [loading, setLoading] = useState(false);
   const [restoring, setRestoring] = useState(true);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [stage, setStage] = useState('正在检索证据');
   const [error, setError] = useState('');
   const [historyError, setHistoryError] = useState('');
@@ -105,6 +107,7 @@ export function AiChatPage({ initialQuery = '', onOpenContent }: AiChatPageProps
     controller.current = abort;
     const currentVersion = ++version.current;
     setError('');
+    setConfirmDelete(false);
     if (!id) {
       setSessionId(''); setMessages([]); rememberSession('');
       return;
@@ -123,7 +126,7 @@ export function AiChatPage({ initialQuery = '', onOpenContent }: AiChatPageProps
 
   async function sendQuestion() {
     const trimmed = input.trim();
-    if (!trimmed || busy.current || restoring) return;
+    if (!trimmed || busy.current || restoring || confirmDelete) return;
     busy.current = true;
     controller.current?.abort();
     const abort = new AbortController();
@@ -177,6 +180,30 @@ export function AiChatPage({ initialQuery = '', onOpenContent }: AiChatPageProps
     }
   }
 
+  async function deleteConversation() {
+    if (!sessionId || busy.current || restoring) return;
+    busy.current = true;
+    controller.current?.abort();
+    const abort = new AbortController();
+    controller.current = abort;
+    const currentVersion = ++version.current;
+    const targetId = sessionId;
+    setDeleting(true); setError('');
+    try {
+      await deleteChatSession(targetId, abort.signal);
+      if (version.current !== currentVersion) return;
+      setSessions((current) => current.filter((item) => item.id !== targetId));
+      setSessionId(''); setMessages([]); setInput('');
+      setConfirmDelete(false); rememberSession('');
+    } catch (caught) {
+      if (version.current === currentVersion && !abort.signal.aborted) {
+        setError(formatErrorMessage('删除对话失败', caught));
+      }
+    } finally {
+      if (version.current === currentVersion) { busy.current = false; setDeleting(false); }
+    }
+  }
+
   return (
     <section className="chat-page">
       <header className="chat-page-header">
@@ -187,13 +214,32 @@ export function AiChatPage({ initialQuery = '', onOpenContent }: AiChatPageProps
         </div>
         <div className="chat-session-controls">
           <label className="sr-only" htmlFor="chat-session">历史对话</label>
-          <select id="chat-session" value={sessionId} disabled={loading || restoring}
+          <select id="chat-session" value={sessionId} disabled={loading || restoring || deleting}
             onChange={(event) => void selectSession(event.target.value)}>
             <option value="">新对话</option>
             {sessions.map((session) => <option key={session.id} value={session.id}>{session.title}</option>)}
           </select>
-          <button className="chat-clear-button" type="button" disabled={loading || restoring}
+          <button className="chat-clear-button" type="button" disabled={loading || restoring || deleting}
             onClick={() => void selectSession('')}>新建对话</button>
+          <button className="chat-delete-button" type="button"
+            disabled={!sessionId || loading || restoring || deleting}
+            onClick={() => { setConfirmDelete(true); setError(''); }}>删除对话</button>
+          {confirmDelete ? (
+            <div className="chat-delete-confirmation" role="alertdialog"
+              aria-labelledby="chat-delete-title" aria-describedby="chat-delete-description"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape' && !deleting) setConfirmDelete(false);
+              }}>
+              <p id="chat-delete-title">删除此对话？</p>
+              <p id="chat-delete-description">该对话及全部消息将永久删除，无法恢复。</p>
+              <div>
+                <button className="chat-delete-button" type="button" disabled={deleting}
+                  onClick={() => void deleteConversation()}>{deleting ? '正在删除…' : '确认删除'}</button>
+                <button className="chat-clear-button" type="button" autoFocus disabled={deleting}
+                  onClick={() => setConfirmDelete(false)}>取消</button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </header>
 
@@ -235,14 +281,16 @@ export function AiChatPage({ initialQuery = '', onOpenContent }: AiChatPageProps
 
       <div className="chat-composer">
         <label className="sr-only" htmlFor="chat-question">输入问题</label>
-        <textarea id="chat-question" value={input} onChange={(event) => setInput(event.target.value)}
+        <textarea id="chat-question" value={input} disabled={deleting || confirmDelete}
+          onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault(); void sendQuestion();
             }
           }} placeholder="问问已入库的数据…" rows={1} />
         {loading ? <button type="button" onClick={() => controller.current?.abort()}>停止生成</button> : (
-          <button type="button" disabled={!input.trim() || restoring} onClick={() => void sendQuestion()}>发送</button>
+          <button type="button" disabled={!input.trim() || restoring || deleting || confirmDelete}
+            onClick={() => void sendQuestion()}>发送</button>
         )}
         {error ? <p className="chat-error" role="alert">{error}</p> : null}
         <p className="chat-hint">Enter 发送 · Shift + Enter 换行 · 对话自动保存</p>

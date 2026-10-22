@@ -4,6 +4,7 @@ import { AiChatPage } from './pages/AiChatPage';
 import { ContentDetailPage } from './pages/ContentDetailPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { DatabasePage } from './pages/DatabasePage';
+import { DronesPage } from './pages/DronesPage';
 import { LiteratureResearchPanel } from './pages/LiteratureResearchPanel';
 import { RunDetailPage } from './pages/RunDetailPage';
 import { SearchPage } from './pages/SearchPage';
@@ -11,10 +12,10 @@ import { SourcesPage } from './pages/SourcesPage';
 import { SupplierPage } from './pages/SupplierPage';
 import { VideoGraphPage } from './pages/VideoGraphPage';
 
-type View = 'Dashboard' | 'Sources' | 'Runs' | 'Search' | 'Answer' | 'Content' | 'Database' | 'Literature' | 'Supplier' | 'VideoGraph';
+type View = 'Dashboard' | 'Sources' | 'Runs' | 'Search' | 'Answer' | 'Content' | 'Database' | 'Literature' | 'Supplier' | 'VideoGraph' | 'Drones';
 
 const MONITORING_NAV_ITEMS: View[] = ['Dashboard', 'Sources', 'Runs', 'Content', 'Database'];
-const WORKSPACE_NAV_ITEMS: View[] = ['Search', 'Answer', 'Supplier', 'Literature', 'VideoGraph'];
+const WORKSPACE_NAV_ITEMS: View[] = ['Search', 'Answer', 'Drones', 'Supplier', 'Literature', 'VideoGraph'];
 
 const NAV_LABELS: Record<View, string> = {
   Dashboard: '总览',
@@ -24,6 +25,7 @@ const NAV_LABELS: Record<View, string> = {
   Answer: 'AI 问答',
   Content: '内容详情',
   Database: '数据库',
+  Drones: '无人机信息',
   Literature: '文献研究',
   Supplier: '供应链',
   VideoGraph: '视频知识图谱',
@@ -136,6 +138,7 @@ export function App() {
           {activeView === 'Answer' ? <AiChatPage initialQuery={searchSeed} onOpenContent={openContent} /> : null}
           {activeView === 'Content' ? <ContentDetailPage selectedContentId={selectedContentId} onOpenRun={openRun} /> : null}
           {activeView === 'Database' ? <DatabasePage /> : null}
+          {activeView === 'Drones' ? <DronesPage /> : null}
           {activeView === 'Literature' ? <LiteratureResearchPanel /> : null}
           {activeView === 'Supplier' ? <SupplierPage /> : null}
           {activeView === 'VideoGraph' ? <VideoGraphPage onOpenContent={openContent} /> : null}

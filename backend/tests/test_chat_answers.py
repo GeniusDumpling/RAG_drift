@@ -344,3 +344,115 @@ async def test_new_chat_migration_upgrades_and_downgrades(db_session: AsyncSessi
 
     await connection.run_sync(verify)
     await db_session.rollback()
+
+
+async def test_delete_session_removes_turns_and_associated_diagnostics(
+    db_session: AsyncSession,
+    chat_client: httpx.AsyncClient,
+) -> None:
+    from app.models.search import AgentCall
+
+    chat = ChatRepository(db_session)
+    service = SearchService(db_session, settings=settings())
+    removed_id = (await chat.create_session()).id
+    retained_id = (await chat.create_session()).id
+    removed = await service.answer(
+        AnswerRequest(query="delete this question", session_id=removed_id)
+    )
+    retained = await service.answer(
+        AnswerRequest(query="retain this question", session_id=retained_id)
+    )
+    audit = AgentCall(
+        agent_role="answer",
+        caller="test",
+        status="success",
+        related_search_query_id=removed.query.id,
+        request_schema_version="test.v1",
+        response_schema_version="test.v1",
+    )
+    db_session.add(audit)
+    await db_session.commit()
+    audit_id = audit.id
+    response = await chat_client.delete(f"/chat-sessions/{removed_id}")
+    assert response.status_code == 204
+    assert response.content == b""
+    assert (await chat_client.get(f"/chat-sessions/{removed_id}")).status_code == 404
+    assert (await chat_client.get(f"/search-queries/{removed.query.id}")).status_code == 404
+    assert (await chat_client.get(f"/chat-sessions/{retained_id}")).status_code == 200
+    assert (await chat_client.get(f"/search-queries/{retained.query.id}")).status_code == 200
+    assert (
+        await db_session.scalar(select(ChatTurn.id).where(ChatTurn.session_id == removed_id))
+        is None
+    )
+    assert await db_session.scalar(select(AgentCall.id).where(AgentCall.id == audit_id)) is None
+    assert [s["id"] for s in (await chat_client.get("/chat-sessions")).json()] == [str(retained_id)]
+    assert (await chat_client.delete(f"/chat-sessions/{removed_id}")).status_code == 404
+    result = await chat_client.post(
+        "/answer", json={"query": "follow-up", "session_id": str(removed_id)}
+    )
+    assert result.status_code == 404
+
+
+async def test_delete_empty_session(chat_client: httpx.AsyncClient) -> None:
+    session_id = (await chat_client.post("/chat-sessions")).json()["id"]
+    assert (await chat_client.delete(f"/chat-sessions/{session_id}")).status_code == 204
+    assert (await chat_client.get("/chat-sessions")).json() == []
+
+
+async def test_delete_active_session_is_rejected_and_can_retry_after_stop(
+    db_session: AsyncSession,
+    chat_client: httpx.AsyncClient,
+) -> None:
+    chat = ChatRepository(db_session)
+    session_id = (await chat.create_session()).id
+    turn = await chat.begin_turn(session_id, "still generating")
+    turn_id = turn.id
+    response = await chat_client.delete(f"/chat-sessions/{session_id}")
+    assert response.status_code == 409
+    assert "停止生成" in response.json()["detail"]
+    assert (await chat_client.get(f"/chat-sessions/{session_id}")).status_code == 200
+    turn = await db_session.get(ChatTurn, turn_id)
+    await chat.finish_turn(turn, None, status="cancelled")
+    assert (await chat_client.delete(f"/chat-sessions/{session_id}")).status_code == 204
+
+
+async def test_delete_abandoned_pending_session(
+    db_session: AsyncSession,
+    chat_client: httpx.AsyncClient,
+) -> None:
+    from datetime import timedelta
+
+    chat = ChatRepository(db_session)
+    session_id = (await chat.create_session()).id
+    turn = await chat.begin_turn(session_id, "abandoned request")
+    turn.created_at = utcnow() - timedelta(minutes=11)
+    await db_session.commit()
+    assert (await chat_client.delete(f"/chat-sessions/{session_id}")).status_code == 204
+
+
+async def test_delete_preserves_queries_shared_by_another_session(
+    db_session: AsyncSession,
+    chat_client: httpx.AsyncClient,
+) -> None:
+    chat = ChatRepository(db_session)
+    session_id = (await chat.create_session()).id
+    result = await SearchService(db_session, settings=settings()).answer(
+        AnswerRequest(query="shared query", session_id=session_id)
+    )
+    other_id = (await chat.create_session()).id
+    db_session.add(
+        ChatTurn(
+            session_id=other_id,
+            query="other session",
+            answer="shared answer",
+            status="completed",
+            search_query_id=result.query.id,
+            supporting_evidence=[],
+        )
+    )
+    await db_session.commit()
+    assert (await chat_client.delete(f"/chat-sessions/{session_id}")).status_code == 204
+    assert (await chat_client.get(f"/search-queries/{result.query.id}")).status_code == 200
+    assert (await chat_client.get(f"/chat-sessions/{other_id}")).json()["turns"][0][
+        "answer"
+    ] == "shared answer"

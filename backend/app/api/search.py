@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import aclosing
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -94,6 +94,17 @@ async def get_chat_session(session_id: uuid.UUID, session: SessionDep) -> ChatSe
         return await ChatRepository(session).detail(session_id)
     except ChatSessionNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/chat-sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_chat_session(session_id: uuid.UUID, session: SessionDep) -> Response:
+    try:
+        await ChatRepository(session).delete_session(session_id)
+    except ChatSessionNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ChatSessionBusy as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/search-queries/{search_query_id}", response_model=SearchQueryRead)

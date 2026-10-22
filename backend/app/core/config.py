@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     database_browser_enabled: bool = Field(default=False, alias="DATABASE_BROWSER_ENABLED")
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
     api_port: int = Field(default=8000, alias="API_PORT")
+    drone_documents_dir: Path = Field(
+        default=Path("data/DJI无人机文档"), alias="DRONE_DOCUMENTS_DIR"
+    )
     database_url: str = Field(
         default="postgresql+psycopg://intelligence:intelligence@localhost:54329/intelligence_rag",
         alias="DATABASE_URL",

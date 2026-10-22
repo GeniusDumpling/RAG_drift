@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { streamAnswer } from '../src/api/client';
+import { deleteChatSession, streamAnswer } from '../src/api/client';
 import type { AnswerStreamEvent } from '../src/api/types';
 
 function response(text: string, byteSize = 1): Response {
@@ -14,6 +14,13 @@ function response(text: string, byteSize = 1): Response {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('answer SSE client', () => {
+  it('accepts an empty 204 deletion response without parsing JSON', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(deleteChatSession('session-1')).resolves.toBeUndefined();
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/chat-sessions\/session-1$/);
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'DELETE' });
+  });
   it('handles split UTF-8 characters, CRLF boundaries and multiple events', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(
       ': heartbeat\r\n\r\nevent: delta\r\ndata: {"text":"中文答案"}\r\n\r\n'

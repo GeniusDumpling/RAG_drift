@@ -2,6 +2,33 @@ export type UUID = string;
 export type ISODateTime = string;
 export type JsonObject = Record<string, unknown>;
 
+export type DroneSummary = {
+  slug: string;
+  name: string;
+  manufacturer: string;
+  category: string;
+  status: string;
+  group_count: number;
+  parameter_count: number;
+  source_url: string;
+  collected_at: string;
+  note: string;
+};
+
+export type DroneCatalog = {
+  items: DroneSummary[];
+  total: number;
+  parameter_count: number;
+  partial_count: number;
+};
+
+export type DroneParameterGroup = {
+  name: string;
+  parameters: { name: string; value: string }[];
+};
+
+export type DroneDetail = DroneSummary & { groups: DroneParameterGroup[] };
+
 export type Page<T> = {
   items: T[];
   total: number;

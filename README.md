@@ -324,6 +324,18 @@ curl -fsS -X POST http://localhost:8000/answer \
 
 `--reset-collection` 会删除并重建目标集合，仅在确认需要清空该集合时使用。iFixit 的版本校验、真实 tokenizer 校验和旧向量清理应使用其专用 `index` / `cleanup` 命令，全局重建脚本不负责这些步骤。
 
+## 无人机信息（第一版）
+
+前端「工作空间 → 无人机信息」展示本地收集的 DJI 型号与技术参数，支持型号搜索、用途分类、参数分组和参数内容搜索。页面保留官方来源、采集时间、参数适用条件，以及索引中的资料缺失说明。
+
+后端直接读取 `data/DJI无人机文档/技术参数索引.csv` 和各型号的 `技术参数.html`，无需导入数据库。`GET /drones` 返回型号与收集概况，`GET /drones/{slug}` 返回按分组整理的参数。更新目录中的索引和文件后，重新进入页面即可读取新内容。
+
+本地运行可通过 `DRONE_DOCUMENTS_DIR` 指定文档目录，默认是项目根目录下的 `data/DJI无人机文档`。Docker Compose 将宿主机 `DJI_DOCUMENTS_DIR`（默认同一目录）以只读方式挂载到容器 `/data/dji-documents`；资料不打包进镜像。部署前应将该目录同步至宿主机，并重新构建和启动应用：
+
+```bash
+docker compose -f docker-compose.deploy.yml up -d --build app
+```
+
 ## 视频知识图谱（第一版）
 
 视频知识图谱第一版提供历史视频构图、增量轮询、字幕证据定位和前端浏览代码，入口位于 `tools/video-knowledge-graph/`。迁移、模型配置、使用命令及 GraphRAG 接口说明见 [视频知识图谱说明](tools/video-knowledge-graph/README.md)。

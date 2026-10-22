@@ -1,0 +1,45 @@
+.drone-page-title { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.drone-manufacturer { padding: 10px 16px; border: 1px solid #d0d0d0; background: #fff; font-weight: 600; white-space: nowrap; }
+.drone-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; gap: 24px; }
+.drone-models { position: sticky; top: 24px; min-width: 0; border: 1px solid #d0d0d0; background: #fff; }
+.drone-model-controls { display: grid; gap: 12px; padding: 16px; border-bottom: 1px solid #d0d0d0; }
+.drone-model-controls h2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 4px; font-size: 1rem; font-weight: 600; }
+.drone-model-list { max-height: calc(100vh - 260px); min-height: 200px; overflow-y: auto; overscroll-behavior: contain; }
+.drone-model-list .drone-model { display: grid; gap: 8px; width: 100%; min-height: 80px; padding: 16px; border: 0; border-bottom: 1px solid #e0e0e0; border-left: 3px solid transparent; border-radius: 0; background: #fff; color: #161616; text-align: left; }
+.drone-model-list .drone-model:hover { border-color: #e0e0e0; border-left-color: #78a9ff; background: #f4f7fc; }
+.drone-model-list .drone-model.selected { border-left-color: #0f62fe; background: #edf5ff; }
+.drone-model strong { overflow-wrap: anywhere; font-size: .875rem; font-weight: 600; }
+.drone-model-meta { display: flex; justify-content: space-between; gap: 12px; color: #6f6f6f; font-size: .75rem; font-weight: 400; }
+.drone-list-empty { padding: 16px; color: #525252; font-size: .875rem; line-height: 1.6; }
+.drone-detail { min-width: 0; }
+.drone-detail-header { padding: 24px; border: 1px solid #d0d0d0; background: #fff; }
+.drone-detail-header h2 { margin: 16px 0 8px; overflow-wrap: anywhere; font-size: clamp(1.4rem, 2.5vw, 2rem); font-weight: 400; }
+.drone-source { display: inline-block; margin-top: 8px; font-size: .75rem; }
+.drone-note { margin: 16px 0; padding: 14px 16px; border-left: 3px solid #f1c21b; background: #fff8d6; color: #8a3800; font-size: .875rem; line-height: 1.6; }
+.drone-parameter-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, .65fr); gap: 16px; margin: 24px 0 20px; }
+.drone-parameter-controls > div { display: grid; gap: 8px; }
+.drone-parameter-controls label { color: #525252; font-size: .75rem; }
+.drone-parameter-controls input, .drone-parameter-controls select { background: #fff; }
+.drone-parameter-group { margin-bottom: 20px; border: 1px solid #d0d0d0; background: #fff; }
+.drone-parameter-group h3 { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0; padding: 14px 20px; background: #e8e8e8; font-size: .9375rem; font-weight: 600; }
+.drone-parameters { margin: 0; }
+.drone-parameters > div { display: grid; grid-template-columns: minmax(110px, .35fr) minmax(0, 1fr); border-top: 1px solid #e0e0e0; font-size: .875rem; line-height: 1.75; }
+.drone-parameters dt { padding: 16px 20px; color: #525252; overflow-wrap: anywhere; }
+.drone-parameters dd { margin: 0; padding: 16px 20px; border-left: 1px solid #e0e0e0; overflow-wrap: anywhere; white-space: pre-wrap; }
+@media (max-width: 1100px) {
+  .drone-layout { grid-template-columns: 250px minmax(0, 1fr); gap: 16px; }
+  .drone-parameter-controls { grid-template-columns: minmax(0, 1fr); }
+  .drone-parameters > div { grid-template-columns: minmax(90px, .4fr) minmax(0, 1fr); }
+  .drone-parameters dt, .drone-parameters dd { padding: 12px; }
+}
+@media (max-width: 760px) {
+  .drone-layout { grid-template-columns: minmax(0, 1fr); }
+  .drone-models { position: static; }
+  .drone-model-list { max-height: 280px; min-height: 0; }
+  .drone-page-title { align-items: flex-start; }
+  .drone-manufacturer { padding: 6px 8px; font-size: .75rem; }
+  .drone-detail-header { padding: 20px 16px; }
+  .drone-parameters > div { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 12px 16px; }
+  .drone-parameters dt { padding: 0 0 6px; font-weight: 600; }
+  .drone-parameters dd { padding: 0; border-left: 0; }
+}

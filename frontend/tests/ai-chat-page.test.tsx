@@ -6,7 +6,7 @@ import type { AnswerStreamEvent, GenerationInfo } from '../src/api/types';
 import { AiChatPage } from '../src/pages/AiChatPage';
 
 vi.mock('../src/api/client', () => ({
-  listChatSessions: vi.fn(), getChatSession: vi.fn(), createChatSession: vi.fn(), streamAnswer: vi.fn(),
+  listChatSessions: vi.fn(), getChatSession: vi.fn(), createChatSession: vi.fn(), deleteChatSession: vi.fn(), streamAnswer: vi.fn(),
 }));
 const session = { id: 'session-1', title: 'PX4', created_at: '', updated_at: '' };
 const generation: GenerationInfo = {
@@ -17,6 +17,7 @@ beforeEach(() => {
   localStorage.clear();
   vi.mocked(api.listChatSessions).mockResolvedValue([]);
   vi.mocked(api.createChatSession).mockResolvedValue(session);
+  vi.mocked(api.deleteChatSession).mockResolvedValue(undefined);
 });
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 async function send() {
@@ -110,5 +111,66 @@ describe('AI chat streaming and sessions', () => {
     await waitFor(() => expect(api.streamAnswer).toHaveBeenCalledOnce());
     page.unmount();
     expect(signal.aborted).toBe(true);
+  });
+
+  async function restoreConversation() {
+    localStorage.setItem('rag-chat-session', session.id);
+    vi.mocked(api.listChatSessions).mockResolvedValue([session]);
+    vi.mocked(api.getChatSession).mockResolvedValue({ session, turns: [{
+      id: 'turn-1', session_id: session.id, query: '先前问题', answer: '先前回答',
+      status: 'completed', generation, supporting_evidence: [], created_at: '',
+    }] });
+    render(<AiChatPage />);
+    await screen.findByText('先前回答');
+  }
+
+  it('requires confirmation then removes the conversation and remembered id', async () => {
+    await restoreConversation();
+    fireEvent.click(screen.getByRole('button', { name: '删除对话' }));
+    expect(screen.getByRole('alertdialog', { name: '删除此对话？' })).toBeInTheDocument();
+    expect(api.deleteChatSession).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '确认删除' })); });
+    expect(api.deleteChatSession).toHaveBeenCalledWith(session.id, expect.any(AbortSignal));
+    expect(screen.queryByText('先前回答')).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'PX4' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '从一个问题开始' })).toBeInTheDocument();
+    expect(localStorage.getItem('rag-chat-session')).toBeNull();
+    expect(screen.getByRole('button', { name: '删除对话' })).toBeDisabled();
+  });
+
+  it('cancels deletion without changing history', async () => {
+    await restoreConversation();
+    fireEvent.click(screen.getByRole('button', { name: '删除对话' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(api.deleteChatSession).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByText('先前回答')).toBeInTheDocument();
+    expect(localStorage.getItem('rag-chat-session')).toBe(session.id);
+  });
+
+  it('retains history when deletion fails and allows retry', async () => {
+    await restoreConversation();
+    vi.mocked(api.deleteChatSession).mockRejectedValueOnce(new Error('请先停止生成'));
+    fireEvent.click(screen.getByRole('button', { name: '删除对话' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '确认删除' })); });
+    expect(screen.getByRole('alert')).toHaveTextContent('删除对话失败');
+    expect(screen.getByText('先前回答')).toBeInTheDocument();
+    expect(localStorage.getItem('rag-chat-session')).toBe(session.id);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '确认删除' })); });
+    expect(api.deleteChatSession).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText('先前回答')).not.toBeInTheDocument();
+  });
+
+  it('disables duplicate deletion and other actions until the request finishes', async () => {
+    await restoreConversation();
+    let finish!: () => void;
+    vi.mocked(api.deleteChatSession).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    fireEvent.click(screen.getByRole('button', { name: '删除对话' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+    expect(screen.getByRole('button', { name: '正在删除…' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '新建对话' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: '历史对话' })).toBeDisabled();
+    await act(async () => { finish(); });
+    expect(api.deleteChatSession).toHaveBeenCalledOnce();
   });
 });

@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api import (
     contents,
     database,
+    drones,
     health,
     literature,
     scheduled_tasks,
@@ -18,6 +19,7 @@ api_router.include_router(sources.router)
 api_router.include_router(contents.router)
 api_router.include_router(search.router)
 api_router.include_router(database.router)
+api_router.include_router(drones.router)
 api_router.include_router(literature.router)
 api_router.include_router(supplier.router)
 api_router.include_router(scheduled_tasks.router)

@@ -11,6 +11,8 @@ import type {
   DatabaseTableList,
   DatabaseTableRow,
   DatabaseTableRowsPage,
+  DroneCatalog,
+  DroneDetail,
   CrawlRun,
   CrawlRunEvent,
   LiteratureRun,
@@ -32,6 +34,14 @@ import type {
 } from './types';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
+
+export function listDrones(signal?: AbortSignal): Promise<DroneCatalog> {
+  return request('/drones', { signal });
+}
+
+export function getDrone(slug: string, signal?: AbortSignal): Promise<DroneDetail> {
+  return request(`/drones/${encodeURIComponent(slug)}`, { signal });
+}
 
 export function getVideoGraphOverview(): Promise<VideoGraphOverview> {
   return request('/video-graph/overview');
@@ -96,6 +106,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     throw new Error(await response.text());
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
@@ -230,6 +241,10 @@ export function createChatSession(signal?: AbortSignal): Promise<ChatSession> {
 
 export function getChatSession(id: UUID, signal?: AbortSignal): Promise<ChatSessionDetail> {
   return request(`/chat-sessions/${encodeURIComponent(id)}`, { signal });
+}
+
+export function deleteChatSession(id: UUID, signal?: AbortSignal): Promise<void> {
+  return request(`/chat-sessions/${encodeURIComponent(id)}`, { method: 'DELETE', signal });
 }
 
 export async function streamAnswer(

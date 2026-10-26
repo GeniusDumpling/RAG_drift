@@ -79,6 +79,7 @@ if [[ "$1" == "api" ]]; then
   wait_for_qdrant
   if [[ "${RUN_MIGRATIONS:-1}" == "1" ]]; then
     alembic upgrade head
+    alembic -n literature upgrade head
   fi
   exec uvicorn "${APP_MODULE:-app.main:app}" \
     --host "${API_HOST:-0.0.0.0}" \

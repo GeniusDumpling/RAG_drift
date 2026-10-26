@@ -6,7 +6,7 @@ import { formatErrorMessage } from '../utils/errors';
 import { safeExternalHref } from '../utils/links';
 import { GraphWorkbench } from '../components/video-graph/GraphWorkbench';
 import { mergeGraphData } from '../components/video-graph/data';
-import { graphLimitsForWidth } from '../components/video-graph/limits';
+import { graphLimitsForWidth, MIN_GRAPH_COMPONENT_SIZE } from '../components/video-graph/limits';
 import { ASSERTION_LABELS } from '../components/video-graph/presentation';
 
 
@@ -60,7 +60,8 @@ export function VideoGraphPage({ onOpenContent }: { onOpenContent: (id: string) 
     setLoading(true); setError(''); setGraph(null); setSelectedEdge(null); setEvidence(null); setEvidenceOffset(0);
     getVideoGraph({ entity_id: entityId || undefined,
       q: appliedQuery || undefined, entity_type: entityType || undefined, assertion: assertion || undefined,
-      hops, max_nodes: limits.initialNodes, max_edges: limits.initialEdges })
+      hops, max_nodes: limits.initialNodes, max_edges: limits.initialEdges,
+      min_component_size: MIN_GRAPH_COMPONENT_SIZE })
       .then((value) => { if (!ignore) setGraph(value); })
       .catch((reason: unknown) => { if (!ignore) setError(formatErrorMessage('无法加载知识图谱', reason)); })
       .finally(() => { if (!ignore) setLoading(false); });
@@ -89,7 +90,8 @@ export function VideoGraphPage({ onOpenContent }: { onOpenContent: (id: string) 
     try {
       const incoming = await getVideoGraph({ entity_id: node.id,
         entity_type: entityType || undefined, assertion: assertion || undefined,
-        hops: 1, max_nodes: limits.maxNodes, max_edges: limits.maxEdges });
+        hops: 1, max_nodes: limits.maxNodes, max_edges: limits.maxEdges,
+        min_component_size: MIN_GRAPH_COMPONENT_SIZE });
       if (scope.current === currentScope && graph) {
         const merged = mergeGraphData(graph, incoming, limits.maxNodes, limits.maxEdges);
         setGraph(merged);

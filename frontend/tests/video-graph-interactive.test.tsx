@@ -45,6 +45,7 @@ describe('interactive graph exploration', () => {
       .filter((url) => url.pathname.endsWith('/graph'));
     expect(graphRequests.length).toBeGreaterThanOrEqual(2);
     expect(graphRequests.every((url) => !url.searchParams.has('full'))).toBe(true);
+    expect(graphRequests.every((url) => url.searchParams.get('min_component_size') === '5')).toBe(true);
     expect(graphRequests[0].searchParams.get('max_nodes')).toBe('300');
     expect(graphRequests[0].searchParams.get('max_edges')).toBe('500');
     expect(graphRequests[1].searchParams.get('max_nodes')).toBe('500');
@@ -81,6 +82,16 @@ describe('interactive graph exploration', () => {
     expect(merged.nodes).toHaveLength(450);
     expect(merged.edges).toHaveLength(449);
     expect(merged.truncated).toBe(false);
+  });
+
+  it('does not add isolated expansion nodes when the edge budget is exhausted', () => {
+    const merged = mergeGraphData(base, {
+      nodes: [node('PX4'), node('RTK'), node('unused')],
+      edges: [edge('r2', 'PX4', 'RTK')], truncated: false,
+    }, 20, 1);
+    expect(merged.nodes).toEqual(base.nodes);
+    expect(merged.edges).toEqual(base.edges);
+    expect(merged.truncated).toBe(true);
   });
 
   it('caps desktop expansion and never adds a relation with a missing endpoint', () => {

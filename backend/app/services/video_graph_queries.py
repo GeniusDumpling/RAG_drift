@@ -24,6 +24,7 @@ from app.schemas.video_graph import (
     GraphRetrieveRequest,
     GraphRetrieveResponse,
 )
+from app.services.graph_display import connected_display_graph
 from app.services.video_graph import MENTION_METHOD, load_material, normalized_name
 
 
@@ -141,7 +142,18 @@ def get_graph(
     hops: int = 1,
     max_nodes: int | None = 80,
     max_edges: int | None = 160,
+    min_component_size: int = 0,
 ) -> GraphData:
+    if min_component_size > 0:
+        candidates = get_graph(
+            session, entity_id=entity_id, content_id=content_id, q=q,
+            entity_type=entity_type, assertion=assertion, hops=hops,
+            max_nodes=None, max_edges=None,
+        )
+        return connected_display_graph(
+            candidates, min_component_size=min_component_size,
+            max_nodes=max_nodes, max_edges=max_edges,
+        )
     nodes: dict[str, GraphNode] = {}
     edges: dict[str, GraphEdge] = {}
     truncated = False

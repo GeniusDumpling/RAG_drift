@@ -24,15 +24,23 @@ export function parallelEdgeStyles(edges: VideoGraphEdge[]) {
 export function mergeGraphData(previous: VideoGraphData, incoming: VideoGraphData, maxNodes = DESKTOP_GRAPH_LIMITS.maxNodes, maxEdges = DESKTOP_GRAPH_LIMITS.maxEdges): VideoGraphData {
   const nodes = new Map(previous.nodes.map((node) => [node.id, node]));
   let truncated = previous.truncated || incoming.truncated;
-  for (const node of incoming.nodes) {
-    if (nodes.has(node.id) || nodes.size < maxNodes) nodes.set(node.id, node);
-    else truncated = true;
-  }
+  const candidates = new Map(incoming.nodes.map((node) => [node.id, node]));
   const edges = new Map(previous.edges.map((edge) => [edge.id, edge]));
+  // Add complete relation pairs together, so exhausting edges cannot leave isolated nodes.
+  // Reserve room for new neighbors before filling it with links between existing nodes.
   for (const edge of incoming.edges) {
-    if (!nodes.has(edge.source) || !nodes.has(edge.target)) { truncated = true; continue; }
-    if (edges.has(edge.id) || edges.size < maxEdges) edges.set(edge.id, edge);
-    else truncated = true;
+    const missing = [...new Set([edge.source, edge.target])].filter((id) => !nodes.has(id));
+    if (!missing.length) continue;
+    if (missing.some((id) => !candidates.has(id)) || nodes.size + missing.length > maxNodes
+      || (!edges.has(edge.id) && edges.size >= maxEdges)) { truncated = true; continue; }
+    for (const id of missing) nodes.set(id, candidates.get(id)!);
+    edges.set(edge.id, edge);
   }
+  for (const edge of incoming.edges) {
+    if (!nodes.has(edge.source) || !nodes.has(edge.target)
+      || (!edges.has(edge.id) && edges.size >= maxEdges)) { truncated = true; continue; }
+    edges.set(edge.id, edge);
+  }
+  if (incoming.nodes.some((node) => !nodes.has(node.id))) truncated = true;
   return { nodes: [...nodes.values()], edges: [...edges.values()], truncated };
 }

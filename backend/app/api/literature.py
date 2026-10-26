@@ -5,7 +5,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_session
+from app.db.literature import get_literature_session
 from app.repositories.literature import LiteratureRepository
 from app.schemas.literature import (
     LiteratureArtifactRead,
@@ -21,7 +21,7 @@ from app.schemas.literature import (
 from app.schemas.sources import Page
 
 router = APIRouter()
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
+SessionDep = Annotated[AsyncSession, Depends(get_literature_session)]
 LimitQuery = Annotated[int, Query(ge=1, le=100)]
 OffsetQuery = Annotated[int, Query(ge=0)]
 

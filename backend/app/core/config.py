@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 
 class Settings(BaseSettings):
@@ -49,6 +50,10 @@ class Settings(BaseSettings):
     vlm_model: str = Field(default="Qwen/Qwen3-Omni-30B-A3B-Instruct", alias="VLM_MODEL")
 
     # Literature research settings
+    literature_database_url: str | None = Field(default=None, alias="LITERATURE_DATABASE_URL")
+    literature_sync_database_url: str | None = Field(
+        default=None, alias="LITERATURE_SYNC_DATABASE_URL"
+    )
     literature_llm_provider: str = Field(default="deepseek", alias="LITERATURE_LLM_PROVIDER")
     deepseek_api_key: str | None = Field(default=None, alias="DEEPSEEK_API_KEY")
     deepseek_base_url: str = Field(default="https://api.deepseek.com/v1", alias="DEEPSEEK_BASE_URL")
@@ -67,6 +72,18 @@ class Settings(BaseSettings):
     literature_fulltext_max_chars: int = Field(
         default=200_000, alias="LITERATURE_FULLTEXT_MAX_CHARS"
     )
+
+    @property
+    def resolved_literature_database_url(self) -> str:
+        return self.literature_database_url or make_url(self.database_url).set(
+            database="literature_research"
+        ).render_as_string(hide_password=False)
+
+    @property
+    def resolved_literature_sync_database_url(self) -> str:
+        return self.literature_sync_database_url or self.literature_database_url or make_url(
+            self.sync_database_url
+        ).set(database="literature_research").render_as_string(hide_password=False)
 
 
 @lru_cache(maxsize=1)

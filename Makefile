@@ -29,6 +29,7 @@ infra-down:
 
 migrate:
 	$(ALEMBIC) upgrade head
+	$(ALEMBIC) -n literature upgrade head
 
 test:
 	$(PYTEST) -q

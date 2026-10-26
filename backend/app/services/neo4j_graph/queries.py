@@ -12,6 +12,7 @@ from app.schemas.video_graph import (
     GraphNode,
     GraphRetrieveResponse,
 )
+from app.services.graph_display import connected_display_graph
 from app.services.neo4j_graph.store import decode
 from app.services.video_graph import load_material, normalized_name
 from app.services.video_graph_queries import timestamp_url
@@ -87,7 +88,18 @@ class GraphQueries:
         hops=1,
         max_nodes=80,
         max_edges=160,
+        min_component_size=0,
     ):
+        if min_component_size > 0:
+            candidates = self.get_graph(
+                session, entity_id=entity_id, content_id=content_id, q=q,
+                entity_type=entity_type, assertion=assertion, hops=hops,
+                max_nodes=None, max_edges=None,
+            )
+            return connected_display_graph(
+                candidates, min_component_size=min_component_size,
+                max_nodes=max_nodes, max_edges=max_edges,
+            )
         nodes, edges, truncated = {}, {}, False
         cid = str(content_id) if content_id else None
         if cid:

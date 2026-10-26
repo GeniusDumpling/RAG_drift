@@ -315,12 +315,6 @@ async def test_database_tables_and_rows_are_whitelisted_and_searchable(
         "search_queries",
         "supplier_relations",
         "supplier_verifications",
-        "literature_runs",
-        "literature_run_events",
-        "literature_papers",
-        "literature_run_papers",
-        "literature_artifacts",
-        "literature_evidence",
     ]
     assert payload["total"] == len(table_names)
 

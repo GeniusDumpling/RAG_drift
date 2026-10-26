@@ -23,6 +23,12 @@ class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
+class LiteratureBase(DeclarativeBase):
+    """The literature schema is managed and persisted in a separate database."""
+
+    metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+
 class UuidPrimaryKeyMixin:
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 

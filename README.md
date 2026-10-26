@@ -346,6 +346,8 @@ docker compose -f docker-compose.deploy.yml up -d --build app
 
 当前正式版以力导向布局提供限量概览：桌面默认最多 300 个节点、500 条关系，手动展开最多 500 个节点、1,000 条关系；移动端最多 150 个节点、300 条关系。Neo4j 保留全部图谱，可通过搜索与聚焦查询其他内容，详见 [展示数量与性能配置](docs/graph-ui-performance-2026-10-23.md)。
 
+2026-10-26 调整展示选取规则：隐藏少于 5 个节点的独立子图，优先展示连接较多、相互关联紧密的区域；先保留保证连通的骨架，再补充节点间关系，避免数量截断后出现碎片。搜索、筛选和邻居展开沿用此规则，底层数据与字幕证据完整保留，详见 [连通图谱展示说明](docs/graph-ui-connected-2026-10-26.md)。
+
 默认 `VIDEO_GRAPH_BACKEND=postgres`；2026-10-21 的 [迁移记录](docs/neo4j-migration-report-2026-10-21.md) 已完成历史数据导入和正式环境 Neo4j 切换。迁移步骤（包括租约和检查点）见 [Neo4j 迁移指南](docs/neo4j-migration.md)。使用 Neo4j 时，PostgreSQL 继续保存源内容，图谱、构图任务、租约及检查点以 Neo4j 为准。
 
 ```bash

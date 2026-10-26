@@ -20,10 +20,10 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, TimestampMixin, UuidPrimaryKeyMixin, utcnow
+from app.db.base import LiteratureBase, TimestampMixin, UuidPrimaryKeyMixin, utcnow
 
 
-class LiteratureRun(Base, UuidPrimaryKeyMixin, TimestampMixin):
+class LiteratureRun(LiteratureBase, UuidPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "literature_runs"
     __table_args__ = (
         CheckConstraint("progress_current >= 0", name="progress_current_non_negative"),
@@ -66,7 +66,7 @@ class LiteratureRun(Base, UuidPrimaryKeyMixin, TimestampMixin):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class LiteratureRunEvent(Base, UuidPrimaryKeyMixin):
+class LiteratureRunEvent(LiteratureBase, UuidPrimaryKeyMixin):
     __tablename__ = "literature_run_events"
     __table_args__ = (
         Index("ix_literature_run_events_run_created", "literature_run_id", "created_at"),
@@ -92,7 +92,7 @@ class LiteratureRunEvent(Base, UuidPrimaryKeyMixin):
     )
 
 
-class LiteraturePaper(Base, UuidPrimaryKeyMixin, TimestampMixin):
+class LiteraturePaper(LiteratureBase, UuidPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "literature_papers"
     __table_args__ = (
         UniqueConstraint("ieee_article_number"),
@@ -122,7 +122,7 @@ class LiteraturePaper(Base, UuidPrimaryKeyMixin, TimestampMixin):
     metadata_hash: Mapped[str] = mapped_column(String(128), nullable=False)
 
 
-class LiteratureRunPaper(Base, UuidPrimaryKeyMixin):
+class LiteratureRunPaper(LiteratureBase, UuidPrimaryKeyMixin):
     __tablename__ = "literature_run_papers"
     __table_args__ = (
         UniqueConstraint(
@@ -174,7 +174,7 @@ class LiteratureRunPaper(Base, UuidPrimaryKeyMixin):
     )
 
 
-class LiteratureArtifact(Base, UuidPrimaryKeyMixin):
+class LiteratureArtifact(LiteratureBase, UuidPrimaryKeyMixin):
     __tablename__ = "literature_artifacts"
     __table_args__ = (
         CheckConstraint("byte_size IS NULL OR byte_size >= 0", name="byte_size_non_negative"),
@@ -203,7 +203,7 @@ class LiteratureArtifact(Base, UuidPrimaryKeyMixin):
     )
 
 
-class LiteratureEvidence(Base, UuidPrimaryKeyMixin):
+class LiteratureEvidence(LiteratureBase, UuidPrimaryKeyMixin):
     __tablename__ = "literature_evidence"
     __table_args__ = (Index("ix_literature_evidence_run_paper", "literature_run_paper_id"),)
 

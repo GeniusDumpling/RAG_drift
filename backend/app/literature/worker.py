@@ -4,13 +4,13 @@ import asyncio
 import uuid
 
 from app.core.config import get_settings
-from app.db.session import AsyncSessionLocal
+from app.db.literature import LiteratureSessionLocal
 from app.literature.pipeline import LiteraturePipeline
 from app.repositories.literature import LiteratureRepository
 
 
 async def process_one(run_id: uuid.UUID | None = None) -> str | None:
-    async with AsyncSessionLocal() as session:
+    async with LiteratureSessionLocal() as session:
         repo = LiteratureRepository(session)
         run = await repo.claim_next_run(run_id)
         if run is None:

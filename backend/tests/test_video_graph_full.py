@@ -64,6 +64,10 @@ def test_full_graph_includes_all_relations_and_isolated_entities():
         ({"max_nodes": 500, "max_edges": 1000}, (500, 1000), 200),
         ({"max_nodes": 501}, None, 422),
         ({"max_edges": 1001}, None, 422),
+        ({"min_component_size": -1}, None, 422),
+        ({"min_component_size": 51}, None, 422),
+        ({"min_component_size": 0}, (300, 500), 200),
+        ({"min_component_size": 8}, (300, 500), 200),
     ],
 )
 async def test_api_limits_and_full_mode_preserve_filters(params, expected, status):
@@ -108,3 +112,6 @@ async def test_api_limits_and_full_mode_preserve_filters(params, expected, statu
     assert captured["entity_type"] == "software"
     assert captured["assertion"] == "uncertain"
     assert captured["hops"] == 2
+    assert captured["min_component_size"] == (
+        0 if params.get("full") == "true" else params.get("min_component_size", 5)
+    )

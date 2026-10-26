@@ -36,7 +36,7 @@ function mockApi({ error = false, summaryOnly = false } = {}) {
       chunk_coverage: { videos: 1, total_chunks: 10, passed_chunks: 8, skipped_chunks: 2, pending_chunks: 0 } }));
     if (url.pathname === '/video-graph/graph') {
       if (error) return Promise.resolve(response({ detail: '视频知识图谱尚未初始化，请执行 alembic upgrade head' }, 503));
-      return Promise.resolve(response({ nodes: entityNodes,
+      return Promise.resolve(response({ nodes: summaryOnly ? [] : entityNodes,
         edges: summaryOnly ? [] : [relation], truncated: false }));
     }
     if (url.pathname.endsWith('/evidence')) return Promise.resolve(response({ items: [{ id: 'ev-1', relation_id: relation.id, content_item_id: 'video-1', chunk_id: 'chunk-1', title: '视频甲',
@@ -88,12 +88,12 @@ describe('VideoGraphPage', () => {
     });
   });
 
-  it('shows entity mentions when there are no technical relations', async () => {
+  it('explains when only isolated entities or tiny subgraphs match the filters', async () => {
     mockApi({ summaryOnly: true });
     render(<VideoGraphPage onOpenContent={vi.fn()} />);
-    expect(await screen.findByRole('button', { name: 'PX4', exact: true })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('tab', { name: '关联详情' }));
-    expect(screen.getByText('暂无字幕支持的关系。')).toBeInTheDocument();
+    expect(await screen.findByText('没有符合展示条件的图谱')).toBeInTheDocument();
+    expect(screen.getByText(/当前范围内未找到至少 5 个节点/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('交互画布测试替身')).not.toBeInTheDocument();
   });
 
   it('surfaces migration errors instead of showing a successful empty graph', async () => {

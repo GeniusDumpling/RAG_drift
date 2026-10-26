@@ -1,0 +1,14 @@
+[
+  {"id":"fact_camera","category":"参数与功能","question":"DJI Mavic 3 Pro 的三摄系统有哪些焦段？不同摄像头分别适合哪些拍摄用途？","aspects":["区分具体型号和摄像头","焦段及三摄配置","有依据的用途和限制"]},
+  {"id":"fact_followme","category":"参数与功能","question":"Parrot Bebop 2 的 Follow-me 功能中，GPS 跟踪与视觉跟踪有什么区别？","aspects":["明确适用型号和功能","两类跟踪的工作方式","证据中的条件与限制"]},
+  {"id":"repair_gps","category":"维修与排查","question":"更换 DJI Mavic Pro 的 GPS 模块需要哪些拆解步骤和注意事项？","aspects":["正确型号的指南","拆解和更换步骤","材料中明确的工具或注意事项"]},
+  {"id":"repair_battery","category":"维修与排查","question":"如何更换 DJI Mavic Air 2 的电池？请说明步骤和证据中明确的注意事项。","aspects":["区分 Air 2 与其他型号","取出和安装电池步骤","证据中的注意事项"]},
+  {"id":"trouble_uart","category":"维修与排查","question":"Kakute H7 mini v1.5 在 PX4 v1.16 中 GPS/Compass 无数据、UART 显示 0 Bytes Received 时，应如何排查？","aspects":["对应帖子实际症状","有证据的配置或接线排查","区分已验证结论与用户建议"]},
+  {"id":"trouble_nogps","category":"维修与排查","question":"根据 PX4 without GPS or external positioning 的讨论，没有 GPS 或外部定位时有哪些飞行模式或定位限制？","aspects":["对应讨论的条件","可用模式或定位方式","限制与不确定性"]},
+  {"id":"compare_cameras","category":"对比与综合","question":"对比 DJI Mavic 3 Pro 与 DJI Air 3 的相机配置和拍摄用途；证据缺少的参数请明确说明。","aspects":["两个型号分别说明","有依据的相机配置比较","用途差异和缺失信息"]},
+  {"id":"compare_gnss","category":"对比与综合","question":"GPS jamming 与 GPS spoofing 对无人机的影响有什么区别？库内资料中有哪些应对思路？","aspects":["干扰与欺骗的区别","飞行或定位影响","有依据的应对办法及限制"]},
+  {"id":"overview_filming","category":"对比与综合","question":"综合库内资料，介绍无人机电影感拍摄的常见运镜、画面构图和操作注意事项。","aspects":["覆盖多种运镜","构图建议","操作注意事项及适用条件"]},
+  {"id":"overview_failsafe","category":"对比与综合","question":"综合 PX4 与 ArduPilot 的讨论，GPS 失效时应如何考虑定位替代、失效保护和日志排查？请区分平台。","aspects":["区分 PX4 和 ArduPilot","定位替代","失效保护","日志或故障排查及限制"]},
+  {"id":"negative_future","category":"无答案对照","question":"DJI Mavic 9 Ultra 在 2029 年官方发布的最大飞行时间和首发售价是多少？请给出准确数值。","aspects":["识别库内没有该具体机型与发布信息","拒绝借用其他机型参数"],"unanswerable":true},
+  {"id":"negative_private","category":"无答案对照","question":"序列号 TEST-NO-RECORD-20261026 对应的我的无人机电池，上周实际循环了多少次？请给出精确值。","aspects":["识别缺少用户设备历史记录","不把通用电池寿命当作实际循环数"],"unanswerable":true}
+]

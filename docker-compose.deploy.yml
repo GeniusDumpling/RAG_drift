@@ -13,6 +13,8 @@ services:
       DRONE_DOCUMENTS_DIR: /data/dji-documents
       DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/intelligence_rag
       SYNC_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/intelligence_rag
+      LITERATURE_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/literature_research
+      LITERATURE_SYNC_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/literature_research
       QDRANT_URL: http://qdrant:6333
       VIDEO_GRAPH_BACKEND: ${VIDEO_GRAPH_BACKEND:-postgres}
       NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
@@ -78,6 +80,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/intelligence_rag
       SYNC_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/intelligence_rag
+      LITERATURE_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/literature_research
+      LITERATURE_SYNC_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/literature_research
       QDRANT_URL: http://qdrant:6333
       VIDEO_GRAPH_BACKEND: ${VIDEO_GRAPH_BACKEND:-postgres}
       NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
@@ -123,6 +127,7 @@ services:
       POSTGRES_DB: intelligence_rag
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres-init-literature.sh:/docker-entrypoint-initdb.d/20-literature.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U intelligence -d intelligence_rag"]
       interval: 5s

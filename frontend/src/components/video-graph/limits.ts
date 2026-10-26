@@ -2,6 +2,8 @@ export type GraphLimits = {
   initialNodes: number; initialEdges: number; maxNodes: number; maxEdges: number;
 };
 
+export const MIN_GRAPH_COMPONENT_SIZE = 5;
+
 export const DESKTOP_GRAPH_LIMITS: GraphLimits = {
   initialNodes: 300, initialEdges: 500, maxNodes: 500, maxEdges: 1000,
 };

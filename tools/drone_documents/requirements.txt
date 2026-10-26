@@ -1,0 +1,4 @@
+pymupdf==1.27.2.3
+langdetect==1.0.9
+python-dotenv==1.2.2
+# Also uses the repository's psycopg, httpx, qdrant-client, BeautifulSoup and Pillow.

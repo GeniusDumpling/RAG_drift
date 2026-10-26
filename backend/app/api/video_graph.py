@@ -18,6 +18,7 @@ from app.schemas.video_graph import (
     GraphRetrieveResponse,
 )
 from app.services import video_graph_queries as queries
+from app.services.graph_display import DEFAULT_MIN_COMPONENT_SIZE
 
 router = APIRouter(prefix="/video-graph", tags=["video-graph"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -95,6 +96,10 @@ async def graph(
     hops: int = Query(default=1, ge=1, le=2),
     max_nodes: int = Query(default=300, ge=2, le=500),
     max_edges: int = Query(default=500, ge=1, le=1000),
+    min_component_size: int = Query(
+        default=DEFAULT_MIN_COMPONENT_SIZE, ge=0, le=50,
+        description="隐藏少于指定节点数的独立子图，优先展示关联密集的区域；0 关闭筛选",
+    ),
     full: bool = Query(default=False, description="返回当前筛选范围内的完整有效图谱，不截断数量"),
 ) -> Any:
     return await _query(
@@ -109,6 +114,7 @@ async def graph(
             hops=hops,
             max_nodes=None if full else max_nodes,
             max_edges=None if full else max_edges,
+            min_component_size=0 if full else min_component_size,
         ),
     )
 

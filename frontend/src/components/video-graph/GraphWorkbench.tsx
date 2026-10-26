@@ -6,6 +6,7 @@ import { GraphIcon } from './GraphIcon';
 import './obsidian-graph.css';
 import { ASSERTION_LABELS, DARK_ENTITY_COLORS, DEFAULT_GRAPH_APPEARANCE, ENTITY_LABELS, PREDICATE_LABELS } from './presentation';
 import type { GraphAppearance } from './presentation';
+import { MIN_GRAPH_COMPONENT_SIZE } from './limits';
 
 type Props = {
   graph: VideoGraphData | null; overview: VideoGraphOverview | null;
@@ -95,7 +96,7 @@ export function GraphWorkbench(props: Props) {
           {props.focusId ? '实体邻域' : '知识网络'}<span className="ow-caption-dot">·</span><span>{format(nodes.length)} 个实体节点</span></div>
         {props.loading ? <div className="ow-loading" role="status"><div className="ow-loading-orbit" /><span>正在连接知识网络…</span></div> : null}
         {props.error ? <div className="ow-stage-message" role="alert"><GraphIcon name="info" size={24} /><p>{props.error}</p><button onClick={props.onRefresh}>重新加载</button></div> : null}
-        {props.graph && nodes.length === 0 ? <div className="ow-stage-message"><GraphIcon name="search" size={28} /><h2>没有匹配的实体</h2><p>尝试其他关键词，或调整右侧筛选条件。</p></div> : null}
+        {props.graph && nodes.length === 0 ? <div className="ow-stage-message"><GraphIcon name="search" size={28} /><h2>没有符合展示条件的图谱</h2><p>当前范围内未找到至少 {MIN_GRAPH_COMPONENT_SIZE} 个节点的连通子图，请尝试其他关键词或调整筛选条件。</p></div> : null}
         {props.graph && nodes.length > 0 ? <InteractiveGraphCanvas graph={props.graph} focusId={props.focusId}
           selectedEdge={props.selectedEdge?.id ?? ''} expandingId={props.expandingId}
           activeNodeId={selectedId} appearance={{ ...appearance, ...appliedForces }} onSelect={selectNode}
@@ -120,6 +121,7 @@ export function GraphWorkbench(props: Props) {
             </div>
             <div className="ow-processing-status"><span><i />{format(props.overview?.builds.pending ?? 0)} 待处理</span><span>{format(props.overview?.partial_videos ?? 0)} 部分完成</span></div>
             <section className="ow-panel-section"><h2><GraphIcon name="search" size={14} />筛选</h2>
+              <p className="ow-muted">优先展示关联密集的区域，隐藏少于 {MIN_GRAPH_COMPONENT_SIZE} 个节点的独立子图；全局统计包含全部数据。</p>
               <label>实体类型<select value={props.entityType} onChange={(event) => props.onEntityType(event.target.value)}><option value="">全部类型</option>{Object.entries(ENTITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
               <label>陈述状态<select value={props.assertion} onChange={(event) => props.onAssertion(event.target.value)}><option value="">全部状态</option>{Object.entries(ASSERTION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
               <label>展开层数<select value={props.hops} onChange={(event) => props.onHops(Number(event.target.value))}><option value={1}>1 跳邻居</option><option value={2}>2 跳邻居</option></select></label>

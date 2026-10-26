@@ -1,33 +1,62 @@
-.hermes
-.hermes/
+# 本机配置与凭据；模板和前端同源 API 配置需要随源码提交。
 .env
+.env.*
+!.env.example
+!frontend/.env.production
+/deploy/*.env
+cookies*.txt
+/.aws/
+
+# Python 依赖、字节码与构建产物
 .venv/
-.venv
+venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
 build/
 dist/
+
+# 检查、测试与覆盖率缓存
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-node_modules/
-frontend/node_modules
-frontend/dist/
-.worktrees/
-.superpowers/
-.api-18000.pid
-.DS_Store
-model-cache/
-tools/video-crawler/downloads/
-tools/video-crawler/scripts/downloads/
-tools/video-crawler/scripts/search-state.json
+.cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+coverage/
 
-# supplier-information 运行产物
-tools/supplier-information/.env
-tools/supplier-information/search_results/
-tools/supplier-information/logs/
-tools/web-crawler/output/
-data/
-.job-locks/
-deploy/*.env
+# 前端依赖与编译缓存
+node_modules/
+*.tsbuildinfo
+
+# 本地工具状态与编辑器临时文件
+/.hermes
+/.codex/
+/.worktrees/
+/.superpowers/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# 日志与进程状态
+logs/
+*.log
+*.pid
+/.job-locks/
+
+# 数据、模型与采集产物（包含运行状态，不应作为普通缓存删除）
+/data/
+/model-cache/
+/tools/video-crawler/downloads/
+/tools/video-crawler/scripts/downloads/
+/tools/video-crawler/scripts/search-state.json
+/tools/supplier-information/search_results/
+/tools/supplier-information/logs/
+/tools/web-crawler/output/
+
+# 历史开发计划仅保留本地；部署、使用说明和测试继续跟踪。
+/docs/superpowers/

@@ -1,0 +1,8 @@
+# syntax=docker/dockerfile:1
+# Build context must contain only the prebuilt production dist/ directory.
+# Pass the deployed runtime explicitly to preserve its backend and dependencies.
+ARG APP_RUNTIME_IMAGE=intelligence-rag-app:latest
+FROM ${APP_RUNTIME_IMAGE}
+WORKDIR /app
+RUN rm -rf /app/frontend/dist
+COPY dist/ ./frontend/dist/

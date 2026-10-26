@@ -27,8 +27,8 @@ def test_runtime_image_includes_video_crawler_dependencies() -> None:
 def test_docker_context_excludes_video_crawler_runtime_artifacts() -> None:
     dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
 
-    assert "skills/video-crawler/downloads/" in dockerignore
-    assert "skills/video-crawler/cookies*.txt" in dockerignore
+    assert "tools/video-crawler/downloads/" in dockerignore
+    assert "**/cookies*.txt" in dockerignore
 
 
 def test_deploy_compose_uses_siliconflow_bge_m3() -> None:

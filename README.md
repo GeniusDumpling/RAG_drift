@@ -6,6 +6,8 @@
 
 系统整体采集与大模型分析流程、各子项进展：见 [系统总述与进展](docs/system-overview-and-progress.md)。
 
+最近一周进展：见 [项目进展周报（2026-10-16—2026-10-22）](docs/weekly-progress-2026-10-22.md)。
+
 部署到另一台 Linux 服务器：见 [Docker + systemd 部署指南](docs/linux-server-deployment.md)。
 包含目标机代理/端口配置、五类定时任务、持久化、镜像发布及验证步骤；采集任务通过容器运行，无需宿主机 Python 环境。已有部署的升级先按指南核对数据卷和备份。
 
@@ -339,6 +341,10 @@ docker compose -f docker-compose.deploy.yml up -d --build app
 ## 视频知识图谱（第一版）
 
 视频知识图谱第一版提供历史视频构图、增量轮询、字幕证据定位和前端浏览代码，入口位于 `tools/video-knowledge-graph/`。迁移、模型配置、使用命令及 GraphRAG 接口说明见 [视频知识图谱说明](tools/video-knowledge-graph/README.md)。
+
+2026-10-23 已正式部署白色背景的 AntV G6 图谱工作台，仅保留交互视图，支持拖拽、悬停邻居与连线高亮、入链/出链与字幕证据面板。图谱与供应链、AI 问答共用左侧导航，移除图谱顶部标题、说明及系统顶栏，图谱区域铺满导航右侧的可用空间；从左侧“视频知识图谱”进入，或访问 `http://localhost:8000/?view=VideoGraph`，镜像和回退说明见 [当前部署记录](docs/graph-ui-navigation-2026-10-23.md)。
+
+当前正式版以力导向布局提供限量概览：桌面默认最多 300 个节点、500 条关系，手动展开最多 500 个节点、1,000 条关系；移动端最多 150 个节点、300 条关系。Neo4j 保留全部图谱，可通过搜索与聚焦查询其他内容，详见 [展示数量与性能配置](docs/graph-ui-performance-2026-10-23.md)。
 
 默认 `VIDEO_GRAPH_BACKEND=postgres`；2026-10-21 的 [迁移记录](docs/neo4j-migration-report-2026-10-21.md) 已完成历史数据导入和正式环境 Neo4j 切换。迁移步骤（包括租约和检查点）见 [Neo4j 迁移指南](docs/neo4j-migration.md)。使用 Neo4j 时，PostgreSQL 继续保存源内容，图谱、构图任务、租约及检查点以 Neo4j 为准。
 

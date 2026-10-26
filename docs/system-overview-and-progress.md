@@ -195,7 +195,7 @@ PostgreSQL 是事实来源，Qdrant 是可重建的检索索引。前端通过�
 
 **待完善：**完成目标服务器部署验收与真实外部采集验证。历史记录中，最终源码的干净全量镜像重建未完成；`tests/unit` 曾有 36 项基线失败，主要涉及旧 `skills/` 路径与过期演示断言。本次仅整理文档，未复跑这些测试，不能据此宣称当前全量测试通过。
 
-部署说明见 [Linux 服务器部署指南](linux-server-deployment.md)，证据与限制见 [部署验证记录](deployment-validation.md)。部分旧 README 和设计文档仍使用 `skills/forum-crawler`、`skills/video-crawler` 路径，当前工具实际位于 `tools/`。
+部署说明见 [Linux 服务器部署指南](linux-server-deployment.md)，证据与限制见 [部署验证记录](deployment-validation.md)。工具目录已统一为 `tools/`，当前配置和测试应使用 `tools/forum-crawler`、`tools/video-crawler` 等路径；历史验证记录保留当时的问题描述。
 
 ## 五、当前阶段判断与后续建议
 

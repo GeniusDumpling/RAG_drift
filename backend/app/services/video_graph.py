@@ -209,6 +209,7 @@ class DeepSeekVideoExtractor:
                 json={
                     "model": self.settings.deepseek_model,
                     "thinking": {"type": "enabled"},
+                    "reasoning_effort": "low",
                     "temperature": 0,
                     "response_format": {"type": "json_object"},
                     "messages": [

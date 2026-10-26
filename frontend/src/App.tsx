@@ -32,7 +32,7 @@ const NAV_LABELS: Record<View, string> = {
 };
 
 export function App() {
-  const [activeView, setActiveView] = useState<View>('Dashboard');
+  const [activeView, setActiveView] = useState<View>(() => new URLSearchParams(window.location.search).get('view') === 'VideoGraph' ? 'VideoGraph' : 'Dashboard');
   const [searchSeed, setSearchSeed] = useState('');
   const [selectedRunId, setSelectedRunId] = useState('');
   const [selectedContentId, setSelectedContentId] = useState('');
@@ -56,7 +56,7 @@ export function App() {
   }
 
   return (
-    <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+    <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}${activeView === 'VideoGraph' ? ' app-shell--graph' : ''}`}>
       <aside className="nav" id="app-sidebar">
         <div className="sidebar-content" hidden={sidebarCollapsed}>
           <div className="brand-block">
@@ -125,12 +125,12 @@ export function App() {
           <span aria-hidden="true">{sidebarCollapsed ? '›' : '‹'}</span>
         </button>
       </aside>
-      <div className="workspace">
-        <header className="app-topbar">
+      <div className={`workspace${activeView === 'VideoGraph' ? ' workspace--graph' : ''}`}>
+        {activeView !== 'VideoGraph' ? <header className="app-topbar">
           <p>信息治理 / {NAV_LABELS[activeView]}</p>
           <div className="system-status"><span /> 系统在线</div>
-        </header>
-        <main className="main">
+        </header> : null}
+        <main className={`main${activeView === 'VideoGraph' ? ' main--graph' : ''}`}>
           {activeView === 'Dashboard' ? <DashboardPage onSearch={openSearch} /> : null}
           {activeView === 'Sources' ? <SourcesPage /> : null}
           {activeView === 'Runs' ? <RunDetailPage selectedRunId={selectedRunId} /> : null}

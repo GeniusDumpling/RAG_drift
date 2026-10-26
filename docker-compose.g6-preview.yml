@@ -1,0 +1,22 @@
+# Independent frontend preview. Never starts/recreates the production app or databases.
+name: rag-g6-preview
+services:
+  graph-preview:
+    image: ${G6_PREVIEW_IMAGE:-rag-graph-g6-preview:20261023}
+    container_name: intelligence-rag-g6-preview
+    environment:
+      PREVIEW_UPSTREAM: http://intelligence-rag-app:8000
+    ports:
+      - "${G6_PREVIEW_BIND_ADDRESS:-${APP_BIND_ADDRESS:-127.0.0.1}}:${G6_PREVIEW_PORT:-18000}:8080"
+    networks:
+      - existing-app
+    labels:
+      org.intelligence-rag.preview: g6
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: "no"
+networks:
+  existing-app:
+    external: true
+    name: ${G6_PREVIEW_NETWORK:-rag_drift_default}

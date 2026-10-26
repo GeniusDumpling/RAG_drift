@@ -49,7 +49,7 @@ export function getVideoGraphOverview(): Promise<VideoGraphOverview> {
 
 export type VideoGraphParams = {
   q?: string; entity_id?: UUID; content_item_id?: UUID; entity_type?: string;
-  assertion?: string; hops?: number; max_nodes?: number; max_edges?: number;
+  assertion?: string; hops?: number; max_nodes?: number; max_edges?: number; full?: boolean;
 };
 
 export function getVideoGraph(params: VideoGraphParams = {}): Promise<VideoGraphData> {

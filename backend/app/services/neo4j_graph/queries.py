@@ -145,10 +145,10 @@ class GraphQueries:
                 if r["id"] in edges:
                     continue
                 missing = {s["id"], o["id"]} - nodes.keys()
-                if len(edges) >= max_edges:
+                if max_edges is not None and len(edges) >= max_edges:
                     truncated = True
                     break
-                if len(nodes) + len(missing) > max_nodes:
+                if max_nodes is not None and len(nodes) + len(missing) > max_nodes:
                     truncated = True
                     continue
                 add(s)
@@ -167,8 +167,8 @@ class GraphQueries:
             frontier = list(new_frontier)
         if not entity_id:
             remaining = [row["e"] for row in matches if row["e"]["id"] not in nodes]
-            capacity = max_nodes - len(nodes)
-            truncated |= len(remaining) > capacity
+            capacity = None if max_nodes is None else max_nodes - len(nodes)
+            truncated |= capacity is not None and len(remaining) > capacity
             for entity in remaining[:capacity]:
                 add(entity)
         if cid:
@@ -178,7 +178,7 @@ class GraphQueries:
                 ids=list(nodes),
             )
             for row in rows:
-                if len(edges) >= max_edges:
+                if max_edges is not None and len(edges) >= max_edges:
                     truncated = True
                     break
                 key = f"mention:{cid}:{row['id']}"

@@ -6,7 +6,7 @@ import pytest
 
 SCRIPT_PATH = (
     Path(__file__).resolve().parents[2]
-    / "skills"
+    / "tools"
     / "video-crawler"
     / "scripts"
     / "youtube_transcript_evidence.py"
@@ -18,7 +18,9 @@ def load_module():
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.syspath_prepend(str(SCRIPT_PATH.parent))
+        spec.loader.exec_module(module)
     return module
 
 

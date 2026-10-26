@@ -93,8 +93,9 @@ async def graph(
     entity_type: EntityType | None = None,
     assertion: Assertion | None = None,
     hops: int = Query(default=1, ge=1, le=2),
-    max_nodes: int = Query(default=80, ge=2, le=150),
-    max_edges: int = Query(default=160, ge=1, le=300),
+    max_nodes: int = Query(default=300, ge=2, le=500),
+    max_edges: int = Query(default=500, ge=1, le=1000),
+    full: bool = Query(default=False, description="返回当前筛选范围内的完整有效图谱，不截断数量"),
 ) -> Any:
     return await _query(
         session,
@@ -106,8 +107,8 @@ async def graph(
             entity_type=entity_type,
             assertion=assertion,
             hops=hops,
-            max_nodes=max_nodes,
-            max_edges=max_edges,
+            max_nodes=None if full else max_nodes,
+            max_edges=None if full else max_edges,
         ),
     )
 

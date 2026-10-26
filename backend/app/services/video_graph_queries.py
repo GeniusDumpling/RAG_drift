@@ -139,8 +139,8 @@ def get_graph(
     entity_type: str | None = None,
     assertion: str | None = None,
     hops: int = 1,
-    max_nodes: int = 80,
-    max_edges: int = 160,
+    max_nodes: int | None = 80,
+    max_edges: int | None = 160,
 ) -> GraphData:
     nodes: dict[str, GraphNode] = {}
     edges: dict[str, GraphEdge] = {}
@@ -207,10 +207,10 @@ def get_graph(
             if edge_key in edges:
                 continue
             missing = {str(relation.subject_id), str(relation.object_id)} - nodes.keys()
-            if len(edges) >= max_edges:
+            if max_edges is not None and len(edges) >= max_edges:
                 truncated = True
                 break
-            if len(nodes) + len(missing) > max_nodes:
+            if max_nodes is not None and len(nodes) + len(missing) > max_nodes:
                 truncated = True
                 continue
             candidates = session.scalars(
@@ -234,14 +234,14 @@ def get_graph(
             break
     if not entity_id:
         # Isolated mentions remain browsable, after relations have claimed their nodes.
-        capacity = max_nodes - len(nodes)
+        capacity = None if max_nodes is None else max_nodes - len(nodes)
         selected_ids = [uuid.UUID(k) for k, node in nodes.items() if node.kind == "entity"]
         remaining = session.scalars(
             matching.where(Entity.id.not_in(selected_ids))
             .order_by(Entity.canonical_name, Entity.id)
-            .limit(capacity + 1)
+            .limit(None if capacity is None else capacity + 1)
         ).all()
-        truncated = truncated or len(remaining) > capacity
+        truncated = truncated or (capacity is not None and len(remaining) > capacity)
         for entity in remaining[:capacity]:
             add_entity(entity)
     if content_id:
@@ -256,7 +256,7 @@ def get_graph(
             edge_key = f"mention:{content_id}:{mention.entity_id}"
             if edge_key in edges:
                 edges[edge_key].evidence_count += 1
-            elif len(edges) < max_edges:
+            elif max_edges is None or len(edges) < max_edges:
                 edges[edge_key] = GraphEdge(
                     id=edge_key,
                     source=f"video:{content_id}",

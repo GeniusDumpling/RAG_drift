@@ -1,0 +1,215 @@
+/* Graph workspace embedded in the shared application content area. */
+.app-shell.app-shell--graph { height: 100dvh; min-height: 0; }
+.app-shell--graph > .nav { z-index: 10; }
+.workspace.workspace--graph { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
+.main.main--graph { flex: 1; min-height: 0; width: 100%; max-width: none; margin: 0; padding: 0; }
+.video-graph-page { min-width: 0; height: 100%; }
+.obsidian-workbench {
+  --ow-bg: #ffffff; --ow-panel: #ffffff; --ow-border: #e5e2ea;
+  --ow-field: #f7f6fa; --ow-muted: #80818f; --ow-text: #4d465b;
+  --ow-accent: #8b68b2; --ow-bright: #45364f;
+  display: grid; grid-template-rows: 58px minmax(0, 1fr) 28px;
+  height: 100%; width: 100%; overflow: hidden; background: var(--ow-bg);
+  border: 0; border-radius: 0; box-shadow: none; container-type: inline-size;
+  color: var(--ow-text); font-family: var(--font-sans); color-scheme: light;
+  font-size: 12px; line-height: 1.5;
+}
+.obsidian-workbench button { min-height: 30px; background: transparent; border: 1px solid transparent; padding: 0 9px; color: #756c83; font-size: 12px; font-weight: 400; border-radius: 5px; box-shadow: none; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.obsidian-workbench button:hover:not(:disabled) { background: #a78bd510; border-color: #b69ac426; color: #675179; }
+.obsidian-workbench button:focus-visible, .obsidian-workbench input:focus-visible, .obsidian-workbench select:focus-visible { outline-color: #b39acb; }
+.obsidian-workbench button:disabled { opacity: 0.4; }
+.obsidian-workbench a { color: var(--ow-accent); }
+.obsidian-workbench input, .obsidian-workbench select { min-height: 30px; border: 1px solid #ddd7e5; border-radius: 5px; background: var(--ow-field); color: #61576d; box-shadow: none; font-size: 11px; padding: 0 9px; }
+.obsidian-workbench input::placeholder { color: #71717e; }
+.obsidian-workbench input:focus, .obsidian-workbench select:focus { border-color: #756288; box-shadow: 0 0 0 2px #aa85da0c; }
+.ow-exit:hover { color: #d3b9f3 !important; text-decoration: none; }
+.ow-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 25px; border-bottom: 1px solid #e8e4ed; background: #ffffff; }
+.ow-breadcrumb { display: flex; align-items: center; gap: 11px; color: #717181; min-width: 0; }
+.ow-breadcrumb .ow-scope-label { margin: 0; font-size: 12px; font-weight: 450; color: #756a84; letter-spacing: 0; }
+.ow-breadcrumb > span { color: #44444f; }
+.obsidian-workbench .ow-breadcrumb button { font-size: 11px; padding: 0 3px; color: #786887; }
+.ow-search { display: flex; width: min(360px, 34vw); align-items: center; gap: 10px; background: #f8f7fa; border: 1px solid #e5dfea; border-radius: 6px; padding: 0 10px; color: #6e6e7e; height: 33px; margin-left: auto; }
+.ow-search input { background: transparent; border: none; padding: 0; min-width: 0; width: 100%; outline: none !important; font-size: 11px; }
+.ow-search input:focus { border: none; box-shadow: none; }
+.ow-search kbd { font-size: 10px; min-width: 16px; height: 18px; display: grid; place-items: center; color: #727280; border: 1px solid #ded8e5; border-radius: 3px; font-family: inherit; }
+.ow-search button { min-height: 24px; min-width: 22px; padding: 0; }
+.ow-tools { display: flex; align-items: center; gap: 9px; }
+.ow-connection { display: inline-flex; align-items: center; gap: 6px; color: #858a88; font-size: 10px; margin-right: 9px; }
+.ow-connection i, .ow-status-dot { width: 5px; height: 5px; display: inline-block; border-radius: 50%; background: #6a9a83; box-shadow: 0 0 6px #6a9a8322; }
+.ow-connection i.is-pending { background: #9a8767; }
+.obsidian-workbench .ow-tools button { width: 30px; min-height: 28px; padding: 0; }
+.obsidian-workbench .ow-tools button.is-active { background: #b090d010; color: #9272b5; }
+.ow-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 0; position: relative; }
+.ow-body.panel-collapsed { grid-template-columns: minmax(0, 1fr); }
+.ow-graph-stage { position: relative; min-width: 0; overflow: hidden; }
+.ow-canvas-caption { position: absolute; top: 20px; left: 25px; z-index: 2; display: flex; align-items: center; gap: 7px; color: #858292; font-size: 11px; pointer-events: none; }
+.ow-caption-icon { color: #8c7c9e; display: flex; }
+.ow-caption-dot { color: #494853; margin: 0 2px; }
+.ow-canvas-caption > span:last-child { color: #5f5f6d; }
+.ow-stage-hint { position: absolute; bottom: 24px; left: 25px; display: flex; gap: 8px; align-items: center; color: #62616e; font-size: 10px; pointer-events: none; }
+.ow-stage-hint b { font-weight: 400; color: #454550; }
+.ow-graph-stage .interactive-graph-shell { border: 0; border-radius: 0; box-shadow: none; width: 100%; height: 100%; background: transparent; }
+.ow-graph-stage .g6-graph-host { width: 100%; height: 100%; background: #ffffff; background-image: none; }
+.ow-graph-stage .interactive-graph-controls { position: absolute; z-index: 4; right: 20px; bottom: 20px; border: 0; padding: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 7px; background: transparent; }
+.ow-graph-stage .graph-viewport-controls { gap: 2px; border: 1px solid #d9d2e3; border-radius: 6px; background: #fffffff2; padding: 3px; box-shadow: 0 2px 10px #0002; }
+.ow-graph-stage .graph-viewport-controls button { min-height: 27px; background: transparent; border: none; color: #7a6a8a; padding: 0 9px; font-size: 10px; }
+.ow-graph-stage .graph-viewport-controls button:nth-child(-n+2) { width: 28px; font-size: 16px; padding: 0; }
+.ow-graph-stage .graph-interaction-footer { display: none; }
+.ow-graph-stage .graph-loading-overlay { top: 64px; background: #f8f4fce8; border-color: #dacde5; color: #826b98; font-size: 11px; }
+.ow-graph-stage .graph-canvas-error { position: absolute; top: 70px; left: 50%; transform: translateX(-50%); z-index: 5; width: min(420px, 90%); background: #fcf8ff; color: #775988; border: 1px solid #d7c3e7; border-radius: 8px; }
+.obsidian-workbench .graph-node-tooltip { color: #d5c7e6; background: #24212c; }
+.obsidian-workbench .graph-node-tooltip p { color: #a297b2; margin: 5px 0 0; }
+.ow-graph-stage .tooltip { background: #24212c !important; padding: 0 !important; border: 1px solid #494052; box-shadow: 0 5px 18px #0004 !important; font-family: var(--font-sans) !important; }
+.ow-canvas-notice { position: absolute; top: 55px; left: 25px; right: 25px; z-index: 4; width: fit-content; padding: 7px 12px; border: 1px solid #d6c4e5; border-radius: 5px; color: #7b5c95; background: #faf7fff5; font-size: 11px; }
+.ow-loading, .ow-stage-message { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: #8d859b; }
+.ow-stage-message h2 { font-size: 16px; font-weight: 500; margin: 0; color: #7a658f; }
+.ow-stage-message p { font-size: 12px; margin: 0; }
+.ow-loading-orbit { width: 32px; height: 32px; border: 1px solid #51445f; border-top-color: #baa0d9; border-radius: 50%; animation: ow-orbit 1.2s linear infinite; }
+@keyframes ow-orbit { to { transform: rotate(360deg); } }
+.ow-data-panel { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid #e7e1ec; background: var(--ow-panel); }
+.ow-data-panel[hidden] { display: none; }
+.ow-panel-heading { display: flex; justify-content: space-between; align-items: center; min-height: 48px; padding: 0 18px; border-bottom: 1px solid #e7e1ec; }
+.ow-panel-heading > span { display: flex; align-items: center; gap: 9px; color: #75627f; font-size: 12px; }
+.ow-panel-heading button { padding: 0; width: 22px; min-height: 22px; }
+.ow-panel-tabs { display: flex; gap: 20px; padding: 0 18px; min-height: 43px; border-bottom: 1px solid #e7e1ec; }
+.obsidian-workbench .ow-panel-tabs button { padding: 0 1px; min-height: 42px; border: none; border-radius: 0; color: #7b778a; position: relative; font-size: 11px; }
+.ow-panel-tabs button[aria-selected=true] { color: #8b63aa; }
+.ow-panel-tabs button[aria-selected=true]::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 1px; background: #a78acb; }
+.ow-panel-tabs button i { width: 4px; height: 4px; background: #b798db; border-radius: 50%; }
+.ow-panel-scroll { min-height: 0; overflow-y: auto; flex: 1; scrollbar-width: thin; scrollbar-color: #393744 transparent; }
+.ow-metrics { margin: 17px 17px 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.ow-metrics > div { min-height: 75px; padding: 10px 13px; background: #faf9fc; border: 1px solid #e7e1ec; border-radius: 6px; }
+.ow-metrics small { display: block; color: #7b7087; font-size: 10px; margin-bottom: 4px; }
+.ow-metrics strong { color: #62516f; font-size: 21px; font-weight: 500; letter-spacing: -0.6px; font-variant-numeric: tabular-nums; }
+.ow-processing-status { display: flex; gap: 16px; color: #706d7e; font-size: 10px; padding: 0 20px 15px; }
+.ow-processing-status span { display: flex; align-items: center; gap: 5px; }
+.ow-processing-status i { width: 4px; height: 4px; border-radius: 50%; background: #9c8c68; }
+.ow-panel-section { padding: 16px 18px; border-top: 1px solid #e7e1ec; }
+.ow-panel-section h2, .ow-force-settings summary { display: flex; align-items: center; gap: 8px; color: #7d6c8d; font-size: 11px; font-weight: 500; margin: 0 0 14px; }
+.ow-panel-section h2 svg, .ow-force-settings summary svg { color: #777080; }
+.ow-panel-section h2 > span { margin-left: auto; color: #63616f; font-size: 10px; font-weight: 400; }
+.ow-panel-section > label:not(.ow-slider):not(.ow-toggle) { display: flex; justify-content: space-between; align-items: center; gap: 10px; color: #7a6f89; font-size: 11px; margin: 0 0 11px; }
+.ow-panel-section select { width: 149px; max-width: 70%; min-width: 0; height: 29px; min-height: 29px; }
+.ow-groups { display: flex; flex-direction: column; gap: 4px; }
+.obsidian-workbench .ow-groups button { justify-content: flex-start; width: 100%; min-height: 25px; padding: 0 5px; font-size: 11px; color: #7e6e8f; }
+.ow-groups button > i, .ow-entity-type > i { width: 7px; height: 7px; border-radius: 50%; margin-right: 3px; }
+.ow-groups button small { margin-left: auto; color: #6e697d; font-size: 10px; font-variant-numeric: tabular-nums; }
+.ow-groups button.is-active { background: #ac8dd00e; }
+.ow-toggle { position: relative; display: flex; justify-content: space-between; align-items: center; color: #7d718b; font-size: 11px; min-height: 30px; margin-bottom: 8px; }
+.obsidian-workbench .ow-toggle input { position: absolute; right: 0; top: 5px; width: 28px; height: 16px; min-height: 0; opacity: 0; z-index: 1; cursor: pointer; }
+.ow-toggle > span { width: 27px; height: 15px; border-radius: 12px; background: #dcd6e4; position: relative; }
+.ow-toggle > span::after { content: ''; width: 11px; height: 11px; border-radius: 50%; position: absolute; left: 2px; top: 2px; background: #a194ae; transition: transform 120ms ease; }
+.ow-toggle input:checked + span { background: #9d83bd; }
+.ow-toggle input:checked + span::after { transform: translateX(12px); background: #eee5f8; }
+.ow-toggle input:focus-visible + span { outline: 2px solid #8b68b2; outline-offset: 3px; }
+.ow-slider { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 9px; color: #7c6e8b; font-size: 10px; margin: 18px 0 3px; }
+.ow-slider output { color: #9279aa; font-size: 10px; font-variant-numeric: tabular-nums; }
+.obsidian-workbench .ow-slider input { grid-column: 1 / -1; width: 100%; min-height: 12px; height: 12px; padding: 0; margin: 0; background: none; border: 0; accent-color: #a88bc8; box-shadow: none; cursor: pointer; }
+.ow-force-settings summary { cursor: pointer; margin-bottom: 0; list-style: none; }
+.ow-force-settings[open] summary { margin-bottom: 14px; }
+.ow-force-settings .ow-subtle-button { margin-top: 15px; }
+.obsidian-workbench .ow-subtle-button { padding: 0; font-size: 10px; color: #a58cbe; min-height: 24px; }
+.ow-panel-bottom { border-top: 1px solid #e7e1ec; display: flex; align-items: center; gap: 6px; padding: 11px 17px; color: #656070; font-size: 9px; }
+.ow-statusbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid #e7e1ec; padding: 0 18px; color: #81748d; background: #faf9fc; font-size: 10px; }
+.ow-statusbar > div { display: flex; align-items: center; gap: 8px; }
+.ow-statusbar small { color: #797083; font-size: 10px; }
+.ow-statusbar .ow-status-dot { width: 4px; height: 4px; background: #8b75a5; }
+.ow-status-separator { height: 10px; width: 1px; background: #e7e1ec; margin: 0 4px; }
+.ow-statusbar .ow-hover-name { color: #8b66aa; }
+.ow-locator select { max-width: 100%; width: 100%; }
+.ow-panel-section.ow-locator > label { display: grid !important; grid-template-columns: 1fr; gap: 8px; margin: 0; font-size: 10px; }
+.ow-entity-details > h2 { color: #6b517e; font-size: 19px; margin: 10px 0 5px; overflow-wrap: anywhere; }
+.ow-entity-type { display: inline-flex; align-items: center; gap: 5px; color: #8c6da8; font-size: 10px; }
+.ow-entity-details p, .ow-selected-relation p { color: #767081; font-size: 10px; margin: 0; }
+.ow-link-counters { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 20px 0; }
+.ow-link-counters span { color: #7f738e; font-size: 10px; display: flex; flex-direction: column; gap: 3px; }
+.ow-link-counters strong { color: #9573b2; font-size: 22px; line-height: 1.3; font-weight: 500; }
+.ow-node-actions { display: flex; gap: 8px; margin-bottom: 19px; }
+.obsidian-workbench .ow-node-actions button { color: #956fb5; font-size: 10px; border: 1px solid #cdb7df; background: #a07ac40b; padding: 0 10px; }
+.obsidian-workbench .ow-node-actions button:last-child { color: #9990a5; border-color: #e7e1ec; background: transparent; }
+.ow-link-directions { display: flex; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid #e7e1ec; margin-bottom: 5px; }
+.obsidian-workbench .ow-link-directions button { min-height: 25px; font-size: 10px; padding: 0 12px; }
+.ow-link-directions button[aria-pressed=true] { background: #a37cc716; color: #9671b2; }
+.ow-related-links button { display: flex; width: 100%; justify-content: flex-start; text-align: left; min-height: 56px; padding: 8px 0; border-bottom: 1px solid #e7e1ec; border-radius: 0; }
+.ow-related-links button > svg { color: #79608d; flex-shrink: 0; }
+.ow-related-links button > span { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ow-related-links strong { color: #7a638b; font-size: 11px; font-weight: 400; overflow-wrap: anywhere; }
+.ow-related-links small { color: #6f617f; font-size: 9px; }
+.ow-related-links button > small { margin-left: auto; padding-left: 8px; }
+.ow-muted { color: #73687e; font-size: 11px; }
+.ow-selected-relation > h2 { flex-wrap: wrap; font-size: 15px; color: #806493; line-height: 1.8; margin-top: 13px; overflow-wrap: anywhere; }
+.ow-selected-relation h2 > span { margin: 0 2px; color: #7e648e; }
+.ow-selected-relation dl { margin: 15px 0 0; font-size: 10px; color: #887793; }
+.ow-selected-relation dl > div { display: flex; gap: 10px; }
+.ow-selected-relation dd { margin: 0; color: #8b739f; overflow-wrap: anywhere; }
+.ow-selection-empty { padding: 34px 15px 30px; text-align: center; color: #5c4f6c; }
+.ow-selection-empty h2 { color: #8d739f; font-size: 12px; font-weight: 400; margin-top: 16px; }
+.ow-selection-empty p { color: #6b5d7b; font-size: 11px; line-height: 1.9; margin-bottom: 0; }
+.ow-link-directory button { width: 100%; display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 9px 0; border-bottom: 1px solid #e7e1ec; border-radius: 0; }
+.ow-link-directory button span { color: #8a6f9d; font-size: 11px; }
+.ow-link-directory button small { color: #706079; font-size: 10px; }
+.ow-evidence-panel { padding: 18px; border-top: 1px solid #e7e1ec; }
+.ow-evidence-panel h2 { color: #9572ae; font-size: 12px; font-weight: 500; margin: 0 0 14px; }
+.ow-evidence-panel .muted, .ow-evidence-panel .status-line { font-size: 11px; color: #8b799b; background: transparent; padding: 8px 0; }
+.ow-evidence-panel .video-graph-evidence { border-color: #e7e1ec; padding: 14px 0; }
+.ow-evidence-panel .video-graph-evidence > strong { font-size: 11px; font-weight: 500; color: #866694; line-height: 1.7; }
+.ow-evidence-panel .video-graph-evidence p { font-size: 9px; line-height: 1.8; color: #84728e; margin-top: 7px; }
+.ow-evidence-panel blockquote { margin: 12px 0; padding: 6px 0 6px 12px; border-left: 2px solid #715183; color: #7d648d; font-size: 11px; line-height: 1.8; }
+.ow-evidence-panel a { font-size: 10px; color: #9675af; }
+.ow-evidence-panel .video-graph-evidence button { margin: 6px 0 0; display: flex; padding: 0; font-size: 10px; color: #a282bb; }
+.ow-evidence-panel .button-row { font-size: 10px; color: #7e6b8d; gap: 5px; }
+.ow-evidence-panel .button-row > span { display: block; width: 100%; margin-bottom: 5px; }
+.ow-evidence-panel .button-row button { font-size: 9px; padding: 0 6px; }
+@media (max-width: 1100px) {
+  .ow-toolbar { padding: 0 18px; gap: 10px; }
+  .ow-breadcrumb { min-width: 0; gap: 8px; }
+  .ow-connection { display: none; }
+  .ow-body { grid-template-columns: minmax(0, 1fr) 290px; }
+}
+@media (max-width: 900px) {
+  .ow-body { display: block; }
+  .ow-graph-stage { height: 100%; }
+  .ow-data-panel { position: absolute; right: 0; top: 0; bottom: 0; width: 300px; max-width: calc(100vw - 48px); z-index: 8; box-shadow: -12px 0 30px #0004; }
+  .ow-search { width: min(320px, 40vw); }
+  .ow-statusbar > div:last-child { display: none; }
+}
+@media (max-width: 680px) {
+  .obsidian-workbench { grid-template-rows: 52px minmax(0, 1fr) 26px; }
+  .ow-toolbar { padding: 0 12px; gap: 8px; }
+  .ow-breadcrumb { min-width: 0; gap: 7px; }
+  .ow-breadcrumb > span { display: none; }
+  .ow-search { flex: 1; width: 0; min-width: 90px; height: 30px; gap: 7px; }
+  .ow-search > kbd { display: none; }
+  .ow-tools { gap: 1px; }
+  .ow-canvas-caption { left: 16px; top: 17px; font-size: 10px; }
+  .ow-stage-hint { left: 16px; bottom: 17px; font-size: 9px; gap: 5px; }
+  .ow-stage-hint span:last-child, .ow-stage-hint b:last-of-type { display: none; }
+  .ow-graph-stage .interactive-graph-controls { right: 12px; bottom: 40px; }
+  .ow-statusbar { padding: 0 12px; font-size: 9px; }
+}
+@media (max-width: 760px) {
+  .app-shell.app-shell--graph { display: flex; flex-direction: column; overflow: hidden; }
+  .app-shell--graph > .nav { flex-shrink: 0; }
+  .workspace.workspace--graph { flex: 1; height: auto; }
+}
+@media (prefers-reduced-motion: reduce) { .ow-loading-orbit { animation: none; } }
+
+/* The available graph width also changes when the application's sidebar is shown. */
+@container (max-width: 900px) {
+  .ow-body { display: block; }
+  .ow-graph-stage { height: 100%; }
+  .ow-data-panel { position: absolute; right: 0; top: 0; bottom: 0; width: 300px; max-width: calc(100% - 32px); z-index: 8; box-shadow: -12px 0 30px #0002; }
+  .ow-statusbar > div:last-child { display: none; }
+  .ow-connection { display: none; }
+}
+@container (max-width: 720px) {
+  .ow-toolbar { padding: 0 12px; gap: 8px; }
+  .ow-breadcrumb { min-width: 0; gap: 7px; }
+  .ow-breadcrumb > span { display: none; }
+  .ow-search { flex: 1; width: 0; min-width: 90px; gap: 7px; }
+  .ow-search > kbd { display: none; }
+  .ow-tools { gap: 1px; }
+  .ow-stage-hint { left: 16px; bottom: 17px; font-size: 9px; gap: 5px; }
+  .ow-stage-hint span:last-child, .ow-stage-hint b:last-of-type { display: none; }
+  .ow-graph-stage .interactive-graph-controls { right: 12px; bottom: 40px; }
+}

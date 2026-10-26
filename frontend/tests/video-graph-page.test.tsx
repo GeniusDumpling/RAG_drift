@@ -1,8 +1,20 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VideoGraphPage } from '../src/pages/VideoGraphPage';
+import type { VideoGraphData, VideoGraphNode, VideoGraphEdge } from '../src/api/types';
+
+vi.mock('../src/components/video-graph/InteractiveGraphCanvas', () => ({
+  InteractiveGraphCanvas: ({ graph, onFocus, onEdge }: {
+    graph: VideoGraphData; onFocus: (node: VideoGraphNode) => void; onEdge: (edge: VideoGraphEdge) => void;
+  }) => <div aria-label="交互画布测试替身">
+    {graph.nodes.map((node) => <button key={node.id} onClick={() => onFocus(node)}>{node.label}</button>)}
+    {graph.edges.map((edge) => <button key={edge.id} onClick={() => onEdge(edge)}>
+      {graph.nodes.find((n) => n.id === edge.source)?.label} → {graph.nodes.find((n) => n.id === edge.target)?.label}
+    </button>)}
+  </div>,
+}));
 
 function response(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -36,17 +48,20 @@ function mockApi({ error = false, summaryOnly = false } = {}) {
   return fetchMock;
 }
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+const originalWidth = window.innerWidth;
+beforeEach(() => { localStorage.setItem('video-graph-renderer', 'classic'); Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1600 }); });
+afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth }); });
 
 describe('VideoGraphPage', () => {
   it('shows relation quotes, video time links and content navigation', async () => {
     mockApi();
     const openContent = vi.fn();
     render(<VideoGraphPage onOpenContent={openContent} />);
+    expect(await screen.findByText('1 部分完成')).toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: /PX4 → GPS/ }));
     expect(await screen.findByText('PX4 uses GPS.')).toBeInTheDocument();
-    expect(screen.getByText('部分完成 1')).toBeInTheDocument();
-    expect(screen.getByText(/切片通过 8\/10/)).toHaveTextContent('跳过 2');
+    expect(screen.getByLabelText('交互画布测试替身')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /经典视图/ })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /观看视频 0:10/ })).toHaveAttribute('href', 'https://www.youtube.com/watch?v=abc&t=10');
     fireEvent.click(screen.getByRole('button', { name: '内容详情' }));
     expect(openContent).toHaveBeenCalledWith('video-1');
@@ -63,6 +78,7 @@ describe('VideoGraphPage', () => {
     expect(urls.some((url) => url.pathname === '/contents' || url.pathname.endsWith('/status'))).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'PX4', exact: true }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes('entity_id=px4'))).toBe(true));
+    fireEvent.click(screen.getByRole('tab', { name: '数据总览' }));
     fireEvent.click(screen.getByRole('button', { name: '取消实体聚焦' }));
     await waitFor(() => {
       const last = new URL(String(fetchMock.mock.calls.at(-1)?.[0]), 'http://localhost');
@@ -76,6 +92,7 @@ describe('VideoGraphPage', () => {
     mockApi({ summaryOnly: true });
     render(<VideoGraphPage onOpenContent={vi.fn()} />);
     expect(await screen.findByRole('button', { name: 'PX4', exact: true })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: '关联详情' }));
     expect(screen.getByText('暂无字幕支持的关系。')).toBeInTheDocument();
   });
 

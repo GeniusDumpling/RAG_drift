@@ -291,8 +291,13 @@ async def json_completion(
             content = result["choices"][0]["message"]["content"]
             finish_reason = result["choices"][0].get("finish_reason")
             if artifact_path is not None:
+                raw_path = artifact_path.with_name(
+                    f"{artifact_path.stem}.attempt{attempt + 1}.json"
+                )
+                if raw_path.exists():
+                    raw_path = raw_path.with_name(f"{raw_path.stem}.{time.time_ns()}.json")
                 write_json(
-                    artifact_path.with_name(f"{artifact_path.stem}.attempt{attempt + 1}.json"),
+                    raw_path,
                     {
                         "content": content,
                         "finish_reason": finish_reason,
@@ -314,8 +319,16 @@ async def json_completion(
                 request=artifact_path.stem if artifact_path else "unknown",
                 attempt=attempt + 1,
                 error=last_error,
+                http_status=exc.response.status_code
+                if isinstance(exc, httpx.HTTPStatusError)
+                else None,
             )
-            await asyncio.sleep(1)
+            await asyncio.sleep(
+                min(10 * (attempt + 1), 30)
+                if isinstance(exc, httpx.HTTPStatusError)
+                and (exc.response.status_code == 429 or exc.response.status_code >= 500)
+                else 1
+            )
     raise RuntimeError("Judge/reference request failed: " + str(last_error))
 
 
@@ -452,18 +465,23 @@ async def generate(
 
 
 async def grade(
-    args: argparse.Namespace, settings: Settings, snapshot: dict, repetition: int
+    args: argparse.Namespace,
+    settings: Settings,
+    snapshot: dict,
+    repetition: int,
+    *,
+    ks: tuple[int | str, ...] = KS,
 ) -> None:
     path = args.output_dir / "grades" / f"{snapshot['id']}__r{repetition}.json"
     if path.exists():
         return
     rubric = read_json(args.output_dir / "rubrics" / (snapshot["id"] + ".json"))["rubric"]
-    order = list(KS)
+    order = list(ks)
     random.Random(f'{SEED}:{snapshot["id"]}:{repetition}').shuffle(order)
-    labels = dict(zip("ABCD", order, strict=True))
+    labels = dict(zip("ABCDEFGHIJKLMNOPQRSTUVWXYZ"[: len(order)], order, strict=True))
     answers = {
         k: read_json(args.output_dir / "answers" / f"{snapshot['id']}__k{k}__r{repetition}.json")
-        for k in KS
+        for k in ks
     }
     bundle = []
     for label, k in labels.items():
@@ -491,7 +509,7 @@ async def grade(
             '输出JSON：{"grades":[{"id":"A","grounding":0到5,"relevance":0到5,'
             '"covered_fact_ids":["F1"],"citation_claims":0,"supported_citation_claims":0,'
             '"abstained":bool,"unsupported_claims":["最多三项无依据主张"],"note":"简短理由"}]}。'
-            "必须完整评估所有四个ID，支持数不得超过引用主张数。"
+            "必须完整评估所有输入ID，支持数不得超过引用主张数。"
         ),
         {
             "question": snapshot["question"],
@@ -503,10 +521,11 @@ async def grade(
         / "judge_raw"
         / f"grade_low_{snapshot['id']}_r{repetition}.json",
         reasoning_effort="low",
+        max_tokens=16000 if len(ks) > 4 else 8000,
     )
     validated = GradeBundle.model_validate(result["output"])
-    if {g.id for g in validated.grades} != set(labels) or len(validated.grades) != 4:
-        raise ValueError("Judge did not return exactly four independent grades")
+    if {g.id for g in validated.grades} != set(labels) or len(validated.grades) != len(ks):
+        raise ValueError("Judge did not return exactly one grade per answer")
     valid_ids = {fact["id"] for fact in rubric["facts"]}
     for item in validated.grades:
         if item.supported_citation_claims > item.citation_claims:

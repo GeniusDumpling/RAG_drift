@@ -27,6 +27,7 @@ from app.schemas.search import (
 from app.services.answer_context import prepare_answer_context
 from app.services.answer_generation import AnswerGenerationError, DeepSeekAnswerClient
 from app.services.embeddings import EmbeddingService, build_embedding_service
+from app.services.reranking import rerank_evidence
 from app.services.retrieval import retrieve_evidence
 
 logger = logging.getLogger(__name__)
@@ -110,8 +111,15 @@ class SearchService:
                     retrieval_query = "\n".join([*previous, request.query])
             generation.retrieval_query = retrieval_query
             query, hits = await self._retrieve(request, retrieval_query=retrieval_query)
+            if self.settings.reranker_provider != "none":
+                yield {"event": "status", "data": {"stage": "reranking"}}
+            reranked = await rerank_evidence(self.session, retrieval_query, hits, self.settings)
+            generation.reranking = reranked.trace
             context = await prepare_answer_context(
-                self.session, hits, max_evidence=min(request.top_k, 8)
+                self.session,
+                reranked.evidence,
+                max_evidence=min(request.top_k, self.settings.answer_max_evidence),
+                preserve_order=reranked.trace["status"] == "reranked",
             )
             evidence = context.evidence
             generation.evidence_count = len(evidence)
@@ -265,7 +273,13 @@ class SearchService:
         )
 
         # Overfetch for answers so source diversity is decided before the final evidence cap.
-        candidate_limit = min(request.top_k * 3, 150) if request.mode == "answer" else request.top_k
+        candidate_limit = request.top_k
+        if request.mode == "answer":
+            candidate_limit = (
+                self.settings.reranker_candidate_limit
+                if self.settings.reranker_provider != "none"
+                else min(request.top_k * 3, 150)
+            )
         retrieval_result = await retrieve_evidence(
             self.session,
             raw_query=retrieval_query or request.query,

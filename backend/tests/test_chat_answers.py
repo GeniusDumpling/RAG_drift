@@ -19,6 +19,7 @@ from app.schemas.search import AnswerRequest, SearchFilters
 from app.services.answer_context import prepare_answer_context
 from app.services.answer_generation import AnswerGenerationError, DeepSeekAnswerClient
 from app.services.embeddings import SiliconFlowEmbeddingService
+from app.services.reranking import SiliconFlowReranker
 from app.services.retrieval import retrieve_evidence
 from app.services.search import SearchService
 from sqlalchemy import select
@@ -109,6 +110,77 @@ def settings(*, api_key: str | None = None) -> Settings:
         DEEPSEEK_API_KEY=api_key,
         QDRANT_URL="memory://chat-tests",
     )
+
+
+@pytest.mark.parametrize("api_failure", [False, True])
+async def test_answer_reranking_preserves_scores_order_and_audit_or_falls_back(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, api_failure: bool
+) -> None:
+    await seed(db_session)
+    config = settings().model_copy(
+        update={
+            "reranker_provider": "siliconflow",
+            "reranker_candidate_limit": 12,
+            "answer_max_evidence": 3,
+        }
+    )
+    original = SiliconFlowReranker.rerank
+    expected = []
+
+    async def rerank(self: Any, query: str, hits: list, texts: dict) -> Any:
+        assert query == "PX4 telemetry"
+        assert len(hits) == 6
+        assert all(len(texts[str(hit.chunk_id)]) > len(hit.snippet) for hit in hits)
+        first_source = hits[-1].content_item_id
+        ordered = [e for e in hits if e.content_item_id == first_source]
+        ordered.extend(e for e in hits if e.content_item_id != first_source)
+        expected.extend(ordered)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            assert payload["top_n"] == len(hits)
+            if api_failure:
+                return httpx.Response(429)
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"index": hits.index(hit), "relevance_score": 1 - rank / 10}
+                        for rank, hit in enumerate(ordered)
+                    ]
+                },
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await original(SiliconFlowReranker(config, client=client), query, hits, texts)
+
+    monkeypatch.setattr(SiliconFlowReranker, "rerank", rerank)
+    service = SearchService(db_session, settings=config)
+    events = [event async for event in service.stream_answer(AnswerRequest(query="PX4 telemetry"))]
+    response = events[-1]["data"]
+    assert [e["data"]["stage"] for e in events if e["event"] == "status"] == [
+        "retrieving",
+        "reranking",
+        "generating",
+    ]
+    assert response["generation"]["evidence_count"] == 3
+    trace = response["generation"]["reranking"]
+    evidence = response["supporting_evidence"]
+    if api_failure:
+        assert trace["status"] == "fallback"
+        assert trace["reason"] == "http_429"
+        assert len({e["content_item_id"] for e in evidence}) == 3
+        assert all(e["rerank_score"] is None for e in evidence)
+    else:
+        assert trace["status"] == "reranked"
+        assert len(trace["rankings"]) == 6
+        assert [e["chunk_id"] for e in evidence] == [str(e.chunk_id) for e in expected[:3]]
+        assert evidence[0]["content_item_id"] == evidence[1]["content_item_id"]
+        assert [e["score"] for e in evidence] == [e.score for e in expected[:3]]
+    stored = await db_session.get(SearchQuery, UUID(response["query"]["id"]))
+    assert stored is not None
+    assert stored.query_trace_json["generation"]["reranking"] == trace
+    assert stored.result_summary_json["generation"]["reranking"] == trace
 
 
 async def test_context_uses_full_chunks_neighbors_and_diverse_sources(

@@ -24,12 +24,14 @@ async def prepare_answer_context(
     max_chars: int = 12_000,
     max_evidence: int = 8,
     max_per_content: int = 2,
+    preserve_order: bool = False,
 ) -> AnswerContext:
-    # First give each source a place, then allow a second passage per source.
+    # Reranked hits retain model order; otherwise give each source a place first.
     selected: list[EvidenceObject] = []
     counts: dict[UUID, int] = {}
     seen_chunks: set[UUID] = set()
-    for allowance in range(1, max_per_content + 1):
+    allowances = [max_per_content] if preserve_order else range(1, max_per_content + 1)
+    for allowance in allowances:
         for item in evidence:
             if item.chunk_id in seen_chunks or counts.get(item.content_item_id, 0) >= allowance:
                 continue

@@ -6,10 +6,12 @@ import type { VideoGraphData, VideoGraphNode } from '../src/api/types';
 import type { GraphAppearance } from '../src/components/video-graph/presentation';
 
 vi.mock('../src/components/video-graph/InteractiveGraphCanvas', () => ({
-  InteractiveGraphCanvas: ({ graph, appearance, onSelect }: {
+  InteractiveGraphCanvas: ({ graph, appearance, onSelect, dimension, onUnavailable }: {
     graph: VideoGraphData; appearance: GraphAppearance; onSelect: (node: VideoGraphNode) => void;
+    dimension: '2d' | '3d'; onUnavailable: (message: string) => void;
   }) => <div><button onClick={() => onSelect(graph.nodes[0])}>选中 PX4 节点</button>
-    <output data-testid="appearance">{JSON.stringify(appearance)}</output></div>,
+    <output data-testid="appearance">{JSON.stringify(appearance)}</output><output data-testid="dimension">{dimension}</output>
+    <button onClick={() => onUnavailable('3D 暂时不可用，已切换为 2D。')}>模拟三维不可用</button></div>,
 }));
 const node = (id: string): VideoGraphNode => ({ id, label: id, kind: 'entity', entity_type: 'software', content_item_id: null });
 const edges = [
@@ -28,8 +30,8 @@ function props() {
   };
 }
 const originalWidth = window.innerWidth;
-beforeEach(() => Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1600 }));
-afterEach(() => { cleanup(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth }); });
+beforeEach(() => { localStorage.clear(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1600 }); });
+afterEach(() => { cleanup(); localStorage.clear(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth }); });
 
 describe('Obsidian-style graph workbench', () => {
   it('separates incoming and outgoing links and opens the selected relation evidence', () => {
@@ -49,6 +51,7 @@ describe('Obsidian-style graph workbench', () => {
 
   it('applies display controls and distinguishes global totals from the displayed subgraph', () => {
     render(<GraphWorkbench {...props()} />);
+    fireEvent.click(screen.getByRole('button', { name: '2D', exact: true }));
     expect(screen.getByLabelText('全局有效图谱统计')).toHaveTextContent('实体100');
     expect(document.querySelector('.ow-statusbar')).toHaveTextContent('3 个节点');
     fireEvent.click(screen.getByLabelText('常显实体名称'));
@@ -66,5 +69,42 @@ describe('Obsidian-style graph workbench', () => {
     expect(screen.getByLabelText('图谱数据面板')).toBeVisible();
     expect(screen.queryByRole('navigation', { name: '图谱顶部导航' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /经典视图/ })).not.toBeInTheDocument();
+  });
+
+  it('switches dimensions while retaining selection, data and separate label settings', () => {
+    const handlers = props();
+    render(<GraphWorkbench {...handlers} />);
+    expect(screen.getByTestId('dimension')).toHaveTextContent('3d');
+    expect(screen.getByLabelText('常显实体名称')).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: '选中 PX4 节点' }));
+    fireEvent.click(screen.getByRole('button', { name: '2D', exact: true }));
+    expect(screen.getByTestId('dimension')).toHaveTextContent('2d');
+    expect(document.querySelector('.ow-entity-details')).toHaveTextContent('PX4');
+    expect(document.querySelector('.ow-statusbar')).toHaveTextContent('3 个节点');
+    fireEvent.click(screen.getByRole('tab', { name: '数据总览' }));
+    expect(screen.getByLabelText('常显实体名称')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: '3D', exact: true }));
+    expect(screen.getByLabelText('常显实体名称')).not.toBeChecked();
+    expect(handlers.onRefresh).not.toHaveBeenCalled();
+    expect(handlers.onClearFocus).not.toHaveBeenCalled();
+  });
+
+  it('starts mobile in 2D and remembers an explicitly chosen dimension', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+    const view = render(<GraphWorkbench {...props()} />);
+    expect(screen.getByTestId('dimension')).toHaveTextContent('2d');
+    fireEvent.click(screen.getByRole('button', { name: '3D', exact: true }));
+    view.unmount();
+    render(<GraphWorkbench {...props()} />);
+    expect(screen.getByTestId('dimension')).toHaveTextContent('3d');
+    expect(screen.getByRole('button', { name: '3D', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('falls back to the existing 2D canvas when 3D cannot initialize', () => {
+    render(<GraphWorkbench {...props()} />);
+    fireEvent.click(screen.getByRole('button', { name: '模拟三维不可用' }));
+    expect(screen.getByTestId('dimension')).toHaveTextContent('2d');
+    expect(screen.getByText('3D 暂时不可用，已切换为 2D。')).toHaveAttribute('role', 'status');
+    expect(document.querySelector('.ow-statusbar')).toHaveTextContent('3 个节点');
   });
 });

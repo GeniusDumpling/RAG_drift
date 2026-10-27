@@ -267,14 +267,18 @@ def ensure_collection(client: QdrantClient, collection: str):
 
 
 async def _embed_texts(texts: list[str], settings) -> list[list[float]]:
+    from .rate_limit import ModelPacer
+
     key = settings.embedding_api_key or settings.vlm_api_key
     if not key:
         raise ValueError("缺少嵌入模型密钥")
     if settings.embedding_model != "BAAI/bge-m3":
         raise ValueError("该 collection 只接受 BAAI/bge-m3，请为其他模型新建 collection。")
     async with httpx.AsyncClient(timeout=90) as client:
-        for attempt in range(3):
+        pacer = ModelPacer(settings.embedding_model, embedding=True)
+        for attempt in range(8):
             try:
+                await pacer.acquire(sum(len(text) for text in texts) + 128)
                 response = await client.post(
                     (settings.embedding_base_url or settings.vlm_base_url).rstrip("/")
                     + "/embeddings",
@@ -286,17 +290,32 @@ async def _embed_texts(texts: list[str], settings) -> list[list[float]]:
                     r["embedding"]
                     for r in sorted(response.json()["data"], key=lambda r: r["index"])
                 ]
+                pacer.succeeded(response.json().get("usage", {}).get("total_tokens", 0))
                 if len(vectors) != len(texts) or any(len(v) != 1024 for v in vectors):
                     raise ValueError("嵌入返回数量或维度错误")
                 return vectors
-            except (httpx.HTTPError, ValueError, KeyError):
-                if attempt == 2:
+            except (httpx.HTTPError, ValueError, KeyError) as exc:
+                if (
+                    isinstance(exc, httpx.HTTPStatusError)
+                    and exc.response.status_code == 429
+                    and attempt < 7
+                ):
+                    await pacer.limited()
+                    continue
+                if attempt >= 2:
                     raise
                 await asyncio.sleep(2 * (attempt + 1))
     raise RuntimeError("Embedding failed")
 
 
-async def index_bundle(root: Path, *, database_url=None, qdrant_url=None, collection=None) -> dict:
+async def index_bundle(
+    root: Path,
+    *,
+    database_url=None,
+    qdrant_url=None,
+    collection=None,
+    cache_root: Path | None = None,
+) -> dict:
     validate_bundle(root)
     dsn, qurl, collection = configuration(database_url, qdrant_url, collection)
     settings = get_settings()
@@ -319,7 +338,25 @@ async def index_bundle(root: Path, *, database_url=None, qdrant_url=None, collec
                     (pid, collection, settings.embedding_model),
                 ).fetchall()
                 if not rows:
-                    raise ValueError("数据包尚未导入 PostgreSQL。")
+                    local_chunks = read_jsonl(root / "chunks.jsonl")
+                    if any(c["processing_id"] == pid for c in local_chunks):
+                        raise ValueError("数据包尚未导入 PostgreSQL。")
+                    exists = conn.execute(
+                        "SELECT id FROM document_processings WHERE id=%s", (pid,)
+                    ).fetchone()
+                    if not exists:
+                        raise ValueError("数据包尚未导入 PostgreSQL。")
+                    conn.execute(
+                        "UPDATE document_processings SET status='ready',indexed_at=now() "
+                        "WHERE id=%s",
+                        (pid,),
+                    )
+                    conn.execute(
+                        "UPDATE document_versions SET active_processing_id=%s WHERE id=%s",
+                        (pid, doc["id"]),
+                    )
+                    conn.commit()
+                    continue
                 expected_ids = [r["id"] for r in rows]
                 pending = []
                 # Verify even succeeded jobs against Qdrant so a lost collection
@@ -354,7 +391,11 @@ async def index_bundle(root: Path, *, database_url=None, qdrant_url=None, collec
                         vectors = []
                         missing, missing_positions = [], []
                         for i, row in enumerate(batch):
-                            cache = root / "embedding-cache" / (row["content_hash"] + ".json")
+                            cache = (
+                                (cache_root or root)
+                                / "embedding-cache"
+                                / (row["content_hash"] + ".json")
+                            )
                             if cache.exists():
                                 vector = read_json(cache)["vector"]
                                 if len(vector) != 1024:
@@ -369,7 +410,9 @@ async def index_bundle(root: Path, *, database_url=None, qdrant_url=None, collec
                             for i, vector in zip(missing_positions, generated, strict=False):
                                 vectors[i] = vector
                                 write_json(
-                                    root / "embedding-cache" / (batch[i]["content_hash"] + ".json"),
+                                    (cache_root or root)
+                                    / "embedding-cache"
+                                    / (batch[i]["content_hash"] + ".json"),
                                     {"model": settings.embedding_model, "vector": vector},
                                 )
                         points = []
@@ -508,6 +551,34 @@ async def query(
                 query_filter=models.Filter(must=conditions),
                 with_payload=True,
             )
+        # Structured facts and both sides of a source difference must be available
+        # even when their vector scores are below the initial candidate cutoff.
+        extra_conditions = []
+        extra_params = [active]
+        if re.search(r"最长飞行|续航|飞行时间|飞多久", question):
+            extra_conditions.append("metadata_json->>'parameter_key'='max_flight_time'")
+        if re.search(r"起飞重量|重量", question):
+            extra_conditions.append("metadata_json->>'parameter_key'='takeoff_weight'")
+        if re.search(r"LED|灯态|指示灯", question, re.I):
+            extra_conditions.append("metadata_json->>'table_kind'='led_battery_states'")
+        if extra_conditions and not software:
+            structured = conn.execute(
+                "SELECT id FROM content_chunks WHERE processing_id=ANY(%s::uuid[]) AND ("
+                + " OR ".join(extra_conditions)
+                + ") ORDER BY processing_id,chunk_index LIMIT 16",
+                extra_params,
+            ).fetchall()
+            found_ids = {str(h.id) for h in hits}
+            for row in structured:
+                if str(row["id"]) not in found_ids:
+                    hits.append(
+                        SimpleNamespace(
+                            id=row["id"],
+                            score=0.0,
+                            retrieval_method="structured_evidence_expansion",
+                        )
+                    )
+                    found_ids.add(str(row["id"]))
         # Expand a software-specific workflow with original instruction chunks.
         # Vector similarity alone can retrieve introductory screenshots while
         # missing the native "apply" step on the following page.
@@ -574,6 +645,7 @@ async def query(
                         "assets": [{**a, "id": str(a["id"])} for a in asset_rows],
                         "scope_note": row["metadata_json"].get("scope_note", ""),
                         "software_context": row["metadata_json"].get("software_context"),
+                        "evidence_metadata": row["metadata_json"],
                     }
                 )
     return {"question": question, "evidence": evidence}

@@ -21,6 +21,8 @@ from .language import (
     page_markers,
     shared_visual_text,
 )
+from .parameters import annotate_parameter_claims, bind_footnotes, native_parameter
+from .symbols import recover_led_tables
 
 
 def doc_type(title: str) -> str:
@@ -131,6 +133,7 @@ def prepare(
     include_specs=True,
     ocr="auto",
     document_types: list[str] | None = None,
+    source_hashes: list[str] | None = None,
 ) -> dict:
     if output.exists():
         raise ValueError("输出目录已存在；请使用新目录，或继续 enrich/import/index 阶段。")
@@ -139,6 +142,11 @@ def prepare(
     catalog = Catalog(input_root)
     selected_model = catalog.model(model)
     rows = catalog.sources(model)
+    if source_hashes is not None:
+        unknown = set(source_hashes) - {r["sha256"] for r in rows}
+        if unknown:
+            raise ValueError("所选原文件不在该型号索引中")
+        rows = [r for r in rows if r["sha256"] in source_hashes]
     if document_types:
         if not set(document_types) <= DOCUMENT_TYPES:
             raise ValueError("未知的文档类型")
@@ -331,10 +339,34 @@ def prepare(
 
             paths = page.get_drawings()
             table_boxes = []
+            for symbolic_table in recover_led_tables(page, paths):
+                box = symbolic_table["bbox"]
+                add(
+                    "table",
+                    "电池电量指示灯状态表（按原图图例恢复）：\n"
+                    + "\n".join(" | ".join(row) for row in symbolic_table["rows"]),
+                    box,
+                    table_json=symbolic_table,
+                    asset_id=_render(page, assets, clip=box, max_edge=1600),
+                    metadata_json={
+                        "table_kind": "led_battery_states",
+                        "symbol_rows": symbolic_table["rows"],
+                        "extraction": symbolic_table["method"],
+                        "verification": "geometry_and_source_legend",
+                    },
+                )
+                table_boxes.append(pymupdf.Rect(box))
             if len(paths) < 4000 and marker not in FOREIGN_MARKERS:
                 try:
                     tables = page.find_tables(strategy="lines_strict", paths=paths)
                     for table in tables.tables:
+                        if any(
+                            (pymupdf.Rect(table.bbox) & b).get_area()
+                            / max(pymupdf.Rect(table.bbox).get_area(), 1)
+                            > 0.7
+                            for b in table_boxes
+                        ):
+                            continue
                         matrix = table.extract()
                         table_text = "\n".join(" | ".join(str(c or "") for c in r) for r in matrix)
                         if (
@@ -389,9 +421,19 @@ def prepare(
                     else "paragraph"
                 )
                 add(kind, cleaned, box)
+                if "规格参数" in section or "技术参数" in section:
+                    parameter = native_parameter(cleaned)
+                    if parameter:
+                        add("parameter", cleaned, box, metadata_json=parameter)
 
             image_boxes = [pymupdf.Rect(info["bbox"]) for info in page.get_image_info()]
-            vector_boxes = page.cluster_drawings(drawings=paths)
+            if len(paths) > 8000:
+                # Bound quadratic clustering on very dense schematics. The original
+                # page/region remains available instead of exhausting the worker.
+                vector_boxes = [page.rect]
+                page_row["metadata_json"]["figure_warning"] = "dense_vectors_page_fallback"
+            else:
+                vector_boxes = page.cluster_drawings(drawings=paths)
             figure_boxes = _merge_boxes(image_boxes + vector_boxes, page.rect)
             for box in figure_boxes:
                 if any((box & t).get_area() / max(box.get_area(), 1) > 0.7 for t in table_boxes):
@@ -441,6 +483,15 @@ def prepare(
         pdf.close()
     if include_specs:
         _specifications(input_root, model, config_hash, assets, documents, elements)
+    links.extend(
+        {
+            "from_element_id": note_id,
+            "to_element_id": element["id"],
+            "relation_type": "qualifies_parameter",
+        }
+        for element in elements
+        for note_id in element["metadata_json"].get("footnote_ids", [])
+    )
     for name, data in [
         ("documents", documents),
         ("models", list(model_rows.values())),
@@ -463,6 +514,7 @@ def prepare(
         "stage": "prepared",
     }
     annotate_software_sections(output)
+    annotate_parameter_claims(output)
     build_chunks(output)
     seal_bundle(output, manifest)
     write_json(output / "quality_report.json", quality(documents, pages, elements))
@@ -512,8 +564,34 @@ def _specifications(input_root, model, config_hash, assets, documents, elements)
         },
     }
     documents.append(document)
+    footnote_elements = {}
     for i, parameter in enumerate(parameters):
         name, value, section = (parameter[key] for key in ["name", "value", "section"])
+        bound_notes = []
+        for note in parameter["footnotes"]:
+            note_id = uid(processing_id, "footnote", note["owner_index"], note["note_index"])
+            bound_notes.append({**note, "element_id": note_id})
+            footnote_elements[note_id] = {
+                "id": note_id,
+                "processing_id": processing_id,
+                "document_version_id": document_id,
+                "element_type": "footnote",
+                "reading_order": 0,
+                "section_path": section,
+                "language": "zh-Hans",
+                "text": note["text"],
+                "asset_id": None,
+                "table_json": None,
+                "regions": [],
+                "metadata_json": {
+                    "html_owner_parameter": parameters[note["owner_index"]]["name"],
+                    "html_sup_index": note["note_index"],
+                    "marker": note["marker"],
+                },
+            }
+        display = name + "：" + parameter["main_value"]
+        if bound_notes:
+            display += "\n关联脚注与测试条件：\n" + "\n".join(n["text"] for n in bound_notes)
         elements.append(
             {
                 "id": uid(processing_id, i),
@@ -523,17 +601,23 @@ def _specifications(input_root, model, config_hash, assets, documents, elements)
                 "reading_order": len(elements),
                 "section_path": section,
                 "language": "zh-Hans",
-                "text": name + "：" + value,
+                "text": display,
                 "asset_id": None,
                 "table_json": None,
                 "regions": [],
                 "metadata_json": {
                     "parameter_name": name,
-                    "parameter_value": value,
+                    "parameter_value": parameter["main_value"],
+                    "original_parameter_value": value,
+                    "footnotes": bound_notes,
+                    "footnote_ids": [n["element_id"] for n in bound_notes],
                     "html_anchor": section,
                 },
             }
         )
+    for footnote in footnote_elements.values():
+        footnote["reading_order"] = len(elements)
+        elements.append(footnote)
 
 
 def parse_specifications(html: str | bytes) -> list[dict]:
@@ -558,14 +642,21 @@ def parse_specifications(html: str | bytes) -> list[dict]:
                 continue
             name = node.get_text("\n", strip=True)
             value = container.get_text("\n", strip=True).removeprefix(name).strip()
+            local_notes = [sup.get_text("\n", strip=True) for sup in container.find_all("sup")]
+            main = BeautifulSoup(str(container), "html.parser")
+            for sup in main.find_all("sup"):
+                sup.decompose()
+            main_value = main.get_text("\n", strip=True).removeprefix(name).strip()
             parameters.append(
                 {
                     "name": label or "说明",
                     "value": value,
+                    "main_value": main_value,
+                    "local_notes": local_notes,
                     "section": " / ".join(filter(None, [variant, section])),
                 }
             )
-    return parameters
+    return bind_footnotes(parameters)
 
 
 def annotate_software_sections(root: Path) -> None:
@@ -615,8 +706,22 @@ def build_chunks(root: Path) -> list[dict]:
     chunks = []
     for document in documents:
         owned = [e for e in elements if e["processing_id"] == document["processing_id"]]
-        text_elements = [e for e in owned if e["text"].strip() and e["element_type"] != "figure"]
+        text_elements = [
+            e
+            for e in owned
+            if e["text"].strip()
+            and e["element_type"] not in {"figure", "footnote"}
+            and e["metadata_json"].get("index_eligible", True)
+        ]
         # Never join unrelated pages. Keep the full element IDs for source highlighting.
+        figure_order = {e["id"]: e["reading_order"] for e in owned if e["element_type"] == "figure"}
+        text_elements.sort(
+            key=lambda e: (
+                e["element_type"] == "figure_description",
+                figure_order.get(e["metadata_json"].get("derived_from"), e["reading_order"]),
+                e["id"],
+            )
+        )
         groups = []
         for element in text_elements:
             key = (element["section_path"], tuple(r["page_id"] for r in element["regions"]))
@@ -685,8 +790,31 @@ def build_chunks(root: Path) -> list[dict]:
                         "embed_text": embed,
                         "content_hash": digest(embed.encode()),
                         "index_language": "zh-Hans",
-                        "element_ids": [e["id"] for e in group],
+                        "element_ids": list(
+                            dict.fromkeys(
+                                [e["id"] for e in group]
+                                + [
+                                    x
+                                    for e in group
+                                    for x in e["metadata_json"].get("footnote_ids", [])
+                                ]
+                            )
+                        ),
                         "metadata_json": {
+                            **{
+                                k: group[0]["metadata_json"][k]
+                                for k in [
+                                    "table_kind",
+                                    "symbol_rows",
+                                    "parameter_key",
+                                    "claim",
+                                    "source_differences",
+                                    "footnote_ids",
+                                    "quality_gate",
+                                    "index_eligible",
+                                ]
+                                if k in group[0]["metadata_json"]
+                            },
                             "source_pages": sorted(
                                 {r["source_page_no"] for e in group for r in e["regions"]}
                             ),

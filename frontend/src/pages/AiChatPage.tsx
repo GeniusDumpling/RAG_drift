@@ -150,7 +150,7 @@ export function AiChatPage({ initialQuery = '', onOpenContent }: AiChatPageProps
       await streamAnswer({ query: trimmed, filters: {}, top_k: 10, session_id: activeId }, (event) => {
         if (version.current !== currentVersion) return;
         if (event.event === 'status') {
-          setStage(event.data.stage === 'retrieving' ? '正在检索证据' : '正在生成回答');
+          setStage({ retrieving: '正在检索证据', reranking: '正在筛选证据', generating: '正在生成回答' }[event.data.stage]);
         } else if (event.event === 'evidence') {
           patchMessage(id, (message) => ({ ...message, evidence: event.data.supporting_evidence }));
         } else if (event.event === 'delta') {

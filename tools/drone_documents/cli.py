@@ -1,11 +1,13 @@
 import argparse
 import asyncio
+import subprocess
+import sys
 from pathlib import Path
 
 from .catalog import Catalog
 from .common import progress, validate_bundle, write_json
 from .enrich import enrich
-from .evaluate import evaluate
+from .evaluate import evaluate, verify_answers
 from .extract import DOCUMENT_TYPES, prepare
 from .questions import evaluation_questions
 from .report import report
@@ -15,6 +17,21 @@ from .storage import bootstrap, import_bundle, index_bundle, query
 def main() -> int:
     parser = argparse.ArgumentParser(description="DJI 中文文档解析、图示描述与独立数据库入库")
     subparsers = parser.add_subparsers(dest="command", required=True)
+    for command in ["batch-plan", "batch-run", "batch-start", "batch-finalize", "_batch-stage"]:
+        sub = subparsers.add_parser(command)
+        sub.add_argument("--batch-root", type=Path, required=True)
+        if command == "batch-plan":
+            sub.add_argument("--input", type=Path, default=Path("data/DJI无人机文档"))
+            sub.add_argument("--models", nargs="+")
+            sub.add_argument("--exclude", nargs="*", default=["air-2s"])
+        if command in {"batch-run", "batch-start"}:
+            sub.add_argument("--parse-workers", type=int, default=2)
+            sub.add_argument("--enrich-workers", type=int, default=2)
+            sub.add_argument("--concurrency", type=int, default=3)
+        if command == "_batch-stage":
+            sub.add_argument("--job-id", required=True)
+            sub.add_argument("--stage", choices=["prepare", "enrich", "index"], required=True)
+            sub.add_argument("--concurrency", type=int, default=3)
     for command in [
         "list-models",
         "prepare",
@@ -27,6 +44,7 @@ def main() -> int:
         "report",
         "run",
         "evaluate",
+        "verify-answers",
     ]:
         sub = subparsers.add_parser(command)
         if command not in {"bootstrap", "list-models"}:
@@ -50,8 +68,15 @@ def main() -> int:
             )
         if command in {"evaluate", "run"}:
             sub.add_argument("--questions-file", type=Path, help="可选的 JSON 问题字符串数组")
+        if command == "evaluate":
+            sub.add_argument("--baseline-bundle", type=Path, help="对照旧包答案的关键条件遗漏")
         if command in {"enrich", "run"}:
             sub.add_argument("--concurrency", type=int, default=3)
+            sub.add_argument(
+                "--reuse-descriptions-from",
+                type=Path,
+                help="复用旧包候选说明，但必须经过新质量检查",
+            )
         if command in {"bootstrap", "import", "index", "query", "run", "evaluate"}:
             sub.add_argument("--database-url", default=None)
             sub.add_argument("--collection", default=None)
@@ -61,6 +86,71 @@ def main() -> int:
             sub.add_argument("--top-k", type=int, default=5)
     args = parser.parse_args()
     try:
+        if args.command.startswith("batch-") or args.command == "_batch-stage":
+            from .bulk import create_plan, run_batch, seed_cache, stage_worker, start_batch
+
+            if args.command == "batch-plan":
+                plan = create_plan(args.input, args.batch_root, args.models, args.exclude)
+                seed_cache(
+                    args.batch_root,
+                    Path("data/processed/drone-documents/air-2s-quality-20261027-v4"),
+                )
+                progress(
+                    "batch_planned",
+                    models=len(plan["configuration"]["models"]),
+                    jobs=len(plan["jobs"]),
+                    pdfs=plan["unique_pdfs"],
+                    pages=plan["source_pages"],
+                )
+                return 0
+            if args.command == "_batch-stage":
+                return stage_worker(args.batch_root, args.job_id, args.stage, args.concurrency)
+            if args.command == "batch-start":
+                result = start_batch(
+                    args.batch_root, args.parse_workers, args.enrich_workers, args.concurrency
+                )
+                progress("batch_started", **result)
+                return 0
+            if args.command == "batch-finalize":
+                from .bulk_finalize import finalize_batch
+
+                try:
+                    result = asyncio.run(finalize_batch(args.batch_root))
+                except Exception as exc:
+                    from .common import now, read_json
+
+                    state = read_json(args.batch_root / "status.json")
+                    state.update(
+                        {
+                            "status": "finalization_failed",
+                            "updated_at": now(),
+                            "error_type": type(exc).__name__,
+                        }
+                    )
+                    write_json(args.batch_root / "status.json", state)
+                    raise
+                progress("batch_finalized", **result)
+                return 0 if result["complete"] else 2
+            result = asyncio.run(
+                run_batch(
+                    args.batch_root,
+                    parse_workers=args.parse_workers,
+                    enrich_workers=args.enrich_workers,
+                    concurrency=args.concurrency,
+                )
+            )
+            if result["status"] in {"complete", "finalizing"}:
+                return subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "tools.drone_documents",
+                        "batch-finalize",
+                        "--batch-root",
+                        str(args.batch_root.resolve()),
+                    ]
+                ).returncode
+            return 2
         if getattr(args, "concurrency", 1) < 1 or getattr(args, "top_k", 1) < 1:
             raise ValueError("concurrency 和 top-k 必须为正整数")
         if args.command == "list-models":
@@ -75,7 +165,13 @@ def main() -> int:
                 document_types=args.document_type,
             )
         if args.command in {"enrich", "run"}:
-            result = asyncio.run(enrich(args.bundle, concurrency=args.concurrency))
+            result = asyncio.run(
+                enrich(
+                    args.bundle,
+                    concurrency=args.concurrency,
+                    reuse_from=args.reuse_descriptions_from,
+                )
+            )
             if result["enrichment_failures"]:
                 report(args.bundle)
                 return 2
@@ -119,6 +215,11 @@ def main() -> int:
         if args.command == "validate":
             manifest = validate_bundle(args.bundle)
             progress("validated", stage=manifest["stage"], model=manifest["model_slug"])
+        if args.command == "verify-answers":
+            result = verify_answers(args.bundle)
+            progress("answers_verified", **result)
+            report(args.bundle)
+            return 0 if result["all_answers_verified"] else 2
         if args.command == "evaluate":
             result = asyncio.run(
                 evaluate(
@@ -127,9 +228,13 @@ def main() -> int:
                     database_url=args.database_url,
                     qdrant_url=args.qdrant_url,
                     collection=args.collection,
+                    baseline_root=args.baseline_bundle,
                 )
             )
             progress("evaluated", **result)
+            if not result["all_answers_verified"]:
+                report(args.bundle)
+                return 2
         if args.command in {"report", "query", "run", "evaluate"}:
             result = report(args.bundle)
             progress("report", preview=result["preview"], report=result["report"])

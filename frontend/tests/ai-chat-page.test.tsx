@@ -37,6 +37,8 @@ describe('AI chat streaming and sessions', () => {
     render(<AiChatPage initialQuery="PX4" />);
     await send();
     await waitFor(() => expect(api.streamAnswer).toHaveBeenCalledOnce());
+    act(() => emit({ event: 'status', data: { stage: 'reranking' } }));
+    expect(screen.getByText('正在筛选证据')).toBeInTheDocument();
     act(() => emit({ event: 'delta', data: { text: '第一段' } }));
     expect(screen.getByText('第一段')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '停止生成' })).toBeInTheDocument();

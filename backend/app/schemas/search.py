@@ -83,6 +83,7 @@ class EvidenceObject(BaseModel):
     score: float
     vector_score: float | None = None
     keyword_score: float | None = None
+    rerank_score: float | None = None
     matched_by: Literal["vector", "keyword", "hybrid"]
     thread_summary: str | None
     video_url: str | None = None
@@ -105,6 +106,7 @@ class GenerationInfo(BaseModel):
     context_chunk_ids: list[uuid.UUID] = Field(default_factory=list)
     retrieval_query: str | None = None
     rewrite_status: str = "not_needed"
+    reranking: dict[str, Any] = Field(default_factory=dict)
 
 
 class AnswerResponse(BaseModel):

@@ -7,8 +7,10 @@ AI 问答先检索知识库，再基于本轮证据生成带编号引用的答�
 - 型号查询保留完整短语（如 `Mavic 3 Pro`），英文词按词边界匹配；数字和通用型号后缀降权，避免 `3`、`pro` 子串主导结果。
 - 关键词按查询覆盖度评分，同一词命中多个字段不重复累加；与向量合并时保留相似度差异，弱关键词命中不会直接将分数推满。
 - SQL 候选每篇最多保留两个高分切片；普通检索先按内容去重再截取，问答先覆盖不同内容，再允许每篇第二个切片。
-- 回答阶段召回 `3 × top_k` 条候选，最多 150 条，再选择最多 `min(top_k, 8)` 条生成证据。
-- 先覆盖不同 `content_item_id`，再允许同一内容的第二条证据，避免单个视频或文档占满结果。
+- 未启用 reranker 时，回答阶段召回 `3 × top_k` 条候选，最多 150 条；启用后由 `RERANKER_CANDIDATE_LIMIT` 控制候选数量，默认 20 条。
+- 最终选择最多 `min(top_k, ANSWER_MAX_EVIDENCE)` 条生成证据，默认上限为 8。
+- 启用 reranker 后，以改写后的问题和候选标题＋正文调用 SiliconFlow `BAAI/bge-reranker-v2-m3`，请求 `top_n=实际候选数`，完整保留所有候选的排序和相关性分数。正文默认最多 8,000 字符，截断 ID 会记录到 trace。
+- 重排成功后按模型分数排序，同一内容最多两条；未启用或降级时沿用先覆盖不同 `content_item_id`、再补同源第二条的选择方式。
 - 从 PostgreSQL 读取命中切片的完整正文；预算允许时补充前后相邻切片，排除 `obsolete` 切片。
 - 编号证据上下文总上限为 12,000 字符；每条证据公平分配预算，长切片可能截断。
 - 界面仍使用短 `snippet`。生成结果记录实际读取的 `context_chunk_ids` 和 `context_chars`，答案中的 `[n]` 对应本轮返回的证据顺序。
@@ -27,10 +29,19 @@ JSON 响应及流式 `done` 事件增加 `generation`：
 | `latency_ms` / `total_latency_ms` | 生成阶段 / 全流程耗时 |
 | `evidence_count` / `context_chars` / `context_chunk_ids` | 实际证据与上下文统计 |
 | `retrieval_query` / `rewrite_status` | 用于检索的独立问题及追问改写状态 |
+| `reranking` | 重排状态、模型、候选数、耗时、全部候选的前后名次和分数，失败时的原因代码 |
 
 最终答案、支持证据快照和生成信息保存在 `search_queries.result_summary_json`；生成信息也写入 `query_trace_json.generation`。服务端日志保留模型调用异常。
 
 模型不可用时返回带编号的证据摘录，前端明确标注。没有证据时不调用生成模型。模型流中途失败会先发送 `reset` 替换未完成文本，再以降级结果结束，避免将部分模型输出和原文摘录混合。没有收到 `done` 的连接按未完成处理。
+
+重排超时、限流、缺少密钥或返回不完整/非法排序时，整批回退到原检索顺序，不中断回答。`rerank_score` 独立保存，不覆盖原 `score`、向量分数或关键词分数。客户端取消会继续向上传播，避免用户停止后继续生成。
+
+重排设置：`RERANKER_PROVIDER=siliconflow` 启用，`none` 关闭（代码默认关闭）；独立的 `RERANKER_API_KEY` 未设置时，依次复用 `EMBEDDING_API_KEY`、`VLM_API_KEY`。`RERANKER_BASE_URL` 默认 `https://api.siliconflow.cn/v1`，总请求超时由 `RERANKER_TIMEOUT_SECONDS` 控制，默认 5 秒。此功能使用现有 JSON 审计字段，无需数据库迁移或向量重建。接口依据 [SiliconFlow 官方文档](https://docs.siliconflow.cn/docs/api/rerank-post)。
+
+本项目的 [20/40/60 候选与4/8/12/20证据评测](reranker-evaluation-2026-10-27.md) 暂选 20 条候选全部重排、最终最多 8 条；候选数和证据上限均可独立配置。当前前端请求 `top_k=10`，若手动将证据上限设到 12/20，还需同步提高请求的 `top_k`。
+
+当前已部署 `rag-reranker:20261027-v1` 并启用20/8，真实流式问答验证通过；发布和回退方法见 [部署记录](reranker-deployment-2026-10-27.md)。
 
 ## 会话和追问
 
@@ -56,7 +67,7 @@ JSON 响应及流式 `done` 事件增加 `generation`：
 
 事件依次包含：
 
-1. `status`：`retrieving` 或 `generating`。
+1. `status`：`retrieving`、可选的 `reranking`、`generating`。
 2. `evidence`：检索记录 ID、问答 ID 和本轮支持证据。
 3. `delta`：模型生成的文本增量，形如 `{"text":"内容"}`。
 4. `reset`：出现降级时提供完整替换文本和生成状态。

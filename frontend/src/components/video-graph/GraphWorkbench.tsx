@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import type { VideoGraphData, VideoGraphEdge, VideoGraphNode, VideoGraphOverview } from '../../api/types';
 import { InteractiveGraphCanvas } from './InteractiveGraphCanvas';
+import type { GraphDimension } from './InteractiveGraphCanvas';
 import { GraphIcon } from './GraphIcon';
 import './obsidian-graph.css';
 import { ASSERTION_LABELS, DARK_ENTITY_COLORS, DEFAULT_GRAPH_APPEARANCE, ENTITY_LABELS, PREDICATE_LABELS } from './presentation';
@@ -23,6 +24,15 @@ type Props = {
 const format = (value: number | undefined) => value === undefined ? '—' : value.toLocaleString('zh-CN');
 
 export function GraphWorkbench(props: Props) {
+  const [dimension, setDimension] = useState<GraphDimension>(() => {
+    try {
+      const saved = localStorage.getItem('video-graph-dimension');
+      if (saved === '2d' || saved === '3d') return saved;
+    } catch { /* Storage can be disabled by the browser. */ }
+    return window.innerWidth <= 680 ? '2d' : '3d';
+  });
+  const [dimensionNotice, setDimensionNotice] = useState('');
+  const [labels3D, setLabels3D] = useState(false);
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth > 1200);
   const [panelTab, setPanelTab] = useState<'overview' | 'links'>('overview');
   const [selectedId, setSelectedId] = useState('');
@@ -37,6 +47,11 @@ export function GraphWorkbench(props: Props) {
   const search = useRef<HTMLInputElement>(null);
   const nodes = props.graph?.nodes ?? [];
   const edges = props.graph?.edges ?? [];
+  // Recreate the WebGL scene when its buffers change size. The official extension
+  // caches sphere geometry and cannot safely reuse all resized instance buffers.
+  const sceneKey = useMemo(() => props.graph
+    ? [...props.graph.nodes.map((node) => node.id), ...props.graph.edges.map((edge) => edge.id)].join(':')
+    : '', [props.graph]);
   const selected = nodes.find((node) => node.id === selectedId);
   const hovered = nodes.find((node) => node.id === hoveredId);
   const labels = new Map(nodes.map((node) => [node.id, node.label]));
@@ -56,8 +71,14 @@ export function GraphWorkbench(props: Props) {
     setSelectedId(''); props.onEdge(edge); setPanelTab('links'); setPanelOpen(true);
   }
   function configure<K extends keyof GraphAppearance>(key: K, value: GraphAppearance[K]) {
+    if (key === 'showLabels' && dimension === '3d') { setLabels3D(Boolean(value)); return; }
     setAppearance((previous) => ({ ...previous, [key]: value }));
   }
+  function changeDimension(value: GraphDimension, message = '') {
+    setHoveredId(''); setDimensionNotice(message); setDimension(value);
+    try { localStorage.setItem('video-graph-dimension', value); } catch { /* Optional preference. */ }
+  }
+  const showLabels = dimension === '3d' ? labels3D : appearance.showLabels;
   useEffect(() => {
     if (selectedId && !nodes.some((node) => node.id === selectedId)) setSelectedId('');
   }, [props.graph, selectedId]);
@@ -76,6 +97,10 @@ export function GraphWorkbench(props: Props) {
     <div className="ow-toolbar">
       <div className="ow-breadcrumb"><GraphIcon name="graph" size={16} /><span className="ow-scope-label">图谱范围</span><span>/</span>
         <button type="button" onClick={props.onClearFocus} aria-label="查看全局图谱">{props.focusId ? '局部图谱' : '全局图谱'}<GraphIcon name="chevron" size={12} /></button>
+      </div>
+      <div className="ow-dimension-switch" role="group" aria-label="图谱维度">
+        <button type="button" aria-pressed={dimension === '2d'} onClick={() => changeDimension('2d')} title="平面图谱">2D</button>
+        <button type="button" aria-pressed={dimension === '3d'} onClick={() => changeDimension('3d')} title="三维图谱，可旋转查看">3D</button>
       </div>
       <form className="ow-search" aria-label="图谱搜索" onSubmit={props.onSearch}>
         <GraphIcon name="search" size={16} /><label className="sr-only" htmlFor="graph-entity-search">实体名称</label>
@@ -97,15 +122,18 @@ export function GraphWorkbench(props: Props) {
         {props.loading ? <div className="ow-loading" role="status"><div className="ow-loading-orbit" /><span>正在连接知识网络…</span></div> : null}
         {props.error ? <div className="ow-stage-message" role="alert"><GraphIcon name="info" size={24} /><p>{props.error}</p><button onClick={props.onRefresh}>重新加载</button></div> : null}
         {props.graph && nodes.length === 0 ? <div className="ow-stage-message"><GraphIcon name="search" size={28} /><h2>没有符合展示条件的图谱</h2><p>当前范围内未找到至少 {MIN_GRAPH_COMPONENT_SIZE} 个节点的连通子图，请尝试其他关键词或调整筛选条件。</p></div> : null}
-        {props.graph && nodes.length > 0 ? <InteractiveGraphCanvas graph={props.graph} focusId={props.focusId}
+        {props.graph && nodes.length > 0 ? <InteractiveGraphCanvas
+          key={dimension === '3d' ? `${dimension}:${sceneKey}` : dimension} dimension={dimension}
+          onUnavailable={(message) => changeDimension('2d', message)} graph={props.graph} focusId={props.focusId}
           selectedEdge={props.selectedEdge?.id ?? ''} expandingId={props.expandingId}
-          activeNodeId={selectedId} appearance={{ ...appearance, ...appliedForces }} onSelect={selectNode}
+          activeNodeId={selectedId} appearance={{ ...appearance, ...appliedForces, showLabels }} onSelect={selectNode}
           onHover={(node) => setHoveredId(node?.id ?? '')}
           onFocus={props.onFocus} onExpand={props.onExpand} onEdge={selectEdge} /> : null}
         {props.expansionError ? <div className="ow-canvas-notice" role="alert">{props.expansionError}</div> : null}
         {props.expansionNotice ? <div className="ow-canvas-notice" role="status">{props.expansionNotice}</div> : null}
         {props.expandingId ? <div className="ow-canvas-notice" role="status">正在展开邻居，保留已有节点…</div> : null}
-        <div className="ow-stage-hint"><span>拖拽节点</span><b>·</b><span>滚轮缩放</span><b>·</b><span>悬停查看关联</span><b>·</b><span>双击展开</span></div>
+        {dimensionNotice ? <div className="ow-canvas-notice" role="status">{dimensionNotice}</div> : null}
+        <div className="ow-stage-hint"><span>{dimension === '3d' ? '拖拽空白旋转' : '拖拽节点'}</span><b>·</b><span>滚轮缩放</span><b>·</b><span>{dimension === '3d' ? 'Shift + 拖拽平移' : '悬停查看关联'}</span><b>·</b><span>双击展开</span></div>
       </section>
 
       <aside className="ow-data-panel" aria-label="图谱数据面板" hidden={!panelOpen}>
@@ -132,7 +160,7 @@ export function GraphWorkbench(props: Props) {
                 <i style={{ background: DARK_ENTITY_COLORS[group.type] }} /><span>{group.label}</span><small>{group.count}</small></button>)}</div>
             </section>
             <section className="ow-panel-section"><h2><GraphIcon name="settings" size={14} />显示</h2>
-              <label className="ow-toggle">常显实体名称<input type="checkbox" checked={appearance.showLabels} onChange={(event) => configure('showLabels', event.target.checked)} /><span /></label>
+              <label className="ow-toggle">常显实体名称<input type="checkbox" checked={showLabels} onChange={(event) => configure('showLabels', event.target.checked)} /><span /></label>
               <label className="ow-toggle">显示关系方向<input type="checkbox" checked={appearance.showArrows} onChange={(event) => configure('showArrows', event.target.checked)} /><span /></label>
               <label className="ow-slider" htmlFor="graph-node-scale">节点大小<output>{Math.round(appearance.nodeScale * 100)}%</output><input id="graph-node-scale" type="range" min="0.6" max="2" step="0.1" value={appearance.nodeScale} onChange={(event) => configure('nodeScale', Number(event.target.value))} /></label>
               <label className="ow-slider" htmlFor="graph-link-scale">连线粗细<output>{Math.round(appearance.linkScale * 100)}%</output><input id="graph-link-scale" type="range" min="0.5" max="2" step="0.1" value={appearance.linkScale} onChange={(event) => configure('linkScale', Number(event.target.value))} /></label>

@@ -1,0 +1,17 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DJI 文档全量处理进度</title><style>
+body{max-width:1100px;margin:32px auto;padding:0 20px;font:16px/1.7 system-ui;background:#f4f6fa;color:#172333}h1{font-size:28px}.card{padding:22px;margin:18px 0;background:white;border:1px solid #dae0ea}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.metric{font-size:28px;font-weight:600}progress{width:100%;height:18px}a{color:#2468d2}pre{white-space:pre-wrap;overflow-wrap:anywhere}.muted{color:#627184}ul{padding-left:22px}@media(max-width:650px){.grid{grid-template-columns:1fr}body{margin:20px auto}}
+</style><h1>DJI 文档全量处理进度</h1><p>中文筛选、图文质量检查、向量化与专用数据库入库。每 10 秒刷新。</p>
+<div class="card"><strong id="state">加载中</strong><p id="scope"></p><p class="muted" id="updated"></p><progress id="progress" max="1" value="0"></progress></div>
+<div class="grid" id="metrics"></div><div class="card"><h2>正在处理</h2><ul id="active"></ul></div>
+<div class="card"><h2>服务限速与失败记录</h2><p>任务失败会保留日志与缓存，可断点续跑；进度完成前不代表全量验收通过。</p><ul id="errors"></ul><a href="STATUS.md">进度文档</a> · <a href="status.json">原始状态</a> · <a href="plan.json">任务清单</a></div>
+<div class="card"><h2>已生成的型号预览</h2><ul id="models"></ul><a href="REPORT.md">最终报告（完成后生成）</a></div>
+<script>
+const $=id=>document.getElementById(id),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));let plan;
+const labels={processing:'处理中',finalizing:'正在汇总与核对',complete:'处理与核对完成',finalization_failed:'入库结束，汇总核对失败，需检查日志',partial_failed:'部分任务失败，需续跑',provider_blocked:'模型服务不可用，已保留检查点'};
+async function refresh(){try{plan=plan||await(await fetch('plan.json')).json();const s=await(await fetch('status.json?t='+Date.now())).json();const titles=Object.fromEntries(plan.jobs.map(j=>[j.id,j.title]));$('state').textContent=s.status==='complete'&&!s.verification?'入库阶段结束，等待全量核对':labels[s.status]||s.status;$('scope').textContent=`${s.target_models} 个型号，${s.unique_pdfs} 份去重 PDF、${s.source_pages} 个原始 PDF 页；另含技术参数页，共 ${s.total_jobs} 个任务。`;$('updated').textContent='最后更新：'+new Date(s.updated_at).toLocaleString('zh-CN');$('progress').max=s.total_jobs;$('progress').value=s.stages.index;
+$('metrics').innerHTML=[['解析完成',s.stages.prepare],['图片处理完成',s.stages.enrich],['入库与索引完成',s.stages.index]].map(([name,n])=>`<div class="card"><div class="muted">${name}</div><div class="metric">${n} / ${s.total_jobs}</div></div>`).join('');
+$('active').innerHTML=s.active.map(j=>`<li>${esc(titles[j.id]||j.id)} · ${esc(({prepare:'解析',enrich:'图片处理',index:'入库与索引'})[j.stage]||j.stage)}</li>`).join('')||'<li>没有正在运行的文档任务。</li>';$('errors').innerHTML=s.failures.map(j=>`<li>${esc(titles[j.id]||j.id)}：${esc(JSON.stringify(j.error))}</li>`).join('')||'<li>当前没有失败记录。</li>';
+const response=await fetch('model-verification.json?t='+Date.now());if(response.ok){const models=await response.json();$('models').innerHTML=models.map(m=>`<li><a href="${esc(m.preview)}">${esc(m.name)}</a></li>`).join('');}else $('models').textContent='完成全部文档后生成按型号汇总的预览。';}catch(e){$('state').textContent='尚未读取到进度；请稍后刷新。';}}
+refresh();setInterval(refresh,10000);
+</script></html>

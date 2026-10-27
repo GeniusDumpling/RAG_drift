@@ -3,7 +3,7 @@ import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -26,7 +26,7 @@ def read_json(path: Path):
 
 def write_json(path: Path, data) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary = path.with_name(path.name + "." + uuid4().hex + ".tmp")
     temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(temporary, path)
 
@@ -110,9 +110,15 @@ def validate_bundle(root: Path) -> dict:
                 raise ValueError("元素引用了不存在的页面")
         if element.get("asset_id") and element["asset_id"] not in assets:
             raise ValueError("元素引用了不存在的文件")
+        if not set(element["metadata_json"].get("footnote_ids", [])) <= elements:
+            raise ValueError("参数引用了不存在的脚注")
     for chunk in read_jsonl(root / "chunks.jsonl"):
         if not set(chunk["element_ids"]) <= elements:
             raise ValueError("切片引用了不存在的元素")
         if not chunk["display_text"].strip() or not chunk["embed_text"].strip():
             raise ValueError("存在空切片")
+        if chunk["chunk_type"] == "figure_description" and not chunk["metadata_json"].get(
+            "index_eligible", True
+        ):
+            raise ValueError("隔离的图片说明不能进入索引")
     return manifest

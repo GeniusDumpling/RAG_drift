@@ -32,6 +32,22 @@ class Settings(BaseSettings):
     embedding_dimension: int = Field(default=1024, alias="EMBEDDING_DIMENSION")
     embedding_base_url: str | None = Field(default=None, alias="EMBEDDING_BASE_URL")
     embedding_api_key: str | None = Field(default=None, alias="EMBEDDING_API_KEY")
+    reranker_provider: Literal["none", "siliconflow"] = Field(
+        default="none", alias="RERANKER_PROVIDER"
+    )
+    reranker_model: str = Field(default="BAAI/bge-reranker-v2-m3", alias="RERANKER_MODEL")
+    reranker_base_url: str = Field(
+        default="https://api.siliconflow.cn/v1", alias="RERANKER_BASE_URL"
+    )
+    reranker_api_key: str | None = Field(default=None, alias="RERANKER_API_KEY")
+    reranker_timeout_seconds: float = Field(default=5, gt=0, alias="RERANKER_TIMEOUT_SECONDS")
+    reranker_candidate_limit: int = Field(
+        default=20, ge=1, le=150, alias="RERANKER_CANDIDATE_LIMIT"
+    )
+    reranker_document_max_chars: int = Field(
+        default=8000, ge=100, alias="RERANKER_DOCUMENT_MAX_CHARS"
+    )
+    answer_max_evidence: int = Field(default=8, ge=1, le=50, alias="ANSWER_MAX_EVIDENCE")
     llm_provider: str = Field(default="fake", alias="LLM_PROVIDER")
     agent_timeout_seconds: int = Field(default=20, alias="AGENT_TIMEOUT_SECONDS")
     worker_poll_interval_seconds: int = Field(default=2, alias="WORKER_POLL_INTERVAL_SECONDS")

@@ -215,6 +215,7 @@ export type GenerationInfo = {
   context_chunk_ids: UUID[];
   retrieval_query: string | null;
   rewrite_status: string;
+  reranking?: Record<string, unknown>;
 };
 
 export type ChatSession = {
@@ -246,6 +247,7 @@ export type EvidenceObject = {
   score: number;
   vector_score: number | null;
   keyword_score: number | null;
+  rerank_score?: number | null;
   matched_by: 'vector' | 'keyword' | 'hybrid';
   thread_summary: string | null;
   video_url: string | null;
@@ -267,7 +269,7 @@ export type AnswerResponse = {
 };
 
 export type AnswerStreamEvent =
-  | { event: 'status'; data: { stage: 'retrieving' | 'generating' } }
+  | { event: 'status'; data: { stage: 'retrieving' | 'reranking' | 'generating' } }
   | { event: 'delta'; data: { text: string } }
   | { event: 'reset'; data: { text: string; generation: GenerationInfo } }
   | { event: 'evidence'; data: { query_id: UUID; turn_id: UUID | null; supporting_evidence: EvidenceObject[] } }

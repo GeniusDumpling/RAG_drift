@@ -2,7 +2,30 @@
 
 按下载索引处理任意已收集 DJI 机型的关联 PDF（包括其他机型目录中的共用文档），并处理技术参数 HTML。支持现有参数页、旧版 Inspire 参数行和 M200 等多子型号页面，也支持只有参数、没有 PDF 索引记录的型号。脚本不修改原文件。所有型号共用独立 PostgreSQL 数据库 `drone_documents` 和 Qdrant collection `drone_document_chunks_bge_m3_v1`，通过机型与有效处理版本过滤检索。
 
-当前处理版本为 `2026-10-26-dji-general-v3`。旧 Air 2S v2 数据包仍可校验、报告、导入和查询；新解析需要使用新输出目录。
+当前处理版本为 `2026-10-27-dji-bulk-v5`。旧 Air 2S v2/v4 和通用化 v3 数据包仍可校验、报告、导入和查询；新解析需要使用新输出目录。
+
+## 其他 DJI 型号全量批处理（v5）
+
+当前批次为 `data/processed/drone-documents/dji-full-20261027-v5/`：排除已完成样例的 Air 2S，覆盖其他 81 个型号、772 份去重 PDF、19,221 个原始页和 81 份技术参数，共 853 个唯一任务。共用文档按文件哈希处理一次，并保留全部关联型号。Air 2S 共用的 LUT 仍可通过共用资料关联使用，旧版本保留。
+
+```bash
+.venv/bin/python -m tools.drone_documents batch-plan --batch-root data/processed/drone-documents/dji-full-20261027-v5
+.venv/bin/python -m tools.drone_documents batch-start --batch-root data/processed/drone-documents/dji-full-20261027-v5
+```
+
+`batch-start` 启动独立协调进程，退出当前终端后仍可运行。默认 2 个解析进程、2 个图片处理进程，每个图片进程最多 3 个并发请求；没有待描述图片的文档使用独立处理队列，入库/索引也使用单独队列。任务按解析→图片处理→入库/向量化执行，单个任务失败不阻断其他文档，重试后仍失败会单独记录。进程被中断时，重新执行同一 `batch-start` 可从检查点恢复；不会重复处理已完成任务。机器重启后需重新启动协调进程。
+
+- 进度查看：`STATUS.md`、`status.json`、`index.html`（需通过本机 HTTP 服务访问）。
+- 固定任务计划与输入索引校验：`plan.json`；独立任务状态：`jobs/`。
+- 单阶段日志：`logs/`；成功缓存：`cache/`；共享模型限速状态：`rate_limits/`。
+- 结束后自动生成每个型号的 `models/<slug>/preview.html`、汇总 `REPORT.md` 和严格点 ID 核对 `verification-report.json`。
+- 最终每个型号会执行真实检索检查，未批量生成模型答案，不能据此认定所有型号的答案准确率已经验收。
+
+只有完成所有任务并通过最终核对，批次才报告全量完成。单纯启动进程、解析结束或已有部分向量都不代表全量完成。`batch-finalize --batch-root ...` 可重跑汇总核对，`_batch-stage` 为协调器内部接口。
+
+批量参数差异比较限定同一且明确的机型；多型号共用资料、同页多配置数值以及“低于/约”等限定值保留原文，不自动合并成统一标量。空的非中文文档仍保存原文件与排除理由，零切片无需调用嵌入模型。密集矢量页面采用有标记的整页图示回退，避免几何聚类占用无限时间。
+
+实际运行遇到了 Qwen 模型 TPM 限流，已加入跨进程、按模型分开的请求预算，以及 HTTP 429 冷却重试。可通过环境变量 `DOCUMENT_VLM_TPM`（默认 30000）、`DOCUMENT_EMBEDDING_TPM`（默认 350000）调整本批次客户端预算，预算不是账号的真实配额。遵循[服务方的限流与退避说明](https://docs.siliconflow.cn/docs/userguide/faqs/rate-limit-and-upgradation)，遇到限流自动降低预算，稳定后缓慢恢复；不会自动充值或切换模型。401/402/403 则保留检查点并停止新图片请求。限流失败不作为图片质量隔离；返回格式持续无效的说明会隔离，保留原图和正文。
 
 ## 运行环境
 
@@ -106,6 +129,29 @@ DOCUMENT_QDRANT_COLLECTION=drone_document_chunks_bge_m3_v1
 - 新库中 `content_chunks` 是独立文档切片表，不依赖业务库的论坛/视频表。这次试点没有将新文档自动接入现有网页问答入口。
 
 ## 已知限制与检查
+
+### Air 2S 证据质量改进（v4）
+
+已完成样例位于 `data/processed/drone-documents/air-2s-quality-20261027-v4/`。原始 v2 数据包保留。
+
+- **图形符号表格**：从原生 PDF 圆形矢量、径向短线和同页明确图例恢复常亮/闪烁/熄灭，不按电量区间猜测状态。保留每格符号坐标、图例和原图。Air 2S 原 PDF 第 28 页的 8 行电量表已恢复。目前只支持这种符号布局；缺少图例或形状不明时保留原图，不生成猜测表格。
+- **图片描述检查**：字段类型、长度、数组上限、重复项和异常连续编号均执行检查。软件章节和截图还由 VLM 对照原图核验。候选不合格时重试，持续不合格的说明隔离且不进入向量索引，原图保留。结构检查不能证明语义正确，模型复核也可能出错，最终回答仍以原文和原图为事实依据。
+- **参数脚注与差异**：保存 `footnote` 元素、`qualifies_parameter` 连接和引用脚注的参数片段。同章节相邻参数共享明确脚注标记时关联同一脚注。当前标准化起飞重量、最长飞行/悬停时间，保存每个来源的数值、条件、版本、页码和采集时间。Air 2S 的 19.4 / 32.4 km/h 测试条件差异标记为 `unresolved`，两边来源均保留；检索续航问题时强制补齐两边结构化证据。
+- **回答关键条件核验**：从召回原文抽取本试点的关键条件，包括返航额外上升距离、来源测试速度差异和明确灯态对应的区间边界。生成后执行规则检查与模型事实/引用复核，失败时修订，最多三次。仍未通过时，对于本试点已支持的返航操作和续航差异，可回退为带精确原文位置/结构化参数证明的来源记录，标记 `source_verified` 且 `answer_is_model_generated=false`；没有可验证回退则输出 `needs_review`，`evaluate` 退出码为 2。两种情况均保留失败草稿与检查历史，不把失败模型回答报告为已通过。它是有限范围的检查，不是一般答案正确性的证明。
+
+```bash
+.venv/bin/python -m tools.drone_documents prepare --model air-2s --bundle data/processed/drone-documents/air-2s-quality-new
+.venv/bin/python -m tools.drone_documents enrich --bundle data/processed/drone-documents/air-2s-quality-new --reuse-descriptions-from data/processed/drone-documents/air-2s-pilot-20261026-v2
+.venv/bin/python -m tools.drone_documents import --bundle data/processed/drone-documents/air-2s-quality-new
+.venv/bin/python -m tools.drone_documents index --bundle data/processed/drone-documents/air-2s-quality-new
+.venv/bin/python -m tools.drone_documents evaluate --bundle data/processed/drone-documents/air-2s-quality-new --questions-file tools/drone_documents/examples/air-2s-quality-questions.json --baseline-bundle data/processed/drone-documents/air-2s-pilot-20261026-v2
+```
+
+`--reuse-descriptions-from` 只复用候选，不跳过新检查。缓存命中也验证结构与截图核验状态。`parameter_claims.jsonl`、`source_differences.jsonl` 是可检查的来源记录，相同信息随参数元素/切片元数据保存到 PostgreSQL；无需为每种型号建库。Qdrant 保留派生索引，发布新处理版本后检索只读取有效版本。
+
+新报告包括灯态表、图片隔离情况、参数来源差异及逐问题核验结果。详细记录分别为 `caption-quality-report.json`、`baseline-caption-quality.json`、`answer-quality-report.json`。旧答案对照只检查同项关键条件，不把旧引用编号当作新证据编号核验。并发图片处理按原图顺序生成稳定切片，已发布内容不可原地覆盖。
+
+`verify-answers --bundle ...` 可对已保存的真实评估结果进行本地复核并应用可验证来源回退，无额外模型请求。它要求所有证据 ID 和文本与当前已校验的数据包一致，不接受其他版本的证据。报告区分“模型输出通过规则与模型检查”和“原文/结构化来源记录已核对”。本次 7 个问题中前者 5 题、后者 2 题，不能据此宣称模型答案准确率为 100%。
 
 本版是针对原生 DJI PDF 的可检查试点，并非通用神经网络版面分析器。多栏顺序依靠原生坐标排序、章节依据 PDF 书签，复杂无边框表格、同页多个小节仍需人工抽查；没有检测出的表格保留为原生文本。图片描述可能误读细小标号、按钮或箭头，应通过预览中的原图核验。OCR 回退已实现，但这批文件主要使用原生文本，不代表扫描文档能力已完成批量评估。
 

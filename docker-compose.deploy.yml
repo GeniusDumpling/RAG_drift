@@ -11,6 +11,11 @@ services:
       API_HOST: 0.0.0.0
       API_PORT: 8000
       DRONE_DOCUMENTS_DIR: /data/dji-documents
+      DOCUMENT_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/drone_documents
+      DOCUMENT_QDRANT_URL: http://qdrant:6333
+      DOCUMENT_QDRANT_COLLECTION: ${DOCUMENT_QDRANT_COLLECTION:-drone_document_chunks_bge_m3_v1}
+      DOCUMENT_ARTIFACTS_DIR: /data/document-artifacts
+      DOCUMENT_ARTIFACTS_SOURCE_ROOT: ${DOCUMENT_ARTIFACTS_SOURCE_ROOT:-${PWD}/data/processed/drone-documents}
       DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/intelligence_rag
       SYNC_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/intelligence_rag
       LITERATURE_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/literature_research
@@ -50,6 +55,7 @@ services:
       SCHEDULER_TOKEN_FILE: /run/rag-scheduler/token
     volumes:
       - ${DJI_DOCUMENTS_DIR:-./data/DJI无人机文档}:/data/dji-documents:ro
+      - ${DOCUMENT_ARTIFACTS_DIR:-./data/processed/drone-documents}:/data/document-artifacts:ro
       - ${SCHEDULER_BRIDGE_DIR:-./data/scheduler}:/run/rag-scheduler:ro
       - ${MODEL_CACHE_DIR:-./model-cache/huggingface}:/models/huggingface
     depends_on:

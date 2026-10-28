@@ -43,6 +43,7 @@ API_PATH_PREFIXES = (
     "/literature-papers",
     "/literature-artifacts",
     "/database",
+    "/document-library",
     "/drones",
     "/video-graph",
     "/docs",

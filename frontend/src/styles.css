@@ -69,6 +69,9 @@ body {
 
 ::selection { background: rgba(37, 99, 235, 0.18); }
 
+/* hidden 属性优先级兜底，避免被 display 规则覆盖 */
+[hidden] { display: none !important; }
+
 /* 细滚动条 */
 * { scrollbar-width: thin; scrollbar-color: #c3ccd9 transparent; }
 *::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -168,7 +171,7 @@ pre {
   transition: padding 0.2s ease;
 }
 .app-shell.sidebar-collapsed .nav { padding: 0; border-color: transparent; background: transparent; }
-.sidebar-content { min-width: 220px; }
+.sidebar-content { display: flex; flex-direction: column; flex: 1; min-width: 220px; min-height: 0; }
 
 /* 收起/展开按钮：骑在分割线的小圆钮 */
 .nav .sidebar-toggle {
@@ -222,7 +225,10 @@ pre {
   box-shadow: 0 0 0 4px var(--accent-soft);
 }
 
-.nav nav { margin-top: 18px; }
+.nav nav { margin-top: 18px; display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.nav-user-section { display: grid; gap: 1px; }
+.nav-admin-section { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
+.nav-section-label { display: inline-flex; align-items: center; gap: 6px; }
 .nav .nav-section-toggle {
   display: flex;
   width: 100%;
@@ -241,10 +247,12 @@ pre {
   text-transform: uppercase;
 }
 .nav .nav-section-toggle:hover:not(:disabled) { background: var(--surface-subtle); color: var(--text); }
-.nav .nav-section-toggle span:last-child { font-size: 1rem; line-height: 1; }
+.nav .nav-section-toggle > span:last-child { font-size: 1rem; line-height: 1; }
 
 .nav button:not(.nav-section-toggle):not(.sidebar-toggle) {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
   min-height: 38px;
   margin: 1px 0;
@@ -256,6 +264,7 @@ pre {
   font-weight: 500;
   text-align: left;
 }
+.nav button:not(.nav-section-toggle):not(.sidebar-toggle) svg { flex-shrink: 0; }
 .nav button:not(.nav-section-toggle):not(.sidebar-toggle):hover:not(:disabled) {
   background: var(--surface-subtle);
   color: var(--text);
@@ -365,6 +374,7 @@ pre {
   font-weight: 500;
   line-height: 1;
 }
+.metric-label { display: inline-flex; align-items: center; gap: 6px; }
 .two-column { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .counter-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 .counter {
@@ -425,19 +435,13 @@ pre {
 /* ==========================================================================
    表单布局
    ========================================================================== */
-.search-entry {
-  grid-template-columns: minmax(180px, 0.5fr) minmax(0, 1.5fr);
-  align-items: center;
-  gap: 24px;
-}
-.search-entry, .controls-card, .form-grid { display: grid; }
-.search-entry label, .controls-card label, .form-grid label {
+.controls-card, .form-grid { display: grid; }
+.controls-card label, .form-grid label {
   color: var(--text-secondary);
   font-size: 0.8125rem;
   font-weight: 600;
 }
 .inline-form, .button-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-top: 16px; }
-.search-entry .inline-form { margin-top: 0; }
 .inline-form input { flex: 1 1 240px; }
 .button-row button, .inline-form button { min-width: 120px; }
 .button-row .link-button { min-height: auto; padding: 0; }
@@ -449,6 +453,18 @@ pre {
 }
 .checkbox-label { display: flex; align-items: center; gap: 8px; min-height: 40px; }
 .checkbox-label input { width: auto; min-height: auto; }
+
+.advanced-filters { margin-top: 12px; }
+.advanced-filters summary {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.advanced-filters summary:hover { color: var(--text); }
+.advanced-filters[open] summary { margin-bottom: 12px; }
 
 /* ==========================================================================
    列表与键值
@@ -913,11 +929,12 @@ progress { width: 100%; height: 6px; accent-color: var(--accent); }
   .brand-block { padding-bottom: 12px; }
   .nav nav { margin-top: 12px; }
   .nav-section-toggle { width: 100%; }
-  .nav nav > div { display: flex; flex-wrap: wrap; gap: 4px; }
+  .nav nav > .nav-user-section { display: flex; flex-wrap: wrap; gap: 4px; }
+  .nav-admin-section { margin-top: 12px; }
   .nav button:not(.nav-section-toggle):not(.sidebar-toggle) { width: auto; margin: 0; }
   .app-topbar { padding: 0 16px; }
   .main { padding: 24px 16px; }
-  .two-column, .metric-grid, .search-entry { grid-template-columns: 1fr; }
+  .two-column, .metric-grid { grid-template-columns: 1fr; }
   .form-grid, .controls-card, .database-controls { grid-template-columns: 1fr; gap: 8px; }
   .form-grid label:not(.checkbox-label) { margin-top: 8px; }
   .dense-list li { grid-template-columns: 1fr; gap: 6px; }

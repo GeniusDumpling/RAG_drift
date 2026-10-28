@@ -32,6 +32,13 @@ describe('App database navigation', () => {
       if (url.endsWith('/contents?limit=10&offset=0')) {
         return Promise.resolve(jsonResponse({ items: [], total: 0, limit: 10, offset: 0 }));
       }
+      if (url.endsWith('/database/catalog')) {
+        return Promise.resolve(jsonResponse({ items: [
+          { id: 'primary', label: '业务数据库', database_name: 'intelligence_rag', collection: 'content_chunks_v1' },
+          { id: 'documents', label: '文档数据库', database_name: 'drone_documents', collection: 'drone_document_chunks_bge_m3_v1' },
+          { id: 'literature', label: '文献数据库', database_name: 'literature_research', collection: null },
+        ] }));
+      }
       if (url.endsWith('/database/overview')) {
         return Promise.resolve(
           jsonResponse({
@@ -70,6 +77,7 @@ describe('App database navigation', () => {
 
     render(<App />);
 
+    fireEvent.click(screen.getByRole('button', { name: '管理' }));
     fireEvent.click(screen.getByRole('button', { name: '数据库' }));
 
     expect(await screen.findByRole('heading', { name: '数据库' })).toBeInTheDocument();

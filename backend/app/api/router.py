@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api import (
     contents,
     database,
+    document_library,
     drones,
     health,
     literature,
@@ -19,6 +20,7 @@ api_router.include_router(sources.router)
 api_router.include_router(contents.router)
 api_router.include_router(search.router)
 api_router.include_router(database.router)
+api_router.include_router(document_library.router)
 api_router.include_router(drones.router)
 api_router.include_router(literature.router)
 api_router.include_router(supplier.router)

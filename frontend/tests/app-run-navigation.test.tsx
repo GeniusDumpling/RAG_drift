@@ -88,7 +88,7 @@ const chunk: ContentChunk = {
 const contentItem: ContentListItem = {
   id: 'content-1',
   source_site_id: 'source-1',
-  item_type: 'doc_page',
+  item_type: 'post',
   canonical_url: 'https://example.test/docs/setup',
   title: 'Setup Guide',
   author_name: 'Ops Writer',
@@ -146,30 +146,23 @@ describe('App run navigation', () => {
     render(<App />);
 
     const primaryNav = screen.getByRole('navigation', { name: '主导航 Primary' });
-    const monitoringToggle = within(primaryNav).getByRole('button', { name: '系统监控' });
-    const workspaceToggle = within(primaryNav).getByRole('button', { name: '工作空间' });
+    const adminToggle = within(primaryNav).getByRole('button', { name: '管理' });
     const sidebarToggle = screen.getByRole('button', { name: '收起左侧导航' });
     const dashboardButton = within(primaryNav).getByRole('button', { name: '总览' });
     const answerButton = within(primaryNav).getByRole('button', { name: 'AI 问答' });
 
     expect(dashboardButton).toHaveAttribute('aria-current', 'page');
     expect(answerButton).not.toHaveAttribute('aria-current');
-    expect(monitoringToggle).toHaveAttribute('aria-expanded', 'true');
-    expect(workspaceToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(adminToggle).toHaveAttribute('aria-expanded', 'false');
     expect(within(primaryNav).getAllByRole('button').map((button) => button.textContent?.replace(/[+−]/g, ''))).toEqual([
-      '系统监控',
       '总览',
-      '数据源',
-      '运行记录',
-      '内容详情',
-      '数据库',
-      '工作空间',
       '检索',
       'AI 问答',
       '无人机信息',
       '供应链',
       '文献研究',
       '视频知识图谱',
+      '管理',
     ]);
 
     fireEvent.click(answerButton);
@@ -177,13 +170,13 @@ describe('App run navigation', () => {
     expect(answerButton).toHaveAttribute('aria-current', 'page');
     expect(dashboardButton).not.toHaveAttribute('aria-current');
 
-    fireEvent.click(monitoringToggle);
-    expect(monitoringToggle).toHaveAttribute('aria-expanded', 'false');
-    expect(within(primaryNav).queryByRole('button', { name: '总览' })).not.toBeInTheDocument();
+    fireEvent.click(adminToggle);
+    expect(adminToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(within(primaryNav).getByRole('button', { name: '数据库' })).toBeInTheDocument();
 
-    fireEvent.click(workspaceToggle);
-    expect(workspaceToggle).toHaveAttribute('aria-expanded', 'false');
-    expect(within(primaryNav).queryByRole('button', { name: '总览' })).not.toBeInTheDocument();
+    fireEvent.click(adminToggle);
+    expect(adminToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(within(primaryNav).queryByRole('button', { name: '数据库' })).not.toBeInTheDocument();
 
     fireEvent.click(sidebarToggle);
     expect(sidebarToggle).toHaveAttribute('aria-expanded', 'false');
@@ -207,8 +200,12 @@ describe('App run navigation', () => {
       if (url.endsWith('/contents?limit=10&offset=0')) {
         return Promise.resolve(jsonResponse(page<ContentListItem>([], 10)));
       }
-      if (url.endsWith('/contents?limit=100&offset=0')) {
+      if (url.endsWith('/contents?limit=100&offset=0&item_type=post')) {
         return Promise.resolve(jsonResponse(page<ContentListItem>([contentItem], 25)));
+      }
+      if (url.endsWith('/contents?limit=100&offset=0&item_type=thread')
+          || url.endsWith('/contents?limit=100&offset=0&item_type=comment')) {
+        return Promise.resolve(jsonResponse(page<ContentListItem>([], 100)));
       }
       if (url.endsWith('/contents/content-1')) {
         return Promise.resolve(jsonResponse(detail));
@@ -228,6 +225,7 @@ describe('App run navigation', () => {
 
     render(<App />);
 
+    fireEvent.click(screen.getByRole('button', { name: '管理' }));
     fireEvent.click(screen.getByRole('button', { name: '内容详情' }));
     expect(await screen.findByRole('heading', { name: 'Setup Guide' })).toBeInTheDocument();
 

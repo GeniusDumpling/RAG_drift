@@ -5,6 +5,7 @@ import { itemTypeLabel } from '../utils/links';
 import type { ContentDetail, ContentListItem, Page } from '../api/types';
 import { formatErrorMessage } from '../utils/errors';
 import { safeExternalHref } from '../utils/links';
+import { DocumentLibraryPanel } from './DocumentLibraryPanel';
 
 const EMPTY_STATE_COPY = '暂无数据。请先启动后端并运行 demo seed 脚本。';
 const CONTENT_UNAVAILABLE_COPY = 'Content 详情暂不可用：API 请求失败。';
@@ -13,6 +14,7 @@ const LOADING_CONTENT_DETAIL_COPY = '正在加载 Content 详情...';
 const CONTENT_VIEW_OPTIONS = [
   { value: 'post', label: '帖子类数据' },
   { value: 'video_description', label: '视频描述类数据' },
+  { value: 'document', label: '文档处理数据' },
 ] as const;
 
 type ContentViewType = (typeof CONTENT_VIEW_OPTIONS)[number]['value'];
@@ -53,6 +55,10 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
   const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
+    if (contentViewType === 'document') {
+      setListLoading(false);
+      return;
+    }
     let ignore = false;
     setListError('');
     setListLoading(true);
@@ -87,6 +93,11 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
 
   useEffect(() => {
     setDetailError('');
+    if (contentViewType === 'document') {
+      setDetail(undefined);
+      setDetailLoading(false);
+      return;
+    }
     if (!activeContentId) {
       setDetail(undefined);
       setDetailLoading(false);
@@ -115,7 +126,7 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
     return () => {
       ignore = true;
     };
-  }, [activeContentId]);
+  }, [activeContentId, contentViewType]);
 
   const displayedDetail = detail?.id === activeContentId ? detail : undefined;
   const indexedTextPreview = useMemo(() => {
@@ -167,7 +178,7 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
       <div className="page-title">
         <p className="eyebrow">语料库</p>
         <h1>内容详情</h1>
-        <p className="muted">选择查看帖子类或视频描述记录，并展示其原始快照、分块和提取元数据。</p>
+        <p className="muted">查看帖子、视频描述或文档处理后的正文、表格、图片与检索切片。</p>
       </div>
 
       <div className="card controls-card">
@@ -179,6 +190,7 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
             </option>
           ))}
         </select>
+        {contentViewType !== 'document' ? <>
         <label htmlFor="content-selector">内容</label>
         {contentOptions.length ? (
           <select id="content-selector" value={activeContentId} onChange={handleContentChange}>
@@ -196,8 +208,10 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
             placeholder="粘贴 content item id"
           />
         )}
+        </> : null}
       </div>
 
+      {contentViewType === 'document' ? <DocumentLibraryPanel /> : <>
       {listError ? (
         <p className="card error-text" role="alert">
           {listError}
@@ -327,6 +341,7 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
       ) : (
         <p className="card empty-state">{EMPTY_STATE_COPY}</p>
       )}
+      </>}
     </section>
   );
 }

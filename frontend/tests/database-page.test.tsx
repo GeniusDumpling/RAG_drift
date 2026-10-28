@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DatabasePage } from '../src/pages/DatabasePage';
@@ -127,9 +127,48 @@ afterEach(() => {
 });
 
 describe('DatabasePage', () => {
-  it('renders PostgreSQL/Qdrant overview, table rows, and psql handbook', async () => {
+  it('switches databases and clears the previous table, query and rows', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://localhost');
+      const documents = url.searchParams.get('database') === 'documents';
+      if (url.pathname === '/database/catalog') return Promise.resolve(jsonResponse({ items: [
+        { id: 'primary', label: '业务数据库', database_name: 'intelligence_rag' },
+        { id: 'documents', label: '文档数据库', database_name: 'drone_documents' },
+      ] }));
+      if (url.pathname === '/database/overview') return Promise.resolve(jsonResponse({ ...overview,
+        postgres: { ...overview.postgres, database_name: documents ? 'drone_documents' : 'intelligence_rag' },
+      }));
+      if (url.pathname === '/database/tables') return Promise.resolve(jsonResponse(documents ? {
+        items: [{ ...tables.items[0], table_name: 'document_versions', label: '文档版本' }], total: 1,
+      } : tables));
+      if (url.pathname.includes('/rows')) return Promise.resolve(jsonResponse(documents ? {
+        ...itemRows, items: [{ id: 'doc-1', preview: { title: 'DJI 使用手册' } }],
+      } : itemRows));
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<DatabasePage />);
+    await screen.findByText('Telemetry firmware report');
+    fireEvent.change(screen.getByLabelText('表内搜索'), { target: { value: 'firmware' } });
+    fireEvent.click(screen.getByRole('button', { name: '搜索表数据' }));
+    fireEvent.change(screen.getByLabelText('选择数据库'), { target: { value: 'documents' } });
+    expect(await screen.findByText('DJI 使用手册')).toBeInTheDocument();
+    expect(screen.queryByText('Telemetry firmware report')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('表内搜索')).toHaveValue('');
+    expect(screen.getByLabelText('选择表')).toHaveValue('document_versions');
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/document_versions/rows?limit=50&offset=0&database=documents'), undefined);
+  });
+
+  it('renders PostgreSQL/Qdrant overview and rows without the command handbook', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith('/database/catalog')) {
+        return Promise.resolve(jsonResponse({ items: [
+          { id: 'primary', label: '业务数据库', database_name: 'intelligence_rag', collection: 'content_chunks_v1' },
+          { id: 'documents', label: '文档数据库', database_name: 'drone_documents', collection: 'drone_document_chunks_bge_m3_v1' },
+          { id: 'literature', label: '文献数据库', database_name: 'literature_research', collection: null },
+        ] }));
+      }
       if (url.endsWith('/database/overview')) {
         return Promise.resolve(jsonResponse(overview));
       }
@@ -156,9 +195,8 @@ describe('DatabasePage', () => {
     expect(screen.queryByText('success / qdrant')).not.toBeInTheDocument();
     expect(await screen.findByText('Telemetry firmware report')).toBeInTheDocument();
 
-    const handbook = screen.getByRole('region', { name: 'psql 使用手册' });
-    expect(within(handbook).getByText(/psql -h 127\.0\.0\.1 -p 54329/)).toBeInTheDocument();
-    expect(within(handbook).getByText(/select embed_status, vector_backend/)).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'psql 使用手册' })).not.toBeInTheDocument();
+    expect(screen.queryByText('psql / Qdrant 命令手册')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('选择表'), { target: { value: 'content_chunks' } });
     expect(await screen.findByText('chunk-1')).toBeInTheDocument();
@@ -168,6 +206,13 @@ describe('DatabasePage', () => {
   it('renders the table without row detail controls', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith('/database/catalog')) {
+        return Promise.resolve(jsonResponse({ items: [
+          { id: 'primary', label: '业务数据库', database_name: 'intelligence_rag', collection: 'content_chunks_v1' },
+          { id: 'documents', label: '文档数据库', database_name: 'drone_documents', collection: 'drone_document_chunks_bge_m3_v1' },
+          { id: 'literature', label: '文献数据库', database_name: 'literature_research', collection: null },
+        ] }));
+      }
       if (url.endsWith('/database/overview')) {
         return Promise.resolve(jsonResponse(overview));
       }
@@ -192,6 +237,13 @@ describe('DatabasePage', () => {
   it('clears stale rows when the next table rows request fails', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith('/database/catalog')) {
+        return Promise.resolve(jsonResponse({ items: [
+          { id: 'primary', label: '业务数据库', database_name: 'intelligence_rag', collection: 'content_chunks_v1' },
+          { id: 'documents', label: '文档数据库', database_name: 'drone_documents', collection: 'drone_document_chunks_bge_m3_v1' },
+          { id: 'literature', label: '文献数据库', database_name: 'literature_research', collection: null },
+        ] }));
+      }
       if (url.endsWith('/database/overview')) {
         return Promise.resolve(jsonResponse(overview));
       }
@@ -221,6 +273,13 @@ describe('DatabasePage', () => {
   it('passes keyword search to the selected table rows endpoint', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith('/database/catalog')) {
+        return Promise.resolve(jsonResponse({ items: [
+          { id: 'primary', label: '业务数据库', database_name: 'intelligence_rag', collection: 'content_chunks_v1' },
+          { id: 'documents', label: '文档数据库', database_name: 'drone_documents', collection: 'drone_document_chunks_bge_m3_v1' },
+          { id: 'literature', label: '文献数据库', database_name: 'literature_research', collection: null },
+        ] }));
+      }
       if (url.endsWith('/database/overview')) {
         return Promise.resolve(jsonResponse(overview));
       }
@@ -256,7 +315,7 @@ describe('DatabasePage', () => {
 
     render(<DatabasePage />);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('无法加载数据库展示数据: backend offline');
+    expect(await screen.findByText('无法加载数据库展示数据: backend offline')).toBeInTheDocument();
     expect(screen.getByText('数据库展示暂不可用。')).toBeInTheDocument();
   });
 });

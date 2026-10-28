@@ -391,10 +391,13 @@ async def _get_postgres_overview(session: AsyncSession) -> PostgresOverview:
     )
 
 
-async def fetch_qdrant_collection_status() -> QdrantCollectionStatus:
+async def fetch_qdrant_collection_status(
+    qdrant_url: str | None = None, collection: str | None = None
+) -> QdrantCollectionStatus:
     settings = get_settings()
-    collection = settings.qdrant_collection
-    if settings.qdrant_url == ":memory:" or settings.qdrant_url.startswith("memory://"):
+    collection = collection or settings.qdrant_collection
+    qdrant_url = qdrant_url or settings.qdrant_url
+    if qdrant_url == ":memory:" or qdrant_url.startswith("memory://"):
         return QdrantCollectionStatus(
             status="unavailable",
             collection=collection,
@@ -404,7 +407,7 @@ async def fetch_qdrant_collection_status() -> QdrantCollectionStatus:
             error="Qdrant URL uses process-local memory backend",
         )
 
-    url = f"{settings.qdrant_url.rstrip('/')}/collections/{collection}"
+    url = f"{qdrant_url.rstrip('/')}/collections/{collection}"
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             response = await client.get(url)

@@ -1,4 +1,6 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+
+import { Activity, FileText, History, Rss } from 'lucide-react';
 
 import { listContents, listJobs, listRuns, listSources } from '../api/client';
 import { itemTypeLabel } from '../utils/links';
@@ -15,15 +17,10 @@ type DashboardData = {
   contents?: Page<ContentListItem>;
 };
 
-type DashboardPageProps = {
-  onSearch?: (query: string) => void;
-};
-
-export function DashboardPage({ onSearch }: DashboardPageProps) {
+export function DashboardPage() {
   const [data, setData] = useState<DashboardData>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [query, setQuery] = useState('');
 
   useEffect(() => {
     let ignore = false;
@@ -66,53 +63,32 @@ export function DashboardPage({ onSearch }: DashboardPageProps) {
     data.sources?.items.length || data.jobs?.items.length || data.runs?.items.length || data.contents?.items.length,
   );
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmed = query.trim();
-    if (trimmed) {
-      onSearch?.(trimmed);
-    }
-  }
-
   return (
     <section>
       <div className="page-title">
         <p className="eyebrow">工作台</p>
         <h1>RAG系统总览</h1>
-        <p className="muted">观察数据源状态、爬取执行、索引内容和证据。</p>
+        <p className="muted">了解当前收录规模与系统运行状况。</p>
       </div>
 
       <div className="grid metric-grid">
         <div className="card metric-card">
-          <span className="muted">活跃 Sources</span>
+          <span className="muted metric-label"><Rss aria-hidden="true" size={15} />数据源</span>
           <strong>{metrics.activeSources ?? '—'}</strong>
         </div>
         <div className="card metric-card">
-          <span className="muted">启用 Jobs</span>
+          <span className="muted metric-label"><Activity aria-hidden="true" size={15} />采集任务</span>
           <strong>{metrics.enabledJobs ?? '—'}</strong>
         </div>
         <div className="card metric-card">
-          <span className="muted">24h Runs</span>
+          <span className="muted metric-label"><History aria-hidden="true" size={15} />24 小时运行</span>
           <strong>{metrics.runs24h ?? '—'}</strong>
         </div>
         <div className="card metric-card">
-          <span className="muted">最近 Items</span>
+          <span className="muted metric-label"><FileText aria-hidden="true" size={15} />已收录内容</span>
           <strong>{metrics.recentItems ?? '—'}</strong>
         </div>
       </div>
-
-      <form className="card search-entry" onSubmit={handleSubmit}>
-        <label htmlFor="dashboard-query">检索已索引内容</label>
-        <div className="inline-form">
-          <input
-            id="dashboard-query"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="telemetry disable procedure"
-          />
-          <button type="submit">打开检索</button>
-        </div>
-      </form>
 
       {error ? (
         <p className="card error-text" role="alert">

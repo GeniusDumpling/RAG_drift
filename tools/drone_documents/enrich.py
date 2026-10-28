@@ -34,9 +34,17 @@ is_decorative（布尔值）。描述不超过150字，各数组最多8项、标
 
 
 async def enrich(
-    root: Path, *, concurrency=3, reuse_from: Path | None = None, cache_root: Path | None = None
+    root: Path,
+    *,
+    concurrency=3,
+    reuse_from: Path | None = None,
+    cache_root: Path | None = None,
+    chunk_builder=None,
+    quality_builder=None,
+    system_prompt=None,
 ) -> dict:
     manifest = validate_bundle(root)
+    system = system_prompt or SYSTEM
     settings = get_settings()
     assets = {a["id"]: a for a in read_jsonl(root / "assets.jsonl")}
     documents = {d["id"]: d for d in read_jsonl(root / "documents.jsonl")}
@@ -94,7 +102,12 @@ async def enrich(
             )
             cache_key = digest(
                 (
-                    asset["sha256"] + user + settings.vlm_model + PROMPT_VERSION + QUALITY_VERSION
+                    asset["sha256"]
+                    + user
+                    + settings.vlm_model
+                    + PROMPT_VERSION
+                    + QUALITY_VERSION
+                    + (system if system_prompt is not None else "")
                 ).encode()
             )
             cache = (cache_root or root) / "vlm-cache" / (cache_key + ".json")
@@ -130,7 +143,7 @@ async def enrich(
                                     client,
                                     settings,
                                     [
-                                        {"role": "system", "content": SYSTEM},
+                                        {"role": "system", "content": system},
                                         {
                                             "role": "user",
                                             "content": [
@@ -307,8 +320,9 @@ async def enrich(
         element["reading_order"] = index
     write_jsonl(root / "elements.jsonl", elements)
     write_jsonl(root / "links.jsonl", links)
-    annotate_software_sections(root)
-    chunks = build_chunks(root)
+    if chunk_builder is None:
+        annotate_software_sections(root)
+    chunks = (chunk_builder or build_chunks)(root)
     manifest.update(
         {
             "stage": "enriched" if not failures else "enrichment_partial",
@@ -319,7 +333,9 @@ async def enrich(
         }
     )
     seal_bundle(root, manifest)
-    report = quality(list(documents.values()), read_jsonl(root / "pages.jsonl"), elements)
+    report = (quality_builder or quality)(
+        list(documents.values()), read_jsonl(root / "pages.jsonl"), elements
+    )
     report.update(
         {
             "chunks": len(chunks),

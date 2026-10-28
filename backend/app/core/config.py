@@ -12,6 +12,17 @@ class Settings(BaseSettings):
 
     app_env: str = Field(default="dev", alias="APP_ENV")
     database_browser_enabled: bool = Field(default=False, alias="DATABASE_BROWSER_ENABLED")
+    document_database_url: str | None = Field(default=None, alias="DOCUMENT_DATABASE_URL")
+    document_qdrant_url: str | None = Field(default=None, alias="DOCUMENT_QDRANT_URL")
+    document_qdrant_collection: str = Field(
+        default="drone_document_chunks_bge_m3_v1", alias="DOCUMENT_QDRANT_COLLECTION"
+    )
+    document_artifacts_dir: Path = Field(
+        default=Path("data/processed/drone-documents"), alias="DOCUMENT_ARTIFACTS_DIR"
+    )
+    document_artifacts_source_root: Path | None = Field(
+        default=None, alias="DOCUMENT_ARTIFACTS_SOURCE_ROOT"
+    )
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
     api_port: int = Field(default=8000, alias="API_PORT")
     drone_documents_dir: Path = Field(

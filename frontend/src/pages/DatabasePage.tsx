@@ -1,57 +1,12 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
-import { getDatabaseOverview, listDatabaseRows, listDatabaseTables } from '../api/client';
-import type { DatabaseOverview, DatabaseTableMeta, DatabaseTableRowsPage } from '../api/types';
+import { getDatabaseOverview, listDatabaseRows, listDatabaseTables, listDatabaseTargets } from '../api/client';
+import type { DatabaseOverview, DatabaseTableMeta, DatabaseTableRowsPage, DatabaseTarget } from '../api/types';
 import { formatErrorMessage } from '../utils/errors';
 
 const PAGE_SIZE = 50;
 const LOADING_COPY = '正在加载数据库展示数据...';
 const EMPTY_COPY = '数据库展示暂不可用。';
-
-const COMMAND_GROUPS = [
-  {
-    title: '检查 PostgreSQL 是否在线',
-    language: 'bash',
-    command: 'pg_isready -h 127.0.0.1 -p 54329 -d intelligence_rag',
-  },
-  {
-    title: '进入 psql 交互模式',
-    language: 'bash',
-    command: 'psql -h 127.0.0.1 -p 54329 -U intelligence -d intelligence_rag',
-  },
-  {
-    title: 'psql 内部常用命令',
-    language: 'sql',
-    command: '\\dt\n\\d content_items\n\\x auto\n\\q',
-  },
-  {
-    title: '查看核心表数量',
-    language: 'sql',
-    command:
-      "select 'source_sites' as table_name, count(*) from source_sites\n" +
-      "union all select 'crawl_runs', count(*) from crawl_runs\n" +
-      "union all select 'raw_pages', count(*) from raw_pages\n" +
-      "union all select 'content_items', count(*) from content_items\n" +
-      "union all select 'content_chunks', count(*) from content_chunks\n" +
-      "union all select 'search_queries', count(*) from search_queries;",
-  },
-  {
-    title: '查看 chunk 与 Qdrant 的关联状态',
-    language: 'sql',
-    command:
-      'select embed_status, vector_backend, count(*) as chunk_count\n' +
-      'from content_chunks\n' +
-      'group by 1, 2\n' +
-      'order by 1, 2;',
-  },
-  {
-    title: '查看 Qdrant 健康和 collection',
-    language: 'bash',
-    command:
-      'curl -fsS http://127.0.0.1:6333/healthz\n' +
-      'curl -fsS http://127.0.0.1:6333/collections/content_chunks_v1 | python3 -m json.tool',
-  },
-];
 
 export function DatabasePage() {
   const [overview, setOverview] = useState<DatabaseOverview | null>(null);
@@ -66,20 +21,31 @@ export function DatabasePage() {
   const [rowsLoading, setRowsLoading] = useState(false);
   const [error, setError] = useState('');
   const [rowsError, setRowsError] = useState('');
-  const [copyMessage, setCopyMessage] = useState('');
+  const [database, setDatabase] = useState('primary');
+  const [targets, setTargets] = useState<DatabaseTarget[]>([]);
+  const [catalogError, setCatalogError] = useState('');
+  const [revision, setRevision] = useState(0);
+
+  useEffect(() => {
+    let ignore = false;
+    listDatabaseTargets().then(result => { if (!ignore) setTargets(result.items); })
+      .catch(reason => { if (!ignore) setCatalogError(formatErrorMessage('无法加载数据库列表', reason)); });
+    return () => { ignore = true; };
+  }, []);
 
   useEffect(() => {
     let ignore = false;
     setLoading(true);
     setError('');
-    Promise.all([getDatabaseOverview(), listDatabaseTables()])
+    setOverview(null);
+    Promise.all([getDatabaseOverview(database), listDatabaseTables(database)])
       .then(([overviewResult, tablesResult]) => {
         if (ignore) {
           return;
         }
         setOverview(overviewResult);
         setTables(tablesResult.items);
-        setSelectedTable((current) => current || tablesResult.items[0]?.table_name || '');
+        setSelectedTable((current) => tablesResult.items.some(t => t.table_name === current) ? current : tablesResult.items[0]?.table_name || '');
         setLoading(false);
       })
       .catch((reason: unknown) => {
@@ -92,7 +58,7 @@ export function DatabasePage() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [database, revision]);
 
   useEffect(() => {
     if (!selectedTable) {
@@ -103,7 +69,7 @@ export function DatabasePage() {
     setRowsLoading(true);
     setRowsError('');
     setRowsPage(null);
-    listDatabaseRows(selectedTable, { limit: PAGE_SIZE, offset, q: appliedQuery })
+    listDatabaseRows(selectedTable, { limit: PAGE_SIZE, offset, q: appliedQuery, database })
       .then((page) => {
         if (ignore) {
           return;
@@ -122,7 +88,7 @@ export function DatabasePage() {
     return () => {
       ignore = true;
     };
-  }, [selectedTable, offset, appliedQuery]);
+  }, [selectedTable, offset, appliedQuery, database, revision]);
 
   const selectedTableMeta = useMemo(
     () => tables.find((table) => table.table_name === selectedTable) || null,
@@ -142,19 +108,6 @@ export function DatabasePage() {
     setOffset(0);
   }
 
-  async function copyCommand(title: string, command: string) {
-    if (!navigator.clipboard) {
-      setCopyMessage('当前浏览器不支持复制。');
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopyMessage(`已复制：${title}`);
-    } catch {
-      setCopyMessage('复制失败，请手动复制。');
-    }
-  }
-
   const canGoPrevious = offset > 0;
   const canGoNext = rowsPage ? offset + rowsPage.limit < rowsPage.total : false;
 
@@ -165,6 +118,21 @@ export function DatabasePage() {
         <h1>数据库</h1>
         <p className="muted">只读展示，不支持 SQL 执行或写入操作。</p>
       </div>
+
+      <div className="card database-controls">
+        <label htmlFor="database-select">选择数据库</label>
+        <select id="database-select" value={database} disabled={!targets.length} onChange={event => {
+          setDatabase(event.target.value); setSelectedTable(''); setTables([]); setOverview(null);
+          setRowsPage(null); setRowsError(''); setQuery(''); setAppliedQuery(''); setOffset(0);
+        }}>
+          {targets.length ? targets.map(target => <option key={target.id} value={target.id}>
+            {target.label} · {target.database_name}
+          </option>) : <option value="primary">业务数据库</option>}
+        </select>
+        <button type="button" disabled={loading || rowsLoading} onClick={() => setRevision(value => value + 1)}>刷新数据</button>
+      </div>
+      {catalogError ? <p className="error-text" role="alert">{catalogError}</p> : null}
+      {database === 'documents' ? <p className="muted">文档库包含已发布与处理中版本。批处理期间计数持续变化；向量对账包含保留的历史版本。</p> : null}
 
       {error ? (
         <p className="card error-text" role="alert">
@@ -243,29 +211,7 @@ export function DatabasePage() {
           ) : null}
       </section>
 
-      <section className="card command-handbook" aria-label="psql 使用手册">
-        <div className="card-header">
-          <div>
-            <h2>psql / Qdrant 命令手册</h2>
-            <p className="muted compact">用于终端验证数据库和向量库接入；前端不会展示数据库密码。</p>
-          </div>
-          {copyMessage ? <span className="badge">{copyMessage}</span> : null}
-        </div>
-        <div className="grid command-grid">
-          {COMMAND_GROUPS.map((group) => (
-            <article className="command-card" key={group.title}>
-              <div className="card-header compact-header">
-                <h3>{group.title}</h3>
-                <button type="button" onClick={() => copyCommand(group.title, group.command)}>
-                  复制
-                </button>
-              </div>
-              <p className="muted compact">{group.language}</p>
-              <pre>{group.command}</pre>
-            </article>
-          ))}
-        </div>
-      </section>
+
     </section>
   );
 }
@@ -282,7 +228,7 @@ function OverviewCards({ overview }: { overview: DatabaseOverview }) {
         </div>
         <div className="card metric-card">
           <span className="muted">Qdrant</span>
-          <strong>{overview.qdrant.status}</strong>
+          <strong>{overview.qdrant.status === 'not_applicable' ? '不适用' : overview.qdrant.status}</strong>
           <span>{overview.qdrant.collection}</span>
         </div>
         <div className="card metric-card">
@@ -292,7 +238,7 @@ function OverviewCards({ overview }: { overview: DatabaseOverview }) {
         </div>
         <div className="card metric-card">
           <span className="muted">对账状态</span>
-          <strong>{overview.reconciliation.status}</strong>
+          <strong>{overview.reconciliation.status === 'not_applicable' ? '不适用' : overview.reconciliation.status}</strong>
           <span>
             PostgreSQL {overview.reconciliation.postgres_qdrant_chunk_count} / Qdrant{' '}
             {overview.reconciliation.qdrant_points_count ?? '—'}

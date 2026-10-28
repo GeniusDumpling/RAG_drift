@@ -426,10 +426,12 @@ async def index_bundle(
                                         "corpus": "drone_documents",
                                         "document_version_id": doc["id"],
                                         "processing_id": pid,
-                                        "manufacturer": "DJI",
+                                        "manufacturer": doc["metadata_json"].get(
+                                            "manufacturer", "DJI"
+                                        ),
                                         "model_slugs": doc["model_slugs"],
                                         "document_type": doc["document_type"],
-                                        "index_language": "zh-Hans",
+                                        "index_language": row["index_language"],
                                         "chunk_type": row["chunk_type"],
                                         "content_hash": row["content_hash"],
                                         "embedding_model": settings.embedding_model,
@@ -510,6 +512,7 @@ async def query(
     root: Path, question: str, *, database_url=None, qdrant_url=None, collection=None, top_k=5
 ) -> dict:
     dsn, qurl, collection = configuration(database_url, qdrant_url, collection)
+    manifest = read_json(root / "manifest.json")
     with psycopg.connect(dsn, row_factory=dict_row) as conn:
         active = [
             str(r["active_processing_id"])
@@ -517,8 +520,8 @@ async def query(
                 """SELECT DISTINCT
             v.active_processing_id FROM document_versions v JOIN document_model_links l
             ON l.document_version_id=v.id JOIN drone_models m ON m.id=l.model_id
-            WHERE m.slug=%s AND v.active_processing_id IS NOT NULL""",
-                (read_json(root / "manifest.json")["model_slug"],),
+            WHERE m.slug=ANY(%s) AND v.active_processing_id IS NOT NULL""",
+                (manifest.get("scope_slugs", [manifest["model_slug"]]),),
             )
         ]
         if not active:
@@ -529,13 +532,17 @@ async def query(
             (r"premiere", "premiere_pro"),
             (r"final\s*cut", "final_cut_pro"),
         ]:
-            if re.search(pattern, question, re.I):
+            if manifest.get("manufacturer", "DJI") == "DJI" and re.search(pattern, question, re.I):
                 software = name
                 break
         conditions = [
             models.FieldCondition(key="processing_id", match=models.MatchAny(any=active)),
-            models.FieldCondition(key="index_language", match=models.MatchValue(value="zh-Hans")),
         ]
+        languages = manifest["config"].get("index_languages", ["zh-Hans"])
+        if languages:
+            conditions.append(
+                models.FieldCondition(key="index_language", match=models.MatchAny(any=languages))
+            )
         if software:
             conditions.append(
                 models.FieldCondition(

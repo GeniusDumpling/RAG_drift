@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1
+# Build context: production dist/ plus the changed backend/app files.
+ARG APP_RUNTIME_IMAGE=intelligence-rag-app:latest
+FROM ${APP_RUNTIME_IMAGE}
+WORKDIR /app
+RUN rm -rf /app/frontend/dist
+COPY dist/ ./frontend/dist/
+COPY backend/ /tmp/rag-admin-update/backend/
+RUN python - <<'PY'
+from pathlib import Path
+import app
+import shutil
+source = Path('/tmp/rag-admin-update/backend/app')
+for target in {Path('/app/backend/app'), Path(app.__file__).parent}:
+    for changed in source.rglob('*.py'):
+        destination = target / changed.relative_to(source)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(changed, destination)
+shutil.rmtree('/tmp/rag-admin-update')
+PY

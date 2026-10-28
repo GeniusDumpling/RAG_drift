@@ -132,7 +132,7 @@ export function SearchPage({ initialQuery = '', onOpenContent, mode = 'search' }
         <p className="eyebrow">{isAnswerMode ? 'AI 问答' : '检索'}</p>
         <h1>{isAnswerMode ? 'AI 问答' : '检索'}</h1>
         <p className="muted">
-          {isAnswerMode ? '基于检索证据生成带引用的自然语言答案。' : '执行关键词/向量检索，查看查询追踪与证据。'}
+          {isAnswerMode ? '基于检索证据生成带引用的自然语言答案。' : '在已收录内容中检索证据原文。'}
         </p>
       </div>
 
@@ -146,14 +146,6 @@ export function SearchPage({ initialQuery = '', onOpenContent, mode = 'search' }
             placeholder="搜索关键词"
           />
 
-          <label htmlFor="source-filter">数据源 ID</label>
-          <input
-            id="source-filter"
-            value={sourceSiteId}
-            onChange={(event) => setSourceSiteId(event.target.value)}
-            placeholder="可选 UUID"
-          />
-
           <label htmlFor="type-filter">内容类型</label>
           <select id="type-filter" value={itemType} onChange={(event) => setItemType(event.target.value)}>
             <option value="">全部</option>
@@ -164,17 +156,29 @@ export function SearchPage({ initialQuery = '', onOpenContent, mode = 'search' }
             <option value="comment">回复</option>
             <option value="video_description">视频描述</option>
           </select>
-
-          <label htmlFor="top-k">结果数</label>
-          <input
-            id="top-k"
-            type="number"
-            min="1"
-            max="50"
-            value={topKInput}
-            onChange={(event) => handleTopKChange(event.target.value)}
-          />
         </div>
+        <details className="advanced-filters">
+          <summary>高级筛选</summary>
+          <div className="form-grid">
+            <label htmlFor="source-filter">数据源 ID</label>
+            <input
+              id="source-filter"
+              value={sourceSiteId}
+              onChange={(event) => setSourceSiteId(event.target.value)}
+              placeholder="可选 UUID"
+            />
+
+            <label htmlFor="top-k">结果数</label>
+            <input
+              id="top-k"
+              type="number"
+              min="1"
+              max="50"
+              value={topKInput}
+              onChange={(event) => handleTopKChange(event.target.value)}
+            />
+          </div>
+        </details>
         <div className="button-row">
           <button type="button" onClick={() => void (isAnswerMode ? runAnswer() : runSearch())} disabled={loading}>
             {isAnswerMode ? '生成回答' : '检索'}
@@ -191,31 +195,6 @@ export function SearchPage({ initialQuery = '', onOpenContent, mode = 'search' }
         <p className="card" role="status">
           {loadingMessage}
         </p>
-      ) : null}
-
-      {queryRecord ? (
-        <section className="card">
-          <h2>查询追踪</h2>
-          <dl className="kv-grid">
-            <div>
-              <dt>原始查询</dt>
-              <dd>{queryRecord.raw_query}</dd>
-            </div>
-            <div>
-              <dt>优化后查询</dt>
-              <dd>{queryRecord.optimized_query_text || 'n/a'}</dd>
-            </div>
-            <div>
-              <dt>使用智能体</dt>
-              <dd>{queryRecord.used_agent ? '是' : '否'}</dd>
-            </div>
-            <div>
-              <dt>结果数</dt>
-              <dd>{queryRecord.result_count ?? evidence.length}</dd>
-            </div>
-          </dl>
-          <pre>{JSON.stringify(queryRecord.result_summary_json, null, 2)}</pre>
-        </section>
       ) : null}
 
       {answerText ? (

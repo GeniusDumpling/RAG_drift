@@ -316,7 +316,7 @@ export type PostgresOverview = {
 };
 
 export type QdrantOverview = {
-  status: 'ok' | 'unavailable';
+  status: 'ok' | 'unavailable' | 'not_applicable';
   collection: string;
   points_count: number | null;
   vector_size: number | null;
@@ -327,13 +327,77 @@ export type QdrantOverview = {
 export type DatabaseReconciliation = {
   postgres_qdrant_chunk_count: number;
   qdrant_points_count: number | null;
-  status: 'matched' | 'mismatch' | 'unknown';
+  status: 'matched' | 'mismatch' | 'unknown' | 'not_applicable';
 };
 
 export type DatabaseOverview = {
   postgres: PostgresOverview;
   qdrant: QdrantOverview;
   reconciliation: DatabaseReconciliation;
+};
+
+export type DatabaseTarget = {
+  id: string;
+  label: string;
+  database_name: string;
+  collection: string | null;
+};
+
+export type DocumentModel = { slug: string; name: string; manufacturer: string; documents?: number };
+export type DocumentSummary = {
+  id: UUID;
+  title: string;
+  document_type: string;
+  official_version: string | null;
+  published_at: string | null;
+  active_processing_id: UUID | null;
+  processing_id: UUID | null;
+  status: string | null;
+  created_at: string | null;
+  models: DocumentModel[];
+};
+export type DocumentProcessing = {
+  id: UUID;
+  status: string;
+  parser_version: string;
+  chunker_version: string;
+  language_policy: string;
+  created_at: string;
+  indexed_at: string | null;
+  is_active?: boolean;
+  metadata_json?: JsonObject;
+};
+export type ProcessedDocumentDetail = {
+  document: {
+    id: UUID; title: string; document_type: string; official_version: string | null;
+    source_url: string; source_asset_id: UUID; active_processing_id: UUID | null;
+    published_at: string | null; metadata_json: JsonObject;
+  };
+  models: DocumentModel[];
+  processing: DocumentProcessing;
+  processings: DocumentProcessing[];
+  stats: { pages: number; chinese_pages: number; elements: number; chunks: number;
+    indexed_chunks: number; tables: number; figures: number; quarantined_figures: number };
+};
+export type DocumentRecord = {
+  id: UUID;
+  source_page_no?: number;
+  included?: boolean;
+  language_state?: string;
+  inclusion_reason?: string;
+  render_asset_id?: UUID | null;
+  element_type?: string;
+  section_path?: string;
+  text?: string;
+  table_json?: { rows?: unknown[][]; [key: string]: unknown } | null;
+  asset_id?: UUID | null;
+  metadata_json: JsonObject;
+  regions?: { source_page_no: number; bbox: number[]; page_id: UUID }[];
+  chunk_index?: number;
+  chunk_type?: string;
+  display_text?: string;
+  embed_text?: string;
+  embed_status?: string;
 };
 
 export type DatabaseTableMeta = {

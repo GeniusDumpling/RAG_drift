@@ -6,8 +6,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 JsonValue = dict[str, Any] | list[Any] | str | int | float | bool | None
-ReconciliationStatus = Literal["matched", "mismatch", "unknown"]
-QdrantStatus = Literal["ok", "unavailable"]
+ReconciliationStatus = Literal["matched", "mismatch", "unknown", "not_applicable"]
+QdrantStatus = Literal["ok", "unavailable", "not_applicable"]
 
 
 class DatabaseTableCount(BaseModel):

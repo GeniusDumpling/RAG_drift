@@ -8,6 +8,11 @@ import type {
   ContentListItem,
   CrawlJob,
   DatabaseOverview,
+  DatabaseTarget,
+  DocumentModel,
+  DocumentSummary,
+  DocumentRecord,
+  ProcessedDocumentDetail,
   DatabaseTableList,
   DatabaseTableRow,
   DatabaseTableRowsPage,
@@ -161,29 +166,57 @@ export function getContent(id: UUID): Promise<ContentDetail> {
   return request<ContentDetail>(`/contents/${id}`);
 }
 
-export function getDatabaseOverview(): Promise<DatabaseOverview> {
-  return request<DatabaseOverview>('/database/overview');
+export function listDatabaseTargets(): Promise<{ items: DatabaseTarget[] }> {
+  return request('/database/catalog');
 }
 
-export function listDatabaseTables(): Promise<DatabaseTableList> {
-  return request<DatabaseTableList>('/database/tables');
+export function getDatabaseOverview(database = 'primary'): Promise<DatabaseOverview> {
+  return request<DatabaseOverview>(buildPath('/database/overview', { database: database === 'primary' ? undefined : database }));
+}
+
+export function listDatabaseTables(database = 'primary'): Promise<DatabaseTableList> {
+  return request<DatabaseTableList>(buildPath('/database/tables', { database: database === 'primary' ? undefined : database }));
 }
 
 export function listDatabaseRows(
   tableName: string,
-  params: { q?: string; limit?: number; offset?: number } = {},
+  params: { q?: string; limit?: number; offset?: number; database?: string } = {},
 ): Promise<DatabaseTableRowsPage> {
   return request<DatabaseTableRowsPage>(
     buildPath(`/database/tables/${tableName}/rows`, {
       limit: params.limit ?? 50,
       offset: params.offset ?? 0,
       q: params.q,
+      database: params.database === 'primary' ? undefined : params.database,
     }),
   );
 }
 
 export function getDatabaseRow(tableName: string, rowId: UUID): Promise<DatabaseTableRow> {
   return request<DatabaseTableRow>(`/database/tables/${tableName}/rows/${rowId}`);
+}
+
+export function listDocumentModels(): Promise<{ items: DocumentModel[] }> {
+  return request('/document-library/models');
+}
+
+export function listProcessedDocuments(params: { q?: string; model?: string; offset?: number } = {}): Promise<Page<DocumentSummary>> {
+  return request(buildPath('/document-library', { limit: 50, offset: params.offset ?? 0, q: params.q, model: params.model }));
+}
+
+export function getProcessedDocument(id: UUID, processingId?: UUID): Promise<ProcessedDocumentDetail> {
+  return request(buildPath(`/document-library/${id}`, { processing_id: processingId }));
+}
+
+export function listDocumentRecords(id: UUID, section: 'pages' | 'elements' | 'chunks', params: {
+  processing_id: UUID; kind?: string; page_no?: number; offset?: number;
+}): Promise<Page<DocumentRecord> & { processing_id: UUID }> {
+  return request(buildPath(`/document-library/${id}/${section}`, { limit: 30, offset: params.offset ?? 0,
+    processing_id: params.processing_id, kind: params.kind, page_no: params.page_no }));
+}
+
+export function documentAssetUrl(id: UUID): string {
+  return `${API_BASE_URL.replace(/\/+$/, '')}/document-library/assets/${encodeURIComponent(id)}`;
 }
 
 export function search(requestBody: SearchRequest): Promise<SearchResponse> {

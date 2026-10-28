@@ -41,6 +41,8 @@ const evidence: EvidenceObject = {
   keyword_score: 0.72,
   matched_by: 'hybrid',
   thread_summary: null,
+  video_url: null,
+  description_text: null,
 };
 
 const updatedEvidence: EvidenceObject = {
@@ -88,7 +90,6 @@ describe('SearchPage', () => {
 
     expect(screen.getByLabelText('查询')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '检索' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '生成答案' })).toBeInTheDocument();
     expect(screen.getByText('证据')).toBeInTheDocument();
   });
 
@@ -100,12 +101,9 @@ describe('SearchPage', () => {
     render(<SearchPage initialQuery="telemetry disable" />);
     fireEvent.click(screen.getByRole('button', { name: '检索' }));
 
-    expect(await screen.findByRole('heading', { name: '查询追踪' })).toBeInTheDocument();
-    expect(screen.getByText('Disable telemetry guide')).toBeInTheDocument();
+    expect(await screen.findByText('Disable telemetry guide')).toBeInTheDocument();
     expect(screen.getByText('Follow the device settings path to disable telemetry.')).toBeInTheDocument();
-    expect(screen.getByText('disable telemetry settings')).toBeInTheDocument();
-    expect(screen.getByText('content-1')).toBeInTheDocument();
-    expect(screen.getByText('source-1')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '查询追踪' })).not.toBeInTheDocument();
     expect(screen.queryByText(EMPTY_STATE_COPY)).not.toBeInTheDocument();
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -159,10 +157,10 @@ describe('SearchPage', () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(response));
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<SearchPage initialQuery="telemetry disable" />);
-    fireEvent.click(screen.getByRole('button', { name: '生成答案' }));
+    render(<SearchPage initialQuery="telemetry disable" mode="answer" />);
+    fireEvent.click(screen.getByRole('button', { name: '生成回答' }));
 
-    expect(await screen.findByRole('heading', { name: '答案' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '问答' })).toBeInTheDocument();
     expect(screen.getByText('Telemetry can be disabled from the device settings privacy panel.')).toBeInTheDocument();
     expect(screen.getByText('Disable telemetry guide')).toBeInTheDocument();
     expect(screen.getByText('Follow the device settings path to disable telemetry.')).toBeInTheDocument();
@@ -207,18 +205,18 @@ describe('SearchPage', () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(response));
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<SearchPage initialQuery="telemetry disable" />);
-    fireEvent.click(screen.getByRole('button', { name: '生成答案' }));
+    render(<SearchPage initialQuery="telemetry disable" mode="answer" />);
+    fireEvent.click(screen.getByRole('button', { name: '生成回答' }));
 
-    expect(await screen.findByRole('heading', { name: '答案' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '查询追踪' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '问答' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '查询追踪' })).not.toBeInTheDocument();
     expect(screen.getByText('Disable telemetry guide')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('查询'), { target: { value: '   ' } });
-    fireEvent.click(screen.getByRole('button', { name: '检索' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成回答' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('请输入查询。');
-    expect(screen.queryByRole('heading', { name: '答案' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '问答' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '查询追踪' })).not.toBeInTheDocument();
     expect(screen.queryByText('Disable telemetry guide')).not.toBeInTheDocument();
     expect(screen.queryByText('Telemetry can be disabled from the device settings privacy panel.')).not.toBeInTheDocument();
@@ -234,18 +232,18 @@ describe('SearchPage', () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(response));
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<SearchPage initialQuery="telemetry disable" />);
-    fireEvent.click(screen.getByRole('button', { name: '生成答案' }));
+    render(<SearchPage initialQuery="telemetry disable" mode="answer" />);
+    fireEvent.click(screen.getByRole('button', { name: '生成回答' }));
 
-    expect(await screen.findByRole('heading', { name: '答案' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '查询追踪' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '问答' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '查询追踪' })).not.toBeInTheDocument();
     expect(screen.getByText('Disable telemetry guide')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('结果数'), { target: { value: '' } });
-    fireEvent.click(screen.getByRole('button', { name: '生成答案' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成回答' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('结果数必须在 1 到 50 之间。');
-    expect(screen.queryByRole('heading', { name: '答案' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '问答' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '查询追踪' })).not.toBeInTheDocument();
     expect(screen.queryByText('Disable telemetry guide')).not.toBeInTheDocument();
     expect(screen.queryByText('Telemetry can be disabled from the device settings privacy panel.')).not.toBeInTheDocument();

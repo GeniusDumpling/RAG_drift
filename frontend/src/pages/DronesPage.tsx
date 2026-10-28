@@ -1,35 +1,55 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { getDrone, listDrones } from '../api/client';
-import type { DroneCatalog, DroneDetail } from '../api/types';
+import type { DroneBrand, DroneCatalog, DroneDetail } from '../api/types';
 import { formatErrorMessage } from '../utils/errors';
 import { safeExternalHref } from '../utils/links';
 import './DronesPage.css';
 
+const BRANDS: { id: DroneBrand; name: string }[] = [
+  { id: 'dji', name: 'DJI 大疆' },
+  { id: 'parrot', name: 'Parrot' },
+];
+
+type CatalogState = { brand: DroneBrand; data?: DroneCatalog; error?: string };
+type DetailState = { brand: DroneBrand; slug: string; data?: DroneDetail; error?: string };
+
 export function DronesPage() {
-  const [catalog, setCatalog] = useState<DroneCatalog | null>(null);
-  const [catalogError, setCatalogError] = useState('');
+  const [brand, setBrand] = useState<DroneBrand>('dji');
+  const [catalogState, setCatalogState] = useState<CatalogState | null>(null);
+  const catalog = catalogState?.brand === brand ? catalogState.data : null;
+  const catalogError = catalogState?.brand === brand ? catalogState.error : '';
   const [reload, setReload] = useState(0);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('');
   const [selectedSlug, setSelectedSlug] = useState('');
-  const [detail, setDetail] = useState<DroneDetail | null>(null);
-  const [detailError, setDetailError] = useState('');
+  const [detailState, setDetailState] = useState<DetailState | null>(null);
   const [detailReload, setDetailReload] = useState(0);
   const [parameterQuery, setParameterQuery] = useState('');
   const [groupIndex, setGroupIndex] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
-    setCatalogError('');
-    setCatalog(null);
-    listDrones(controller.signal).then((result) => {
-      if (!controller.signal.aborted) setCatalog(result);
+    setCatalogState({ brand });
+    listDrones(controller.signal, brand).then((result) => {
+      if (!controller.signal.aborted) setCatalogState({ brand, data: result });
     }).catch((error) => {
-      if (!controller.signal.aborted) setCatalogError(formatErrorMessage('无法加载无人机信息', error));
+      if (!controller.signal.aborted) {
+        setCatalogState({ brand, error: formatErrorMessage('无法加载无人机信息', error) });
+      }
     });
     return () => controller.abort();
-  }, [reload]);
+  }, [reload, brand]);
+
+  function selectBrand(next: DroneBrand) {
+    if (next === brand) return;
+    setBrand(next);
+    setQuery('');
+    setCategory('');
+    setSelectedSlug('');
+    setParameterQuery('');
+    setGroupIndex('');
+  }
 
   const categories = useMemo(
     () => [...new Set(catalog?.items.map((item) => item.category) ?? [])], [catalog],
@@ -48,21 +68,25 @@ export function DronesPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    setDetail(null);
-    setDetailError('');
+    setDetailState({ brand, slug: activeSlug });
     setParameterQuery('');
     setGroupIndex('');
     if (activeSlug) {
-      getDrone(activeSlug, controller.signal).then((result) => {
-        if (!controller.signal.aborted) setDetail(result);
+      getDrone(activeSlug, controller.signal, brand).then((result) => {
+        if (!controller.signal.aborted) setDetailState({ brand, slug: activeSlug, data: result });
       }).catch((error) => {
-        if (!controller.signal.aborted) setDetailError(formatErrorMessage('无法加载技术参数', error));
+        if (!controller.signal.aborted) {
+          setDetailState({ brand, slug: activeSlug, error: formatErrorMessage('无法加载技术参数', error) });
+        }
       });
     }
     return () => controller.abort();
-  }, [activeSlug, detailReload]);
+  }, [activeSlug, detailReload, brand]);
 
-  const activeDetail = detail?.slug === activeSlug ? detail : null;
+  const currentDetail = detailState?.brand === brand && detailState.slug === activeSlug
+    ? detailState : null;
+  const activeDetail = currentDetail?.data?.slug === activeSlug ? currentDetail.data : null;
+  const detailError = currentDetail?.error;
   const parameterKeyword = parameterQuery.trim().toLocaleLowerCase();
   const groups = (activeDetail?.groups ?? []).map((group, index) => ({
     ...group, index,
@@ -78,9 +102,14 @@ export function DronesPage() {
         <div>
           <p className="eyebrow">DRONE CATALOG</p>
           <h1>无人机信息</h1>
-          <p className="muted">浏览已收集的无人机型号与技术参数。</p>
+          <p className="muted">按品牌浏览已收集的无人机型号与技术参数。</p>
         </div>
-        <span className="drone-manufacturer">DJI 大疆</span>
+        <div className="drone-brand-switch" role="group" aria-label="无人机品牌">
+          {BRANDS.map((item) => <button key={item.id} type="button"
+            aria-pressed={brand === item.id} onClick={() => selectBrand(item.id)}>
+            {item.name}
+          </button>)}
+        </div>
       </header>
 
       {catalogError ? (
@@ -96,9 +125,9 @@ export function DronesPage() {
           <div className="drone-layout">
             <aside className="drone-models" aria-label="无人机型号列表">
               <div className="drone-model-controls">
-                <h2>无人机型号</h2>
+                <h2>无人机型号 <span className="drone-model-count">{models.length} / {catalog.total}</span></h2>
                 <label className="sr-only" htmlFor="drone-model-search">搜索无人机型号</label>
-                <input id="drone-model-search" type="search" placeholder="搜索型号，如 Mavic、T50" value={query} onChange={(event) => setQuery(event.target.value)} />
+                <input id="drone-model-search" type="search" placeholder={brand === 'parrot' ? '搜索型号，如 ANAFI、UKR' : '搜索型号，如 Mavic、T50'} value={query} onChange={(event) => setQuery(event.target.value)} />
                 <label className="sr-only" htmlFor="drone-category">无人机类型</label>
                 <select id="drone-category" value={category} onChange={(event) => setCategory(event.target.value)}>
                   <option value="">全部类型</option>
@@ -127,6 +156,13 @@ export function DronesPage() {
                 <header className="drone-detail-header">
                   <span className="badge">{activeDetail.category}</span>
                   <h2>{activeDetail.name}</h2>
+                  {activeDetail.official_version || activeDetail.updated_at || activeDetail.collected_at ? (
+                    <div className="drone-source-meta">
+                      {activeDetail.official_version ? <span>资料版本 {activeDetail.official_version}</span> : null}
+                      {activeDetail.updated_at ? <span>更新于 <time dateTime={activeDetail.updated_at}>{activeDetail.updated_at}</time></span> : null}
+                      {activeDetail.collected_at ? <span title={activeDetail.collected_at}>采集于 <time dateTime={activeDetail.collected_at}>{activeDetail.collected_at.slice(0, 10)}</time></span> : null}
+                    </div>
+                  ) : null}
                   {sourceHref ? <a className="drone-source" href={sourceHref} target="_blank" rel="noreferrer">查看官方来源 ↗</a> : null}
                 </header>
                 {activeDetail.note ? <p className="drone-note" role="note">{activeDetail.note}</p> : null}

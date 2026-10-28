@@ -8,6 +8,7 @@
 
 运行：python pipeline.py
 """
+
 import json
 import logging
 import logging.handlers
@@ -15,8 +16,11 @@ import os
 import sys
 from datetime import datetime
 
-from baidu_search import base_dir, load_conf, set_run_id, main as search_main
-from llm_supplier_analysis import main as llm_main, CONFIRMED_RELATIONS_MD
+import supplier_config
+from baidu_search import base_dir, load_conf, record_known_urls, set_run_id
+from baidu_search import main as search_main
+from llm_supplier_analysis import main as llm_main
+from llm_supplier_analysis import parse_fulltext
 
 logger = logging.getLogger("pipeline")
 
@@ -25,7 +29,7 @@ def setup_logging(run_id: str) -> str:
     """配置 root logger：控制台 + 轮转日志文件。返回日志文件路径。"""
     log_dir = os.path.join(base_dir(), "logs")
     os.makedirs(log_dir, exist_ok=True)
-    log_path = os.path.join(log_dir, f"pipeline_{run_id}.log")
+    log_path = os.path.join(log_dir, f"pipeline_{supplier_config.brand()['id']}_{run_id}.log")
 
     fmt = logging.Formatter(
         "[%(asctime)s][%(levelname)s][%(name)s] %(message)s",
@@ -58,7 +62,7 @@ def try_stage(name: str, fn, *args):
 
 
 def main() -> int:
-    conf = load_conf()
+    load_conf()
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = setup_logging(run_id)
     set_run_id(run_id)
@@ -66,20 +70,22 @@ def main() -> int:
     logger.info(f"==== pipeline 启动 run_id={run_id} ====")
     logger.info(f"日志文件：{log_path}")
 
-    artifacts = {"run_id": run_id}
+    artifacts = {"run_id": run_id, "brand": supplier_config.brand()["name"]}
     failures = []
 
     # 阶段 1：百度搜索 + 抓取全文
     logger.info("[阶段 1/2] 搜索并抓取全文 ...")
-    fulltext = try_stage("阶段 1/2", search_main)
+    fulltext = try_stage("阶段 1/2", search_main, False)
     if not fulltext:
         failures.append("阶段 1：搜索/抓取未产出 fulltext")
         logger.error("[阶段 1/2] 未产出全文快照，中止后续阶段。")
     elif not fulltext.endswith("_fulltext.md"):
         # 增量模式下本轮所有 URL 均已知，阶段 1 只产出搜索快照
         artifacts["primary_output"] = fulltext
-        logger.info("[阶段 1/2] 无新增全文（增量模式下全部 URL 均为已知），"
-                    f"跳过 LLM 分析。产物：{fulltext}")
+        logger.info(
+            "[阶段 1/2] 无新增全文（增量模式下全部 URL 均为已知），"
+            f"跳过 LLM 分析。产物：{fulltext}"
+        )
     else:
         artifacts["fulltext"] = fulltext
         logger.info(f"[阶段 1/2] 完成 -> {fulltext}")
@@ -92,9 +98,10 @@ def main() -> int:
             logger.error("[阶段 2/2] 未产出总结文件。")
         else:
             artifacts["summary"] = summary
-            artifacts["confirmed_relations"] = CONFIRMED_RELATIONS_MD
+            artifacts["confirmed_relations"] = supplier_config.confirmed_path()
+            record_known_urls([item["url"] for item in parse_fulltext(fulltext) if item["url"]])
             logger.info(f"[阶段 2/2] 完成 -> {summary}")
-            logger.info(f"[阶段 2/2] 明确供应关系文档 -> {CONFIRMED_RELATIONS_MD}")
+            logger.info("[阶段 2/2] 明确供应关系文档 -> %s", supplier_config.confirmed_path())
 
     logger.info("[注] 供应商验证为独立流程：另跑 `python supplier_verify.py` 定时执行")
 
@@ -105,7 +112,9 @@ def main() -> int:
         "artifacts": artifacts,
         "failures": failures,
     }
-    meta_path = os.path.join(base_dir(), "logs", f"pipeline_{run_id}.json")
+    meta_path = os.path.join(
+        base_dir(), "logs", f"pipeline_{supplier_config.brand()['id']}_{run_id}.json"
+    )
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(summary_payload, f, ensure_ascii=False, indent=2)
 
@@ -119,4 +128,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    supplier_config.cli("Extract brand-specific drone supplier relationships")
     sys.exit(main())

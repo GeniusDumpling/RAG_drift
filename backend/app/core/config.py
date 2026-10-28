@@ -3,13 +3,12 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
+from app.core.llm_config import LLMSettings
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+class Settings(LLMSettings):
     app_env: str = Field(default="dev", alias="APP_ENV")
     database_browser_enabled: bool = Field(default=False, alias="DATABASE_BROWSER_ENABLED")
     document_database_url: str | None = Field(default=None, alias="DOCUMENT_DATABASE_URL")
@@ -27,6 +26,9 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000, alias="API_PORT")
     drone_documents_dir: Path = Field(
         default=Path("data/DJI无人机文档"), alias="DRONE_DOCUMENTS_DIR"
+    )
+    parrot_documents_dir: Path = Field(
+        default=Path("data/Parrot无人机文档"), alias="PARROT_DOCUMENTS_DIR"
     )
     database_url: str = Field(
         default="postgresql+psycopg://intelligence:intelligence@localhost:54329/intelligence_rag",
@@ -81,10 +83,9 @@ class Settings(BaseSettings):
     literature_sync_database_url: str | None = Field(
         default=None, alias="LITERATURE_SYNC_DATABASE_URL"
     )
-    literature_llm_provider: str = Field(default="deepseek", alias="LITERATURE_LLM_PROVIDER")
-    deepseek_api_key: str | None = Field(default=None, alias="DEEPSEEK_API_KEY")
-    deepseek_base_url: str = Field(default="https://api.deepseek.com/v1", alias="DEEPSEEK_BASE_URL")
-    deepseek_model: str = Field(default="deepseek-chat", alias="DEEPSEEK_MODEL")
+    literature_llm_provider: str = Field(
+        default="openai-compatible", alias="LITERATURE_LLM_PROVIDER"
+    )
     literature_browser_profile_dir: Path = Field(
         default=Path("~/.intelligence-rag/ieee-profile").expanduser(),
         alias="LITERATURE_BROWSER_PROFILE_DIR",

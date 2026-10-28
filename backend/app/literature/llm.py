@@ -34,7 +34,7 @@ class LiteratureLLM:
         )
         directions = payload.get("directions")
         if not isinstance(directions, list):
-            raise RuntimeError("DeepSeek 未返回 directions 数组。")
+            raise RuntimeError("LLM 未返回 directions 数组。")
         return _sanitize_directions(directions, query, direction_count)
 
     async def analyze_paper(
@@ -71,9 +71,9 @@ class LiteratureLLM:
         return await self._chat_json(system=system, user=user, temperature=0.1)
 
     async def _chat_json(self, *, system: str, user: str, temperature: float) -> dict[str, Any]:
-        if not self.settings.deepseek_api_key:
+        if not self.settings.llm_api_key:
             raise RuntimeError(
-                "缺少 DEEPSEEK_API_KEY；请配置密钥，或将 LITERATURE_LLM_PROVIDER=fake "
+                "缺少 LLM_API_KEY；请配置密钥，或将 LITERATURE_LLM_PROVIDER=fake "
                 "用于仅验证任务链路。"
             )
         content = await self._request_json_content(
@@ -102,21 +102,21 @@ class LiteratureLLM:
             try:
                 parsed = _parse_json_object(repaired_content)
             except json.JSONDecodeError as repair_exc:
-                raise RuntimeError("DeepSeek 连续两次返回无效 JSON。") from repair_exc
+                raise RuntimeError("LLM 连续两次返回无效 JSON。") from repair_exc
         if not isinstance(parsed, dict):
-            raise RuntimeError("DeepSeek 返回的内容不是 JSON 对象。")
+            raise RuntimeError("LLM 返回的内容不是 JSON 对象。")
         return parsed
 
     async def _request_json_content(
         self, *, messages: list[dict[str, str]], temperature: float
     ) -> str:
-        url = f"{self.settings.deepseek_base_url.rstrip('/')}/chat/completions"
+        url = f"{self.settings.base_url.rstrip('/')}/chat/completions"
         headers = {
-            "Authorization": f"Bearer {self.settings.deepseek_api_key}",
+            "Authorization": f"Bearer {self.settings.llm_api_key}",
             "Content-Type": "application/json",
         }
         body = {
-            "model": self.settings.deepseek_model,
+            "model": self.settings.llm_model,
             "messages": messages,
             "temperature": temperature,
             "response_format": {"type": "json_object"},
@@ -129,7 +129,7 @@ class LiteratureLLM:
         try:
             return str(payload["choices"][0]["message"]["content"])
         except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError("DeepSeek 响应缺少 choices[0].message.content。") from exc
+            raise RuntimeError("LLM 响应缺少 choices[0].message.content。") from exc
 
 
 def verify_analysis(
@@ -292,7 +292,7 @@ def _fallback_analysis(query: str, paper: dict[str, Any]) -> dict[str, Any]:
         "keywords_zh": _keywords(query),
         "match_how": f"标题《{title}》由本地排序器选中；当前为 fake 分析模式。",
         "match_use": "可用于验证任务、检索、PDF 与数据库可溯源链路，不能替代正式语义分析。",
-        "conclusion": "链路验证完成；启用 DeepSeek 后重新运行以获得正式结论。",
+        "conclusion": "链路验证完成；启用 LLM 后重新运行以获得正式结论。",
         "hits": [],
     }
 

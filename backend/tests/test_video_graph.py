@@ -22,8 +22,8 @@ from app.models.control import CrawlJob, CrawlRun, SourceSite
 from app.models.video_graph import VideoGraphBuild
 from app.schemas.video_graph import ChunkExtraction, GraphRetrieveRequest, VideoAssessment
 from app.services.video_graph import (
-    DeepSeekVideoExtractor,
     LeaseLostError,
+    LLMVideoExtractor,
     VideoChunk,
     VideoMaterial,
     activate_build,
@@ -161,8 +161,8 @@ class TestVideoGraphContracts(unittest.TestCase):
         )
 
     def test_missing_model_key_is_an_error_not_a_fake_graph(self):
-        with self.assertRaisesRegex(ValueError, "DEEPSEEK_API_KEY"):
-            DeepSeekVideoExtractor(Settings(_env_file=None, DEEPSEEK_API_KEY=None))
+        with self.assertRaisesRegex(ValueError, "LLM_API_KEY"):
+            LLMVideoExtractor(Settings(_env_file=None, LLM_API_KEY=None))
 
 
 @unittest.skipUnless(

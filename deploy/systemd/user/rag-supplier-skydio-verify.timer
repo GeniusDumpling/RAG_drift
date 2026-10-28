@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule RAG Skydio supplier verify every thirty minutes
+
+[Timer]
+OnCalendar=*-*-* *:20/30:00 Asia/Shanghai
+Persistent=true
+AccuracySec=1min
+Unit=rag-supplier-skydio-verify.service
+
+[Install]
+WantedBy=timers.target

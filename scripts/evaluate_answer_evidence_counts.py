@@ -34,7 +34,7 @@ from app.core.config import Settings, get_settings  # noqa: E402
 from app.models.content import ContentChunk  # noqa: E402
 from app.schemas.search import EvidenceObject, SearchFilters  # noqa: E402
 from app.services.answer_context import prepare_answer_context  # noqa: E402
-from app.services.answer_generation import DeepSeekAnswerClient  # noqa: E402
+from app.services.answer_generation import LLMAnswerClient  # noqa: E402
 from app.services.embeddings import build_embedding_service  # noqa: E402
 from app.services.retrieval import retrieve_evidence  # noqa: E402
 
@@ -108,7 +108,7 @@ async def prepare(args: argparse.Namespace, settings: Settings, questions: list[
         "repeats": args.repeats,
         "candidate_limit": args.candidate_limit,
         "query_provider": args.query_provider,
-        "model": settings.deepseek_model,
+        "model": settings.llm_model,
         "seed": SEED,
         "dataset_sha256": digest(json.dumps(questions, ensure_ascii=False, sort_keys=True)),
         "source_sha256": {
@@ -135,7 +135,7 @@ async def prepare(args: argparse.Namespace, settings: Settings, questions: list[
                 "embedding_model": settings.embedding_model,
                 "qdrant_collection": settings.qdrant_collection,
                 "generation_temperature": 0.2,
-                "judge_model": settings.deepseek_model,
+                "judge_model": settings.llm_model,
                 "judge_temperature": 0,
                 "generation_timeout_seconds": settings.agent_timeout_seconds,
                 "notes": [
@@ -265,19 +265,17 @@ async def json_completion(
     payload: dict,
     max_tokens: int = 8000,
     artifact_path: Path | None = None,
-    reasoning_effort: str | None = None,
 ) -> dict:
     last_error = None
     for attempt in range(3):
         try:
             async with httpx.AsyncClient(timeout=120) as client:
                 response = await client.post(
-                    settings.deepseek_base_url.rstrip("/") + "/chat/completions",
-                    headers={"Authorization": "Bearer " + (settings.deepseek_api_key or "")},
+                    settings.base_url.rstrip("/") + "/chat/completions",
+                    headers={"Authorization": "Bearer " + (settings.llm_api_key or "")},
                     json={
-                        "model": settings.deepseek_model,
+                        "model": settings.llm_model,
                         "temperature": 0,
-                        **({"reasoning_effort": reasoning_effort} if reasoning_effort else {}),
                         "max_tokens": min(max_tokens * (attempt + 1), 16_000),
                         "response_format": {"type": "json_object"},
                         "messages": [
@@ -406,10 +404,10 @@ async def generate(
     if path.exists():
         return
     context = snapshot["contexts"][str(k)]
-    client = DeepSeekAnswerClient(
-        base_url=settings.deepseek_base_url,
-        api_key=settings.deepseek_api_key or "",
-        model=settings.deepseek_model,
+    client = LLMAnswerClient(
+        base_url=settings.base_url,
+        api_key=settings.llm_api_key or "",
+        model=settings.llm_model,
         timeout_seconds=settings.agent_timeout_seconds,
     )
     started = time.perf_counter()
@@ -520,7 +518,6 @@ async def grade(
         artifact_path=args.output_dir
         / "judge_raw"
         / f"grade_low_{snapshot['id']}_r{repetition}.json",
-        reasoning_effort="low",
         max_tokens=16000 if len(ks) > 4 else 8000,
     )
     validated = GradeBundle.model_validate(result["output"])
@@ -541,7 +538,6 @@ async def grade(
             "grades": validated.model_dump()["grades"],
             "usage": result["usage"],
             "request_attempt": result["attempt"],
-            "reasoning_effort": "low",
         },
     )
     progress("graded", question=snapshot["id"], repetition=repetition)
@@ -751,8 +747,8 @@ async def run(args: argparse.Namespace) -> None:
     os.umask(0o077)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     settings = get_settings()
-    if args.phase != "report" and not settings.deepseek_api_key:
-        raise ValueError("DEEPSEEK_API_KEY is required")
+    if args.phase != "report" and not settings.llm_api_key:
+        raise ValueError("LLM_API_KEY is required")
     questions = read_json(args.questions)
     if args.limit:
         questions = questions[: args.limit]
@@ -801,7 +797,9 @@ def main() -> None:
         type=Path,
         default=ROOT / "scripts/evaluation_data/evidence_count_questions.json",
     )
-    parser.add_argument("--query-provider", choices=["fake", "deepseek"], default="fake")
+    parser.add_argument(
+        "--query-provider", choices=["fake", "openai-compatible", "deepseek"], default="fake"
+    )
     parser.add_argument("--max-chars", type=int, default=12_000)
     parser.add_argument("--candidate-limit", type=int, default=60)
     parser.add_argument("--repeats", type=int, default=2)

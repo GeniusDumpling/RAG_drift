@@ -247,7 +247,9 @@ TABLE_CONFIGS: tuple[TableConfig, ...] = (
             "id", "supplier_name", "buyer_name", "supply_content", "credibility",
             "verify_status", "seen_count", "updated_at",
         ),
-        detail_columns=("source_urls", "created_at"),
+        detail_columns=(
+            "source_urls", "drone_models", "evidence_years", "evidence_items", "created_at",
+        ),
         searchable_columns=(
             "supplier_name", "buyer_name", "supply_content", "credibility", "verify_status",
         ),
@@ -262,7 +264,8 @@ TABLE_CONFIGS: tuple[TableConfig, ...] = (
             "id", "relation_id", "supplier_name", "verdict", "confidence",
             "supply_content", "evidence_md", "verify_time", "created_at",
         ),
-        detail_columns=("evidence_urls", "orig_source_urls", "updated_at"),
+        detail_columns=("evidence_urls", "orig_source_urls", "drone_models", "evidence_years",
+                        "execution_status", "updated_at"),
         searchable_columns=(
             "supplier_name", "verdict", "confidence", "supply_content", "evidence_md",
         ),

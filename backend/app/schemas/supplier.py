@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SupplierRelationRead(BaseModel):
@@ -18,6 +18,9 @@ class SupplierRelationRead(BaseModel):
     credibility: str
     seen_count: int
     source_urls: list[str]
+    drone_models: list[str] = Field(default_factory=list)
+    evidence_years: list[int] = Field(default_factory=list)
+    evidence_items: list[dict] = Field(default_factory=list)
     verify_status: str
     latest_verification_confidence: str | None = None
     created_at: datetime
@@ -39,6 +42,9 @@ class SupplierVerificationRead(BaseModel):
     evidence_urls: list[str]
     orig_source_urls: list[str]
     verify_time: datetime | None
+    drone_models: list[str] = Field(default_factory=list)
+    evidence_years: list[int] = Field(default_factory=list)
+    execution_status: str = "success"
     created_at: datetime
     updated_at: datetime
 
@@ -51,3 +57,8 @@ class SupplierOverview(BaseModel):
     verified: int
     unverified: int
     verify_failed: int
+
+
+class SupplierBrandRead(BaseModel):
+    buyer_name: str
+    total_suppliers: int

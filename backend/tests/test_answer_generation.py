@@ -40,8 +40,8 @@ def test_build_answer_context_numbers_evidence_and_bounds_snippets() -> None:
     assert "https://example.com/evidence" in context
 
 
-def test_deepseek_answer_client_returns_grounded_content() -> None:
-    from app.services.answer_generation import DeepSeekAnswerClient
+def test_llm_answer_client_returns_grounded_content() -> None:
+    from app.services.answer_generation import LLMAnswerClient
 
     received: dict[str, object] = {}
 
@@ -57,15 +57,15 @@ def test_deepseek_answer_client_returns_grounded_content() -> None:
         received.update(kwargs)
         return Response()
 
-    answer = DeepSeekAnswerClient(
-        base_url="https://deepseek.example/v1",
+    answer = LLMAnswerClient(
+        base_url="https://llm.example/v1",
         api_key="test-key",
-        model="deepseek-chat",
+        model="custom-model",
         timeout_seconds=10,
     ).generate("问题", [_evidence("事实")], post=post)
 
     assert answer == "根据证据得出结论。[1]"
-    assert received["url"] == "https://deepseek.example/v1/chat/completions"
+    assert received["url"] == "https://llm.example/v1/chat/completions"
 
 
 @pytest.mark.parametrize(
@@ -80,7 +80,7 @@ async def test_stream_reads_provider_sse_and_sends_full_context(monkeypatch, bod
     import json
 
     import httpx
-    from app.services.answer_generation import DeepSeekAnswerClient
+    from app.services.answer_generation import LLMAnswerClient
 
     received = {}
 
@@ -94,7 +94,7 @@ async def test_stream_reads_provider_sse_and_sends_full_context(monkeypatch, bod
         "AsyncClient",
         lambda **kwargs: client_class(transport=httpx.MockTransport(handler), **kwargs),
     )
-    client = DeepSeekAnswerClient(
+    client = LLMAnswerClient(
         base_url="https://model.test", api_key="test", model="test", timeout_seconds=10
     )
     history = [{"role": "user", "content": "先前的问题"}]
@@ -128,7 +128,7 @@ async def test_stream_reads_provider_sse_and_sends_full_context(monkeypatch, bod
 )
 async def test_stream_rejects_empty_broken_and_truncated_answers(monkeypatch, body) -> None:
     import httpx
-    from app.services.answer_generation import AnswerGenerationError, DeepSeekAnswerClient
+    from app.services.answer_generation import AnswerGenerationError, LLMAnswerClient
 
     client_class = httpx.AsyncClient
     monkeypatch.setattr(
@@ -139,7 +139,7 @@ async def test_stream_rejects_empty_broken_and_truncated_answers(monkeypatch, bo
             **kwargs,
         ),
     )
-    client = DeepSeekAnswerClient(
+    client = LLMAnswerClient(
         base_url="https://model.test", api_key="test", model="test", timeout_seconds=10
     )
     with pytest.raises(AnswerGenerationError):

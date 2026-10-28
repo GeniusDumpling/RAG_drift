@@ -80,7 +80,8 @@ describe('SupplierPage', () => {
   it.each(['验证失败', '已验证', '未验证'])('shows %s when verification confidence is absent', async (status) => {
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/supplier/overview')) return Promise.resolve(jsonResponse(overview));
+      if (url.includes('/supplier/brands')) return Promise.resolve(jsonResponse([{ buyer_name: '大疆', total_suppliers: 2 }]));
+      if (url.includes('/supplier/overview')) return Promise.resolve(jsonResponse(overview));
       if (url.includes('/supplier/relations?')) return Promise.resolve(jsonResponse({
         ...relations,
         total: 1,
@@ -98,7 +99,8 @@ describe('SupplierPage', () => {
   it('uses the latest verification confidence as the final table column', async () => {
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/supplier/overview')) return Promise.resolve(jsonResponse(overview));
+      if (url.includes('/supplier/brands')) return Promise.resolve(jsonResponse([{ buyer_name: '大疆', total_suppliers: 2 }]));
+      if (url.includes('/supplier/overview')) return Promise.resolve(jsonResponse(overview));
       if (url.includes('/supplier/relations?')) return Promise.resolve(jsonResponse(relations));
       if (url.endsWith('/supplier/relations/relation-1/verifications')) {
         return Promise.resolve(jsonResponse(verifications));
@@ -108,7 +110,7 @@ describe('SupplierPage', () => {
 
     render(<SupplierPage />);
 
-    expect(await screen.findByLabelText('厂商选择')).toHaveValue('大疆');
+    expect(await screen.findByLabelText('品牌选择')).toHaveValue('大疆');
     expect(screen.getByRole('columnheader', { name: '供应商' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: '供应零件/模块' })).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: /供应关系状态/ })).not.toBeInTheDocument();

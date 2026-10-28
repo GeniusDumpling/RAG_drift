@@ -6,11 +6,12 @@
 表结构与 backend/app/models/supplier.py 对应（不 import backend，保持 tools 独立）。
 连接串从环境变量读取：DATABASE_URL 或 SYNC_DATABASE_URL，两者都没有则跳过（非致命）。
 """
+
 import logging
 import os
 import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,8 @@ def _engine():
 def _tables():
     md = MetaData()
     supplier_relations = Table(
-        "supplier_relations", md,
+        "supplier_relations",
+        md,
         Column("id", UUID(as_uuid=True), primary_key=True),
         Column("supplier_name", String(255), nullable=False),
         Column("supply_content", Text),
@@ -59,12 +61,16 @@ def _tables():
         Column("credibility", String(20)),
         Column("seen_count", Integer),
         Column("source_urls", JSONB),
+        Column("drone_models", JSONB),
+        Column("evidence_years", JSONB),
+        Column("evidence_items", JSONB),
         Column("verify_status", String(20)),
         Column("created_at", DateTime(timezone=True)),
         Column("updated_at", DateTime(timezone=True)),
     )
     supplier_verifications = Table(
-        "supplier_verifications", md,
+        "supplier_verifications",
+        md,
         Column("id", UUID(as_uuid=True), primary_key=True),
         Column("relation_id", UUID(as_uuid=True), ForeignKey("supplier_relations.id")),
         Column("supplier_name", String(255), nullable=False),
@@ -75,6 +81,9 @@ def _tables():
         Column("evidence_urls", JSONB),
         Column("orig_source_urls", JSONB),
         Column("verify_time", DateTime(timezone=True)),
+        Column("drone_models", JSONB),
+        Column("evidence_years", JSONB),
+        Column("execution_status", String(20)),
     )
     return supplier_relations, supplier_verifications
 
@@ -90,10 +99,12 @@ def _extract_urls(text: str) -> list:
     return seen
 
 
-def find_relation_id(session, table, supplier_name: str):
+def find_relation_id(session, table, supplier_name: str, buyer_name: str = "大疆"):
     """按供应商名在 supplier_relations 中定位 id，找不到返回 None。"""
     row = session.execute(
-        select(table.c.id).where(table.c.supplier_name == supplier_name).limit(1)
+        select(table.c.id)
+        .where(table.c.supplier_name == supplier_name, table.c.buyer_name == buyer_name)
+        .limit(1)
     ).first()
     return row[0] if row else None
 
@@ -105,6 +116,9 @@ def relation_update_values(rec: dict, now: datetime) -> dict:
         "credibility": rec.get("credibility") or "明确",
         "seen_count": int(rec.get("count") or 1),
         "source_urls": rec.get("sources") or [],
+        "drone_models": rec.get("models") or [],
+        "evidence_years": rec.get("evidence_years") or [],
+        "evidence_items": rec.get("evidence_items") or [],
         "updated_at": now,
     }
 
@@ -112,7 +126,8 @@ def relation_update_values(rec: dict, now: datetime) -> dict:
 def ensure_relation_id(session, table, result: dict, now: datetime):
     """返回有效关系 ID；验证先到时创建最小关系行，避免孤儿验证记录。"""
     supplier = result["supplier"]
-    relation_id = find_relation_id(session, table, supplier)
+    buyer_name = result.get("buyer_name", "大疆")
+    relation_id = find_relation_id(session, table, supplier, buyer_name)
     if relation_id is not None:
         return relation_id
 
@@ -122,10 +137,13 @@ def ensure_relation_id(session, table, result: dict, now: datetime):
             id=relation_id,
             supplier_name=supplier,
             supply_content=result.get("orig_supply") or result.get("supply") or None,
-            buyer_name="大疆",
+            buyer_name=buyer_name,
             credibility="明确",
             seen_count=1,
             source_urls=result.get("orig_sources") or [],
+            drone_models=result.get("models") or [],
+            evidence_years=result.get("evidence_years") or [],
+            evidence_items=[],
             verify_status="未验证",
             created_at=now,
             updated_at=now,
@@ -135,14 +153,14 @@ def ensure_relation_id(session, table, result: dict, now: datetime):
     return relation_id
 
 
-def reconcile_verify_statuses(session, relations, verifications, now: datetime) -> int:
+def reconcile_verify_statuses(
+    session, relations, verifications, now: datetime, buyer_name="大疆"
+) -> int:
     """没有任何验证记录的关系必须保持未验证，避免 Markdown 历史状态污染数据库。"""
-    has_verification = exists(
-        select(1).where(verifications.c.relation_id == relations.c.id)
-    )
+    has_verification = exists(select(1).where(verifications.c.relation_id == relations.c.id))
     result = session.execute(
         relations.update()
-        .where(~has_verification)
+        .where(~has_verification, relations.c.buyer_name == buyer_name)
         .values(verify_status="未验证", updated_at=now)
     )
     return int(result.rowcount or 0)
@@ -160,7 +178,9 @@ def apply_audit_statuses(confirmed_sec: dict, audits_by_supplier: dict) -> int:
             verdict = audit.get("verdict") or "待确认"
             supply = audit.get("supply_content") or ""
             values = {
-                "verify_status": "已验证",
+                "verify_status": "验证失败"
+                if audit.get("execution_status") == "failed"
+                else "已验证",
                 "verify_time": verify_time,
                 "verify_verdict": f"{verdict}；{supply}".rstrip("；"),
             }
@@ -176,7 +196,7 @@ def apply_audit_statuses(confirmed_sec: dict, audits_by_supplier: dict) -> int:
     return changed
 
 
-def sync_confirmed_relation_statuses(confirmed_sec: dict) -> int:
+def sync_confirmed_relation_statuses(confirmed_sec: dict, buyer_name="大疆") -> int:
     """从 supplier_verifications 回写 Markdown 状态，消除历史状态漂移。"""
     if not HAS_DB:
         raise RuntimeError("未安装 sqlalchemy/psycopg，无法同步供应关系验证状态")
@@ -187,46 +207,59 @@ def sync_confirmed_relation_statuses(confirmed_sec: dict) -> int:
     audits = {}
     with Session(_engine()) as session:
         for relation_id, supplier in session.execute(
-            select(relations.c.id, relations.c.supplier_name)
-            .where(relations.c.buyer_name == "大疆")
+            select(relations.c.id, relations.c.supplier_name).where(
+                relations.c.buyer_name == buyer_name
+            )
         ):
-            audit = session.execute(
-                select(
-                    verifications.c.verify_time,
-                    verifications.c.verdict,
-                    verifications.c.confidence,
-                    verifications.c.supply_content,
+            audit = (
+                session.execute(
+                    select(
+                        verifications.c.verify_time,
+                        verifications.c.verdict,
+                        verifications.c.confidence,
+                        verifications.c.supply_content,
+                        verifications.c.execution_status,
+                    )
+                    .where(verifications.c.relation_id == relation_id)
+                    .order_by(verifications.c.verify_time.desc())
+                    .limit(1)
                 )
-                .where(verifications.c.relation_id == relation_id)
-                .order_by(verifications.c.verify_time.desc())
-                .limit(1)
-            ).mappings().first()
+                .mappings()
+                .first()
+            )
             if audit:
                 audits[supplier] = dict(audit)
     return apply_audit_statuses(confirmed_sec, audits)
 
 
-def load_supplier_relations_for_verification(mode: str, max_suppliers: int = 0) -> list[dict]:
+def load_supplier_relations_for_verification(
+    mode: str, max_suppliers: int = 0, buyer_name="大疆"
+) -> list[dict]:
     """按验证审计记录选择关系，彻底避免依赖 Markdown 的历史状态。"""
     if not HAS_DB:
         raise RuntimeError("未安装 sqlalchemy/psycopg，无法加载待验证供应关系")
     url = get_database_url()
     if not url:
         raise RuntimeError("未设置 DATABASE_URL/SYNC_DATABASE_URL，无法加载待验证供应关系")
+    if mode not in {"all", "failed", "unverified"}:
+        raise ValueError(f"Unknown verification mode: {mode}")
     relations, verifications = _tables()
     statement = (
         select(
             relations.c.supplier_name,
             relations.c.supply_content,
             relations.c.source_urls,
+            relations.c.drone_models,
+            relations.c.evidence_years,
+            relations.c.evidence_items,
         )
-        .where(relations.c.buyer_name == "大疆")
+        .where(relations.c.buyer_name == buyer_name)
         .order_by(relations.c.updated_at.asc(), relations.c.supplier_name.asc())
     )
-    if mode != "all":
-        has_verification = exists(
-            select(1).where(verifications.c.relation_id == relations.c.id)
-        )
+    if mode == "failed":
+        statement = statement.where(relations.c.verify_status == "验证失败")
+    elif mode == "unverified":
+        has_verification = exists(select(1).where(verifications.c.relation_id == relations.c.id))
         statement = statement.where(~has_verification)
     if max_suppliers > 0:
         statement = statement.limit(max_suppliers)
@@ -237,12 +270,16 @@ def load_supplier_relations_for_verification(mode: str, max_suppliers: int = 0) 
             "supplier": row["supplier_name"],
             "supply": row["supply_content"] or "",
             "sources": row["source_urls"] or [],
+            "models": row["drone_models"] or [],
+            "evidence_years": row["evidence_years"] or [],
+            "evidence_items": row["evidence_items"] or [],
+            "buyer_name": buyer_name,
         }
         for row in rows
     ]
 
 
-def upsert_supplier_relations(confirmed_sec: dict) -> tuple:
+def upsert_supplier_relations(confirmed_sec: dict, buyer_name="大疆") -> tuple:
     """阶段1 明确关系写库（按 supplier_name 只增/更新）。
 
     confirmed_sec 形态来自 llm_supplier_analysis.load_confirmed_relations()：
@@ -258,19 +295,21 @@ def upsert_supplier_relations(confirmed_sec: dict) -> tuple:
     engine = _engine()
     relations, verifications = _tables()
     inserted = updated = 0
-    now = datetime.now()
+    now = datetime.now(UTC)
     with Session(engine) as session:
         for name, rec in confirmed_sec.items():
-            row = find_relation_id(session, relations, name)
+            row = find_relation_id(session, relations, name, buyer_name)
             if row is None:
-                session.execute(relations.insert().values(
-                    id=uuid.uuid4(),
-                    supplier_name=name,
-                    buyer_name="大疆",
-                    verify_status="未验证",
-                    created_at=now,
-                    **relation_update_values(rec, now),
-                ))
+                session.execute(
+                    relations.insert().values(
+                        id=uuid.uuid4(),
+                        supplier_name=name,
+                        buyer_name=buyer_name,
+                        verify_status="未验证",
+                        created_at=now,
+                        **relation_update_values(rec, now),
+                    )
+                )
                 inserted += 1
             else:
                 session.execute(
@@ -279,7 +318,7 @@ def upsert_supplier_relations(confirmed_sec: dict) -> tuple:
                     .values(**relation_update_values(rec, now))
                 )
                 updated += 1
-        reconciled = reconcile_verify_statuses(session, relations, verifications, now)
+        reconciled = reconcile_verify_statuses(session, relations, verifications, now, buyer_name)
         session.commit()
     logger.info(
         "[db_ingest] 表1 supplier_relations upsert 完成：新增=%d 更新=%d", inserted, updated
@@ -305,7 +344,7 @@ def ingest_supplier_verifications(results: list) -> int:
     engine = _engine()
     relations, verifications = _tables()
     written = 0
-    now = datetime.now()
+    now = datetime.now(UTC)
     with Session(engine) as session:
         for r in results:
             supplier = r.get("supplier")
@@ -317,18 +356,23 @@ def ingest_supplier_verifications(results: list) -> int:
             # 上游异常类如 "验证失败：xxx"/"搜索失败：xxx" 归一到三值，失败标志用于回写表1 状态
             is_fail = "失败" in verdict
             db_verdict = "待确认" if is_fail else verdict
-            session.execute(verifications.insert().values(
-                id=uuid.uuid4(),
-                relation_id=rel_id,
-                supplier_name=supplier,
-                verdict=db_verdict,
-                confidence=r.get("confidence") or None,
-                supply_content=r.get("supply") or None,
-                evidence_md=r.get("evidence") or None,
-                evidence_urls=_extract_urls(r.get("evidence") or ""),
-                orig_source_urls=r.get("orig_sources") or [],
-                verify_time=now,
-            ))
+            session.execute(
+                verifications.insert().values(
+                    id=uuid.uuid4(),
+                    relation_id=rel_id,
+                    supplier_name=supplier,
+                    verdict=db_verdict,
+                    confidence=r.get("confidence") or None,
+                    supply_content=r.get("supply") or None,
+                    evidence_md=r.get("evidence") or None,
+                    evidence_urls=_extract_urls(r.get("evidence") or ""),
+                    orig_source_urls=r.get("orig_sources") or [],
+                    verify_time=now,
+                    drone_models=r.get("models") or [],
+                    evidence_years=r.get("evidence_years") or [],
+                    execution_status="failed" if is_fail else "success",
+                )
+            )
             written += 1
             # 回写表1 最新验证状态
             status = "验证失败" if is_fail else "已验证"

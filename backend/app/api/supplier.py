@@ -7,11 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_session
 from app.repositories.supplier import (
     get_supplier_overview,
+    list_supplier_brands,
     list_supplier_relations,
     list_supplier_verifications,
 )
 from app.schemas.sources import Page
 from app.schemas.supplier import (
+    SupplierBrandRead,
     SupplierOverview,
     SupplierRelationRead,
     SupplierVerificationRead,
@@ -24,23 +26,36 @@ OffsetQuery = Annotated[int, Query(ge=0)]
 
 
 @router.get("/overview", response_model=SupplierOverview)
-async def supplier_overview(session: SessionDep) -> SupplierOverview:
-    return await get_supplier_overview(session)
+async def supplier_overview(
+    session: SessionDep,
+    buyer_name: Annotated[str | None, Query(max_length=120)] = None,
+) -> SupplierOverview:
+    return await get_supplier_overview(session, buyer_name=buyer_name)
+
+
+@router.get("/brands", response_model=list[SupplierBrandRead])
+async def supplier_brands(session: SessionDep) -> list[SupplierBrandRead]:
+    return await list_supplier_brands(session)
 
 
 @router.get("/relations", response_model=Page[SupplierRelationRead])
 async def supplier_relations(
     session: SessionDep,
     q: Annotated[str | None, Query(max_length=200)] = None,
+    buyer_name: Annotated[str | None, Query(max_length=120)] = None,
     credibility: Annotated[str | None, Query(pattern="^(明确|疑似)$")] = None,
-    verify_status: Annotated[
-        str | None, Query(pattern="^(未验证|已验证|验证失败)$")
-    ] = None,
+    verify_status: Annotated[str | None, Query(pattern="^(未验证|已验证|验证失败)$")] = None,
     limit: LimitQuery = 50,
     offset: OffsetQuery = 0,
 ) -> Page[SupplierRelationRead]:
     return await list_supplier_relations(
-        session, limit=limit, offset=offset, q=q, credibility=credibility, verify_status=verify_status
+        session,
+        limit=limit,
+        offset=offset,
+        q=q,
+        credibility=credibility,
+        verify_status=verify_status,
+        buyer_name=buyer_name,
     )
 
 

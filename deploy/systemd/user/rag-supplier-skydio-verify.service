@@ -1,0 +1,15 @@
+[Unit]
+Description=RAG Skydio supplier verify
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/projects/RAG_drift
+EnvironmentFile=%h/projects/RAG_drift/.env
+ExecStart=/usr/bin/flock --nonblock --verbose --conflict-exit-code=75 %t/rag-supplier-skydio.lock %h/projects/RAG_drift/.venv/bin/python -u %h/projects/RAG_drift/tools/supplier-information/supplier_verify.py --brand skydio --mode unverified
+SuccessExitStatus=75
+TimeoutStartSec=90min
+TimeoutStopSec=30s
+KillMode=control-group
+Nice=10
+StandardOutput=journal
+StandardError=journal

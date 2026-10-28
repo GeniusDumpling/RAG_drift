@@ -48,6 +48,9 @@ async def enrich_bundle(root, concurrency):
 def parser():
     result = argparse.ArgumentParser(description="Parrot PDF / SDK HTML 解析与独立文档库入库")
     subparsers = result.add_subparsers(dest="command", required=True)
+    specifications = subparsers.add_parser("build-specs", help="整理 DJI 兼容的机型—参数目录")
+    specifications.add_argument("--input", type=Path, default=Path("data/Parrot无人机文档"))
+    specifications.add_argument("--output", type=Path, help="默认写入输入目录中的独立技术参数文件")
     for name in [
         "list-scopes",
         "prepare",
@@ -99,6 +102,11 @@ def parser():
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
+        if args.command == "build-specs":
+            from .specifications import build_catalog
+
+            progress("specifications_built", **build_catalog(args.input, args.output))
+            return 0
         if getattr(args, "concurrency", 1) < 1 or getattr(args, "top_k", 1) < 1:
             raise ValueError("concurrency 和 top-k 必须为正整数")
         if args.command == "list-scopes":

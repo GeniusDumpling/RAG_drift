@@ -43,7 +43,7 @@ async def prepare(args, settings, questions):
         "variants": {k: list(v) for k, v in VARIANTS.items()},
         "repeats": args.repeats,
         "max_chars": args.max_chars,
-        "model": settings.deepseek_model,
+        "model": settings.llm_model,
         "reranker_model": settings.reranker_model,
         "reranker_document_max_chars": settings.reranker_document_max_chars,
         "reranker_timeout_seconds": settings.reranker_timeout_seconds,

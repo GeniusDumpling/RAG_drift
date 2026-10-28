@@ -10,13 +10,19 @@ import time
 from datetime import datetime
 
 import requests
+import supplier_config
 import yaml
+from documents import fetch_document
 
 logger = logging.getLogger(__name__)
 
 
-def with_retry(max_retries: int = 3, base_delay: float = 1.0, backoff: float = 2.0,
-               exceptions=(requests.exceptions.ConnectionError, requests.exceptions.Timeout)):
+def with_retry(
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+    backoff: float = 2.0,
+    exceptions=(requests.exceptions.ConnectionError, requests.exceptions.Timeout),
+):
     """指数退避重试装饰器。达到 max_retries 后重抛最后一次异常。"""
 
     def deco(fn):
@@ -30,7 +36,8 @@ def with_retry(max_retries: int = 3, base_delay: float = 1.0, backoff: float = 2
                         raise
                     wait = base_delay * (backoff ** (attempt - 1))
                     logger.warning(
-                        f"{fn.__name__} 失败（{e}），{wait}s 后重试 {attempt + 1}/{max_retries} ...")
+                        f"{fn.__name__} 失败（{e}），{wait}s 后重试 {attempt + 1}/{max_retries} ..."
+                    )
                     time.sleep(wait)
             raise RuntimeError(f"{fn.__name__} 重试耗尽")
 
@@ -58,17 +65,17 @@ INDEX_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "search_res
 
 def load_known_urls() -> set:
     """读取跨 run 已知 URL 累积库（用于增量：跳过已抓取过的 URL）。"""
-    p = os.path.join(INDEX_DIR, "known_urls.txt")
+    p = os.path.join(supplier_config.index_dir(), "known_urls.txt")
     if not os.path.exists(p):
         return set()
-    with open(p, "r", encoding="utf-8") as f:
+    with open(p, encoding="utf-8") as f:
         return {line.strip() for line in f if line.strip()}
 
 
 def record_known_urls(urls) -> int:
     """把成功抓取的 URL 追加进已知库，返回新增条数。"""
-    p = os.path.join(INDEX_DIR, "known_urls.txt")
-    os.makedirs(INDEX_DIR, exist_ok=True)
+    p = os.path.join(supplier_config.index_dir(), "known_urls.txt")
+    os.makedirs(supplier_config.index_dir(), exist_ok=True)
     known = load_known_urls()
     new = 0
     with open(p, "a", encoding="utf-8") as f:
@@ -78,6 +85,7 @@ def record_known_urls(urls) -> int:
                 known.add(u)
                 new += 1
     return new
+
 
 try:
     import trafilatura
@@ -91,7 +99,8 @@ except ImportError:
 
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../..", ".env"))
 except ImportError:
     load_dotenv = None
 
@@ -109,12 +118,10 @@ def base_dir() -> str:
 
 def load_conf(config_name: str = "conf.yaml") -> dict:
     """从同级 conf.yaml 读取全部配置（search / llm / verify 等）。"""
-    path = os.path.join(base_dir(), config_name)
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"找不到配置文件：{path}")
-    with open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    return data or {}
+    if config_name == "conf.yaml":
+        return supplier_config.load_config()
+    with open(os.path.join(base_dir(), config_name), encoding="utf-8") as handle:
+        return yaml.safe_load(handle) or {}
 
 
 def get_api_key() -> str:
@@ -125,7 +132,7 @@ def get_api_key() -> str:
     # .env 文件与脚本同级，作为本地开发兜底
     env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     if os.path.exists(env_path):
-        with open(env_path, "r", encoding="utf-8") as f:
+        with open(env_path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
@@ -149,6 +156,12 @@ def _clean_html_text(value: str) -> str:
 def is_usable_fulltext(text: str) -> bool:
     """排除正文提取器从站点错误页抽出的伪正文。"""
     normalized = re.sub(r"\s+", "", text)
+    if len(normalized) < 1000 and re.search(
+        r"404.{0,40}(notfound|pagenotfound)|accessdenied|403forbidden",
+        normalized,
+        flags=re.I,
+    ):
+        return False
     return bool(normalized) and not all(marker in normalized for marker in ERROR_PAGE_MARKERS)
 
 
@@ -158,7 +171,7 @@ def _baidu_landing_content_data(downloaded: str) -> dict:
     if start < 0:
         return {}
     try:
-        payload, _ = json.JSONDecoder().raw_decode(downloaded[start + len(marker):])
+        payload, _ = json.JSONDecoder().raw_decode(downloaded[start + len(marker) :])
         return payload["data"]["pageInfo"]["content"]["data"]
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return {}
@@ -232,20 +245,14 @@ def extract_baidu_landing_image_text(downloaded: str) -> str:
 
 
 # 阿里云 WAF 反爬 JS 挑战页特征（挑战页正文被 JS 执行 + cookie 校验遮挡，纯 HTTP 无法提取）
-WAF_MARKERS = ("aliyun_waf_aa", "acw_sc__v2", "id=\"renderData\"", "id='renderData'", "_waf_")
+WAF_MARKERS = ("aliyun_waf_aa", "acw_sc__v2", 'id="renderData"', "id='renderData'", "_waf_")
 
 _conf_cache = None
 
 
 def _search_conf() -> dict:
-    """模块级缓存 conf.yaml 的 search 段，避免每条 URL 都重读文件。"""
-    global _conf_cache
-    if _conf_cache is None:
-        try:
-            _conf_cache = load_conf().get("search", {}) or {}
-        except Exception:
-            _conf_cache = {}
-    return _conf_cache
+    """Read the active brand configuration; never reuse another brand's cached settings."""
+    return load_conf().get("search", {}) or {}
 
 
 def is_waf_challenged(html: str) -> bool:
@@ -264,7 +271,9 @@ def fetch_fulltext_via_browser(url: str, timeout_nav: float = 25.0) -> str:
     - 失败不抛异常，返回空字符串。
     """
     if sync_playwright is None:
-        logger.warning("未安装 playwright，浏览器兜底不可用。请执行：uv sync && playwright install chromium")
+        logger.warning(
+            "未安装 playwright，浏览器兜底不可用。请执行：uv sync && playwright install chromium"
+        )
         return ""
     try:
         with sync_playwright() as p:
@@ -298,8 +307,6 @@ def fetch_fulltext_via_browser(url: str, timeout_nav: float = 25.0) -> str:
 
 def fetch_fulltext(url: str, config=None, retries: int = 3, delay: float = 1.0) -> str:
     """用 trafilatura 抓取网页完整正文，带指数重试；失败时按配置用无头浏览器兜底。"""
-    if trafilatura is None:
-        return ""
     for attempt in range(1, retries + 1):
         try:
             if BAIDU_LANDING_HOST in url:
@@ -311,13 +318,19 @@ def fetch_fulltext(url: str, config=None, retries: int = 3, delay: float = 1.0) 
                 text = extract_baidu_landing_image_text(response.text)
                 if is_usable_fulltext(text):
                     return text
-            kwargs = {"config": config} if config is not None else {}
-            downloaded = trafilatura.fetch_url(url, **kwargs)
-            if downloaded:
-                text = trafilatura.extract(downloaded, include_links=False)
-                if text and is_usable_fulltext(text):
-                    return text
+            document = fetch_document(
+                url,
+                cache_dir=supplier_config.index_dir() / "documents",
+                timeout=float(_search_conf().get("fetch_timeout", 30)),
+            )
+            text = document["text"]
+            if text and is_usable_fulltext(text):
+                return text
         except Exception as e:
+            if isinstance(e, requests.HTTPError) and e.response is not None:
+                if e.response.status_code in {404, 410}:
+                    logger.warning("Source no longer exists: %s", url)
+                    return ""
             logger.warning(f"抓取失败 {url[:50]}...（{e}），第 {attempt}/{retries} 次尝试")
         if attempt < retries and delay > 0:
             time.sleep(delay)
@@ -333,7 +346,7 @@ def fetch_fulltext(url: str, config=None, retries: int = 3, delay: float = 1.0) 
 
 
 @with_retry()
-def search(query: str, conf: dict) -> dict:
+def search_baidu(query: str, conf: dict) -> dict:
     """调用百度千帆 AI 联网搜索接口，返回解析后的响应 JSON。"""
     payload = {
         "messages": [{"role": "user", "content": query}],
@@ -368,9 +381,102 @@ def search(query: str, conf: dict) -> dict:
     }
 
     timeout = conf.get("timeout", 30)
-    response = requests.post(API_URL, headers=headers, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"), timeout=timeout)
+    response = requests.post(
+        API_URL,
+        headers=headers,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        timeout=timeout,
+    )
     response.raise_for_status()
     return response.json()
+
+
+@with_retry()
+def search_brave(query: str, conf: dict) -> dict:
+    key = os.environ.get("BRAVE_SEARCH_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("BRAVE_SEARCH_API_KEY is not configured")
+    response = requests.get(
+        "https://api.search.brave.com/res/v1/web/search",
+        headers={"X-Subscription-Token": key, "Accept": "application/json"},
+        params={
+            "q": query,
+            "count": min(20, int(conf.get("top_k", 10))),
+            "search_lang": {"zh": "zh-hans"}.get(conf.get("language"), conf.get("language", "en")),
+            "extra_snippets": "true",
+        },
+        timeout=conf.get("timeout", 30),
+    )
+    response.raise_for_status()
+    return {
+        "references": [
+            {
+                "title": r.get("title", ""),
+                "url": r["url"],
+                "content": "\n".join([r.get("description", ""), *r.get("extra_snippets", [])]),
+                "date": r.get("page_age", ""),
+                "source": "brave",
+                "query": query,
+                "language": conf.get("language", "en"),
+            }
+            for r in response.json().get("web", {}).get("results", [])
+            if r.get("url")
+        ]
+    }
+
+
+def search(query: str, conf: dict) -> dict:
+    provider = conf.get("provider", "baidu")
+    auto = provider == "auto"
+    if provider == "auto":
+        provider = "brave" if os.environ.get("BRAVE_SEARCH_API_KEY") else "baidu"
+    if provider == "brave":
+        try:
+            return search_brave(query, conf)
+        except requests.HTTPError as exc:
+            if not auto or not get_api_key() or exc.response is None:
+                raise
+            if exc.response.status_code not in {401, 403, 422, 429}:
+                raise
+            logger.warning("Brave HTTP %s; auto mode falls back to Baidu", exc.response.status_code)
+            provider = "baidu"
+    if provider != "baidu":
+        raise ValueError(f"Unknown search provider: {provider}")
+    if not get_api_key():
+        raise RuntimeError("BAIDU_QIANFAN_API_KEY is not configured")
+    result = search_baidu(query, conf)
+    for ref in result.get("references", []):
+        ref.update(source="baidu", query=query, language=conf.get("language", "zh"))
+    return result
+
+
+def collect_references(conf):
+    refs = [
+        {"url": u, "title": u.rsplit("/", 1)[-1], "source": "official_seed"}
+        for u in conf.get("seed_urls", [])
+    ]
+    queries = conf.get("queries") or [{"q": conf.get("keyword", ""), "language": "zh"}]
+    successes = 0
+    for item in queries:
+        if isinstance(item, str):
+            item = {"q": item, "language": conf.get("language", "en")}
+        query = item.get("q", "").strip()
+        if not query:
+            continue
+        result = search(query, {**conf, "language": item.get("language", "en")})
+        successes += 1
+        refs.extend(result.get("references", []))
+    if not successes:
+        raise RuntimeError("No search query executed")
+    seen = set()
+    unique = []
+    for ref in refs:
+        url = ref.get("url", "").split("#")[0]
+        if url and url not in seen:
+            seen.add(url)
+            unique.append({**ref, "url": url})
+    limit = int(conf.get("max_results", 0))
+    return unique[:limit] if limit else unique
 
 
 def save_snapshot(query: str, refs: list, out_dir: str) -> str:
@@ -385,7 +491,11 @@ def save_snapshot(query: str, refs: list, out_dir: str) -> str:
 
     # 快照 2：可读 Markdown
     md_path = base + "_snapshot.md"
-    lines = [f"# 搜索结果快照：{query}", f"\n搜索时间：{datetime.now():%Y-%m-%d %H:%M:%S}", f"结果数量：{len(refs)}\n"]
+    lines = [
+        f"# 搜索结果快照：{query}",
+        f"\n搜索时间：{datetime.now():%Y-%m-%d %H:%M:%S}",
+        f"结果数量：{len(refs)}\n",
+    ]
     for i, ref in enumerate(refs, 1):
         lines.append(f"## {i}. {ref.get('title', '无标题')}")
         if ref.get("url"):
@@ -394,7 +504,9 @@ def save_snapshot(query: str, refs: list, out_dir: str) -> str:
             lines.append(f"来源：{ref['source']}")
         if ref.get("date"):
             lines.append(f"日期：{ref['date']}")
-        content = (ref.get("content") or "无内容摘要").replace("\u0004", "...").replace("\u0005", "...")
+        content = (
+            (ref.get("content") or "无内容摘要").replace("\u0004", "...").replace("\u0005", "...")
+        )
         lines.append(f"\n{content}\n")
         lines.append("---")
 
@@ -418,8 +530,14 @@ def save_urls(query: str, refs: list, out_dir: str) -> str:
     return path
 
 
-def save_fulltext_snapshot(query: str, refs: list, out_dir: str, delay: float = 1.0,
-                           fetch_retries: int = 3, record_new: bool = True) -> str:
+def save_fulltext_snapshot(
+    query: str,
+    refs: list,
+    out_dir: str,
+    delay: float = 1.0,
+    fetch_retries: int = 3,
+    record_new: bool = True,
+) -> str:
     """抓取每个 URL 完整正文并流式写入 Markdown，支持断点续抓与失败 URL 记录。
 
     - 同 run（stamp() 相同、文件已存在）重跑时，跳过已成功抓取的 URL；
@@ -440,19 +558,21 @@ def save_fulltext_snapshot(query: str, refs: list, out_dir: str, delay: float = 
     # 断点：若文件已存在（同 run 重跑），收集已成功 URL
     done_urls = set()
     if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             for line in f:
                 if line.startswith("地址："):
-                    done_urls.add(line[len("地址："):].strip())
+                    done_urls.add(line[len("地址：") :].strip())
 
     ok = skipped = 0
     ok_urls = []
     mode = "a" if os.path.exists(path) else "w"
     if mode == "w":
         with open(path, "w", encoding="utf-8") as f:
-            f.write(f"# 搜索结果全文快照：{query}\n\n"
-                    f"抓取时间：{datetime.now():%Y-%m-%d %H:%M:%S}\n"
-                    f"结果数量：{total}\n\n")
+            f.write(
+                f"# 搜索结果全文快照：{query}\n\n"
+                f"抓取时间：{datetime.now():%Y-%m-%d %H:%M:%S}\n"
+                f"结果数量：{total}\n\n"
+            )
 
     failed = []
     with open(path, mode, encoding="utf-8") as f:
@@ -505,38 +625,26 @@ def save_fulltext_snapshot(query: str, refs: list, out_dir: str, delay: float = 
     return path
 
 
-def main() -> str:
+def main(record_new=True) -> str:
     """百度搜索→合并快照→可选抓取全文。返回主产物（fulltext 优先）路径。"""
     conf = load_conf()
     search_conf = conf.get("search", {})
 
-    query = str(search_conf.get("keyword", "")).strip()
+    query = str(
+        search_conf.get("keyword") or f"{supplier_config.brand()['name']} suppliers"
+    ).strip()
     if not query:
         logger.warning("未配置搜索关键词，请在 conf.yaml 的 search.keyword 中填写。")
         return ""
 
-    search_results_dir = os.path.join(base_dir(), "search_results")
+    search_results_dir = str(supplier_config.index_dir().parent)
     os.makedirs(search_results_dir, exist_ok=True)
     # 每次运行的结果统一放入 厂商名_日期时间戳 子目录
     out_dir = os.path.join(search_results_dir, f"{sanitize_filename(query)}_{stamp()}")
     logger.info(f"正在搜索：{query} ...")
     logger.info(f"输出目录：{out_dir}")
 
-    refs = []
-    use_baidu = search_conf.get("use_baidu", True)
-    if not use_baidu:
-        logger.warning("use_baidu=false，当前流程仅支持百度搜索，无法继续。")
-        return ""
-    # 百度千帆 AI 搜索
-    if not get_api_key():
-        logger.warning("未找到 BAIDU_QIANFAN_API_KEY，请在 .env 或环境变量中配置。")
-        return ""
-    logger.info("[百度] 调用千帆 AI 搜索 ...")
-    baidu_result = search(query, search_conf)
-    refs = baidu_result.get("references", [])
-    for _r in refs:
-        _r["source"] = "baidu"
-    logger.info(f"[百度] 获取 {len(refs)} 条结果。")
+    refs = collect_references(search_conf)
 
     logger.info(f"合并去重后共 {len(refs)} 条结果。")
     if not refs:
@@ -556,8 +664,10 @@ def main() -> str:
         if search_conf.get("incremental", False):
             known = load_known_urls()
             new_refs = [r for r in refs if r.get("url") and r["url"] not in known]
-            logger.info(f"增量模式：共 {len(refs)} 条，新增 {len(new_refs)} 条，跳过已知 "
-                        f"{len(refs) - len(new_refs)} 条。")
+            logger.info(
+                f"增量模式：共 {len(refs)} 条，新增 {len(new_refs)} 条，跳过已知 "
+                f"{len(refs) - len(new_refs)} 条。"
+            )
             fetch_refs = new_refs
             if not fetch_refs:
                 logger.info("无新增 URL，抓取阶段跳过。")
@@ -565,9 +675,12 @@ def main() -> str:
 
         logger.info("开始抓取网页完整正文 ...")
         full_path = save_fulltext_snapshot(
-            query, fetch_refs, out_dir,
+            query,
+            fetch_refs,
+            out_dir,
             delay=search_conf.get("fetch_delay", 1.0),
             fetch_retries=int(search_conf.get("fetch_retries", 3)),
+            record_new=record_new,
         )
         logger.info(f"网页全文快照已保存：{full_path}")
         result_path = full_path
@@ -575,4 +688,5 @@ def main() -> str:
 
 
 if __name__ == "__main__":
+    supplier_config.cli("Search brand-specific supplier sources")
     main()

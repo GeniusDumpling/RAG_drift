@@ -1249,7 +1249,7 @@ async def test_search_and_answer_diversify_before_truncating_long_video(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = _use_memory_vector_backend(monkeypatch)
-    settings.deepseek_api_key = None
+    settings.llm_api_key = None
     monkeypatch.setattr(QdrantIndexer, "search_chunks", lambda self, **kwargs: [])
     source_id, run_id = await _create_retrieval_source_run(db_session, url_path="long-video")
     records = [

@@ -17,6 +17,7 @@ import type {
   DatabaseTableRow,
   DatabaseTableRowsPage,
   DroneCatalog,
+  DroneBrand,
   DroneDetail,
   CrawlRun,
   CrawlRunEvent,
@@ -29,6 +30,7 @@ import type {
   SearchResponse,
   SourceSite,
   SupplierOverview,
+  SupplierBrand,
   SupplierRelation,
   SupplierVerification,
   UUID,
@@ -40,12 +42,15 @@ import type {
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
-export function listDrones(signal?: AbortSignal): Promise<DroneCatalog> {
-  return request('/drones', { signal });
+export function listDrones(signal?: AbortSignal, brand: DroneBrand = 'dji'): Promise<DroneCatalog> {
+  return request(brand === 'dji' ? '/drones' : buildPath('/drones', { brand }), { signal });
 }
 
-export function getDrone(slug: string, signal?: AbortSignal): Promise<DroneDetail> {
-  return request(`/drones/${encodeURIComponent(slug)}`, { signal });
+export function getDrone(
+  slug: string, signal?: AbortSignal, brand: DroneBrand = 'dji',
+): Promise<DroneDetail> {
+  const path = `/drones/${encodeURIComponent(slug)}`;
+  return request(brand === 'dji' ? path : buildPath(path, { brand }), { signal });
 }
 
 export function getVideoGraphOverview(): Promise<VideoGraphOverview> {
@@ -326,18 +331,23 @@ export async function streamAnswer(
   }
 }
 
-export function getSupplierOverview(): Promise<SupplierOverview> {
-  return request<SupplierOverview>('/supplier/overview');
+export function listSupplierBrands(): Promise<SupplierBrand[]> {
+  return request<SupplierBrand[]>('/supplier/brands');
+}
+
+export function getSupplierOverview(buyerName?: string): Promise<SupplierOverview> {
+  return request<SupplierOverview>(buildPath('/supplier/overview', { buyer_name: buyerName }));
 }
 
 export function listSupplierRelations(
-  params: { q?: string; credibility?: string; verify_status?: string; limit?: number; offset?: number } = {},
+  params: { buyer_name?: string; q?: string; credibility?: string; verify_status?: string; limit?: number; offset?: number } = {},
 ): Promise<Page<SupplierRelation>> {
   return request<Page<SupplierRelation>>(
     buildPath('/supplier/relations', {
       limit: params.limit ?? 50,
       offset: params.offset ?? 0,
       q: params.q,
+      buyer_name: params.buyer_name,
       credibility: params.credibility,
       verify_status: params.verify_status,
     }),

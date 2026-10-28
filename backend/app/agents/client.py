@@ -53,8 +53,8 @@ class AgentClient:
                 return self._fake_optimize_query(raw_query=raw_query, filters=filters, mode=mode)
             if self.provider == "fake-failing":
                 raise RuntimeError("fake provider configured to fail")
-            if self.provider == "deepseek":
-                return self._deepseek_optimize_query(
+            if self.provider in {"openai-compatible", "deepseek"}:
+                return self._llm_optimize_query(
                     raw_query=raw_query, filters=filters, mode=mode
                 )
             return self._fallback_query_response(raw_query, status="unsupported_provider")
@@ -115,12 +115,12 @@ class AgentClient:
             },
         )
 
-    def _deepseek_optimize_query(
+    def _llm_optimize_query(
         self, *, raw_query: str, filters: dict[str, Any], mode: str
     ) -> QueryOptimizationResponse:
-        if not self.settings.deepseek_api_key:
+        if not self.settings.llm_api_key:
             raise RuntimeError(
-                "缺少 DEEPSEEK_API_KEY；无法使用 deepseek 查询优化。"
+                "缺少 LLM_API_KEY；无法使用 LLM 查询优化。"
                 "请配置密钥或改用 LLM_PROVIDER=fake。"
             )
         system_prompt = (
@@ -160,20 +160,20 @@ class AgentClient:
                 "time_hints_json": dict(parsed.get("time_hints_json") or {}),
                 "query_intent": str(parsed.get("query_intent") or "other"),
                 "confidence": float(parsed.get("confidence") or 0.0),
-                "trace_summary_json": {"provider": "deepseek", "fallback": False},
+                "trace_summary_json": {"provider": self.provider, "fallback": False},
             }
         )
 
     def _request_json_content(
         self, *, system: str, user: str, temperature: float
     ) -> str:
-        url = f"{self.settings.deepseek_base_url.rstrip('/')}/chat/completions"
+        url = f"{self.settings.base_url.rstrip('/')}/chat/completions"
         headers = {
-            "Authorization": f"Bearer {self.settings.deepseek_api_key}",
+            "Authorization": f"Bearer {self.settings.llm_api_key}",
             "Content-Type": "application/json",
         }
         body = {
-            "model": self.settings.deepseek_model,
+            "model": self.settings.llm_model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -189,7 +189,7 @@ class AgentClient:
         try:
             return str(payload["choices"][0]["message"]["content"])
         except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError("DeepSeek 响应缺少 choices[0].message.content。") from exc
+            raise RuntimeError("LLM 响应缺少 choices[0].message.content。") from exc
 
     def _fallback_extraction_response(
         self,

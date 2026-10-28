@@ -79,7 +79,7 @@ flowchart TD
 
 ### 2. 完成实体、关系与证据抽取
 
-使用 DeepSeek Chat Completions 接口进行视频主题判断及逐切片抽取；已有真实运行报告使用的模型为 `deepseek-flash`，具体模型由 `DEEPSEEK_MODEL` 配置。
+使用 DeepSeek Chat Completions 接口进行视频主题判断及逐切片抽取；已有真实运行报告使用的模型为 `deepseek-flash`，具体模型由 `LLM_MODEL` 配置。
 
 请求采用 JSON 输出格式、`temperature=0`，并在请求体中显式设置：
 

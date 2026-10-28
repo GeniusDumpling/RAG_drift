@@ -1,15 +1,32 @@
 /* 无人机信息页：复用全局设计令牌（styles.css） */
 .drone-page-title { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 
-.drone-manufacturer {
-  padding: 8px 14px;
-  border: 1px solid var(--accent-border);
+.drone-brand-switch {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 4px;
+  border: 1px solid var(--border);
   border-radius: 999px;
+  background: var(--surface);
+}
+.drone-brand-switch button {
+  min-height: 44px;
+  padding: 8px 18px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.drone-brand-switch button[aria-pressed="true"] {
+  border-color: var(--accent-border);
   background: var(--accent-soft);
   color: var(--accent-hover);
   font-weight: 600;
-  white-space: nowrap;
 }
+.drone-model-count { font-size: 0.75rem; color: var(--text-tertiary); font-weight: 400; }
+.drone-source-meta { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 0.75rem; color: var(--text-secondary); }
 
 .drone-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; gap: 24px; }
 
@@ -131,8 +148,8 @@
   .drone-layout { grid-template-columns: minmax(0, 1fr); }
   .drone-models { position: static; }
   .drone-model-list { max-height: 280px; min-height: 0; }
-  .drone-page-title { align-items: flex-start; }
-  .drone-manufacturer { padding: 6px 10px; font-size: 0.75rem; }
+  .drone-page-title { align-items: flex-start; flex-wrap: wrap; }
+  .drone-brand-switch button { padding: 6px 16px; font-size: 0.875rem; }
   .drone-detail-header { padding: 20px 16px; }
   .drone-parameters > div { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 12px 16px; }
   .drone-parameters dt { padding: 0 0 6px; font-weight: 600; }

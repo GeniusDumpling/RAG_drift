@@ -797,11 +797,12 @@ progress { width: 100%; height: 6px; accent-color: var(--accent); }
 .supplier-page { max-width: 1440px; }
 .supplier-manufacturer-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 18px;
-  width: min(100%, 520px);
+  width: 100%;
   min-height: 72px;
-  margin: 0 0 48px;
+  margin: 0 0 24px;
   padding: 16px 20px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -811,8 +812,18 @@ progress { width: 100%; height: 6px; accent-color: var(--accent); }
 .supplier-manufacturer-bar label { font-size: 1.02rem; font-weight: 600; white-space: nowrap; }
 .supplier-manufacturer-bar select { width: min(100%, 250px); }
 .supplier-manufacturer-bar .muted { margin-left: auto; font-size: 0.8125rem; white-space: nowrap; }
+.supplier-overview-summary { display: grid; gap: 4px; margin-left: auto; font-size: 0.8125rem; }
+.supplier-overview-summary span { color: var(--text-secondary); }
+.supplier-brand-name { display: block; margin-top: 4px; color: var(--text-secondary); font-size: 0.8125rem; }
+.supplier-evidence-metadata { display: grid; gap: 2px; margin-top: 8px; color: var(--text-secondary); font-size: 0.8125rem; overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .supplier-overview-summary { width: 100%; margin-left: 0; }
+  .supplier-manufacturer-bar select { flex: 1; min-width: 0; }
+}
 .supplier-relations-section { background: transparent; }
 .supplier-search-bar { display: flex; gap: 8px; align-items: end; max-width: 540px; margin: 0 0 20px; }
+.supplier-search-bar input { flex: 1; min-width: 0; }
+.supplier-search-bar button { flex-shrink: 0; white-space: nowrap; }
 .supplier-table-scroll { overflow-x: auto; }
 .supplier-relation-table { width: 100%; min-width: 960px; border-collapse: separate; border-spacing: 0 16px; }
 .supplier-relation-table th {

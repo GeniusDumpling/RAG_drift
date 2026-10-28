@@ -40,7 +40,7 @@ async def test_anonymous_judge_evaluates_all_seven_variants_with_their_own_conte
     base.write_json(tmp_path / "rubrics/q.json", {"rubric": {"facts": []}})
 
     async def completion(settings, system, payload, **kwargs):
-        assert kwargs["reasoning_effort"] == "low"
+        assert "reasoning_effort" not in kwargs
         assert kwargs["max_tokens"] == 16000
         answers = payload["answers"]
         assert {a["id"] for a in answers} == set("ABCDEFG")

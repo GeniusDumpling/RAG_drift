@@ -77,23 +77,30 @@ def parse_parameter_groups(html: str) -> list[DroneParameterGroup]:
 
 
 class DroneCatalogService:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, manufacturer: str = "DJI"):
         self.root = root.resolve()
+        self.manufacturer = manufacturer
 
     def _rows(self) -> list[dict[str, str]]:
         try:
             with (self.root / "技术参数索引.csv").open(encoding="utf-8-sig", newline="") as f:
                 return list(csv.DictReader(f))
         except (OSError, UnicodeError, csv.Error) as exc:
-            raise DroneCatalogUnavailable("无人机资料暂不可用，请检查 DJI 文档目录配置。") from exc
+            raise DroneCatalogUnavailable(
+                f"{self.manufacturer} 无人机资料暂不可用，请检查该品牌的文档目录配置。"
+            ) from exc
 
     def _summary(self, row: dict[str, str]) -> DroneSummary:
         try:
             return DroneSummary(
-                slug=row["slug"], name=row["name"], category=_category(row["slug"]),
+                slug=row["slug"], name=row["name"],
+                manufacturer=row.get("manufacturer") or self.manufacturer,
+                category=row.get("category") or _category(row["slug"]),
                 status=row["status"], group_count=int(row["group_count"]),
                 parameter_count=int(row["parameter_count"]), source_url=row["source_url"],
                 collected_at=row["collected_at"], note=row.get("error", ""),
+                official_version=row.get("official_version") or None,
+                updated_at=row.get("updated_at") or None,
             )
         except (KeyError, ValueError) as exc:
             raise DroneCatalogUnavailable("无人机技术参数索引格式有误。") from exc

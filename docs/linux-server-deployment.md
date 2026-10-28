@@ -148,7 +148,7 @@ HTTPS_PROXY=
 YOUTUBE_API_KEY=<YouTube搜索Key>
 VLM_API_KEY=<视频摘要Key>
 EMBEDDING_API_KEY=<向量Key，可留空复用VLM_API_KEY>
-DEEPSEEK_API_KEY=<问答与供应商分析Key>
+LLM_API_KEY=<问答与供应商分析Key>
 BAIDU_QIANFAN_API_KEY=<供应商搜索Key>
 ```
 

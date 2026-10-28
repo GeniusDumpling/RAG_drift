@@ -192,24 +192,22 @@ class VideoExtractor(Protocol):
     ) -> ChunkExtraction: ...
 
 
-class DeepSeekVideoExtractor:
+class LLMVideoExtractor:
     def __init__(self, settings: Settings, *, version: str = PROMPT_VERSION) -> None:
         self.settings = settings
-        self.version = f"{version}:{settings.deepseek_model}"
+        self.version = f"{version}:{settings.llm_model}"
         if len(self.version) > 160:
             raise ValueError("抽取版本和模型名称合计不能超过 160 个字符")
-        if not settings.deepseek_api_key:
-            raise ValueError("视频图谱抽取需要配置 DEEPSEEK_API_KEY")
+        if not settings.llm_api_key:
+            raise ValueError("视频图谱抽取需要配置 LLM_API_KEY")
 
     def _request(self, system: str, payload: dict[str, Any]) -> dict[str, Any]:
         try:
             response = httpx.post(
-                f"{self.settings.deepseek_base_url.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {self.settings.deepseek_api_key}"},
+                f"{self.settings.base_url.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {self.settings.llm_api_key}"},
                 json={
-                    "model": self.settings.deepseek_model,
-                    "thinking": {"type": "enabled"},
-                    "reasoning_effort": "low",
+                    "model": self.settings.llm_model,
                     "temperature": 0,
                     "response_format": {"type": "json_object"},
                     "messages": [

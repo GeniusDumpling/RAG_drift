@@ -1,4 +1,49 @@
-# 百度千帆 AI 联网搜索参数配置
+# 默认保留大疆定时任务；命令行 --brand 选择其他品牌。
+brand: dji
+brands:
+  dji:
+    name: 大疆
+    aliases: [大疆, DJI, DJI Innovations, 深圳市大疆创新科技有限公司]
+    language: zh
+  parrot:
+    name: Parrot
+    aliases: [Parrot, Parrot Drones, Parrot Drones SAS, 派诺特]
+    language: en
+    search:
+      provider: auto
+      keyword: Parrot drone component suppliers
+      top_k: 6
+      max_results: 6
+      fetch_retries: 2
+      queries:
+        - {q: 'Parrot ANAFI official white paper components suppliers', language: en}
+        - {q: 'Parrot ANAFI supplier partnership thermal processor', language: en}
+        - {q: 'Parrot 派诺特 无人机 供应商 芯片', language: zh-hans}
+      seed_urls:
+        - https://www.parrot.com/assets/s3fs-public/2023-02/ANAFI-USA-white-paper-en.pdf
+        - https://www.parrot.com/assets/s3fs-public/document/ANAFI%20UKR%20white%20paper.pdf
+    verify: {search_limit: 6, fetch_limit: 3, fetch_delay: 0.5, max_suppliers: 3}
+  skydio:
+    name: Skydio
+    aliases: [Skydio, Skydio Inc, Skydio Inc.]
+    language: en
+    search:
+      provider: auto
+      keyword: Skydio drone component suppliers
+      top_k: 6
+      max_results: 6
+      fetch_retries: 2
+      queries:
+        - {q: 'Skydio X10 component suppliers Nidec NVIDIA FLIR', language: en}
+        - {q: 'Skydio X10 official specifications supplier GNSS', language: en}
+        - {q: 'Skydio 无人机 电机 热成像 供应商', language: zh-hans}
+      seed_urls:
+        - https://www.nidec.com/en/product/news/2024/news0722-01/
+        - https://oem.flir.com/about/news/innovating-the-most-sensitive-uncooled-thermal-camera-drone-payload-with-skydio/
+        - https://www.skydio.com/x10
+    verify: {search_limit: 6, fetch_limit: 3, fetch_delay: 0.5, max_suppliers: 3}
+
+# 百度/Brave 搜索；英文品牌默认优先使用 Brave。
 search:
   keyword: 大疆供应商
   use_baidu: true              # 是否启用百度千帆 AI 搜索
@@ -33,14 +78,14 @@ search:
   incremental: true             # 增量模式：只抓取/分析新增 URL，跳过 known_urls 已知库中的 URL
   fetch_with_browser: true      # trafilatura 失败时是否用 Playwright 无头浏览器兜底（应付 WAF/JS 渲染/登录墙）
   fetch_browser_timeout: 25     # 浏览器兜底单页导航超时（秒）
+  fetch_timeout: 30
 
-# -- LLM 供应关系分析（需在 .env 配置 DEEPSEEK_API_KEY）--
+# -- LLM 供应关系分析（统一读取项目根目录 .env 的 BASE_URL、LLM_API_KEY、LLM_MODEL）--
 llm:
-  api_base: https://api.deepseek.com
-  model: deepseek-flash
   temperature: 0.2              # 分析类任务用低温度更稳定
-  max_tokens: 4096              # 单次响应最大 token
+  max_tokens: 16384              # 单次响应最大 token
   chunk_size: 10                # 每个请求分析多少条网页（分批避免超长）
+  max_chunk_chars: 22000        # 长 PDF 按页/文本段分片，避免超出模型上下文
   timeout: 120                  # 单次请求超时（秒）
   max_retries: 3                # 单个请求失败时的重试次数
 

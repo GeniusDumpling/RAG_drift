@@ -9,7 +9,7 @@ import pytest
 from app.core.config import Settings
 from app.schemas.video_graph import ChunkExtraction, EntityType, Predicate
 from app.services.video_graph import (
-    DeepSeekVideoExtractor,
+    LLMVideoExtractor,
     VideoChunk,
     VideoMaterial,
     validate_extraction,
@@ -197,7 +197,7 @@ class TestVideoGraphSemantics(unittest.TestCase):
         material = VideoMaterial(
             uuid.uuid4(), "youtube:test", "test", "https://youtu.be/test", "", "manual", "en", ()
         )
-        extractor = DeepSeekVideoExtractor(Settings(_env_file=None, DEEPSEEK_API_KEY="test-key"))
+        extractor = LLMVideoExtractor(Settings(_env_file=None, LLM_API_KEY="test-key"))
         with patch.object(
             extractor, "_request", return_value={"entities": [], "relations": []}
         ) as request:

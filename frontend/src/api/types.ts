@@ -2,6 +2,8 @@ export type UUID = string;
 export type ISODateTime = string;
 export type JsonObject = Record<string, unknown>;
 
+export type DroneBrand = 'dji' | 'parrot';
+
 export type DroneSummary = {
   slug: string;
   name: string;
@@ -13,6 +15,8 @@ export type DroneSummary = {
   source_url: string;
   collected_at: string;
   note: string;
+  official_version?: string | null;
+  updated_at?: string | null;
 };
 
 export type DroneCatalog = {
@@ -561,6 +565,15 @@ export type SupplierRelation = {
   credibility: string;
   seen_count: number;
   source_urls: string[];
+  drone_models: string[];
+  evidence_years: number[];
+  evidence_items: {
+    url: string;
+    models?: string[];
+    evidence_years?: number[];
+    quote?: string;
+    relation_type?: string;
+  }[];
   verify_status: string;
   latest_verification_confidence: string | null;
   created_at: ISODateTime;
@@ -578,6 +591,9 @@ export type SupplierVerification = {
   evidence_urls: string[];
   orig_source_urls: string[];
   verify_time: ISODateTime | null;
+  drone_models: string[];
+  evidence_years: number[];
+  execution_status: string;
   created_at: ISODateTime;
   updated_at: ISODateTime;
 };
@@ -588,6 +604,11 @@ export type SupplierOverview = {
   verified: number;
   unverified: number;
   verify_failed: number;
+};
+
+export type SupplierBrand = {
+  buyer_name: string;
+  total_suppliers: number;
 };
 export type VideoGraphNode = {
   id: string; label: string; kind: 'entity' | 'video';

@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule RAG Parrot supplier verify every thirty minutes
+
+[Timer]
+OnCalendar=*-*-* *:15/30:00 Asia/Shanghai
+Persistent=true
+AccuracySec=1min
+Unit=rag-supplier-parrot-verify.service
+
+[Install]
+WantedBy=timers.target

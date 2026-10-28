@@ -48,6 +48,7 @@ literature = [
   "playwright>=1.45.0"
 ]
 supplier = [
+  "PyMuPDF>=1.24,<2",
   "playwright==1.62.0",
   "PyYAML==6.0.3",
   "python-dotenv==1.2.2",
@@ -62,7 +63,7 @@ include = ["app*", "worker*"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["backend/tests", "worker/tests", "tests/unit"]
-pythonpath = [".", "backend", "worker", "tests/unit"]
+pythonpath = [".", "backend", "worker", "tests/unit", "tools/supplier-information"]
 markers = [
   "no_db: skip the autouse database-session override for tests that do not access persistence",
 ]

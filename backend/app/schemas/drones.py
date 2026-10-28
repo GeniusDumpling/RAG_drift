@@ -12,6 +12,8 @@ class DroneSummary(BaseModel):
     source_url: str
     collected_at: str
     note: str = ""
+    official_version: str | None = None
+    updated_at: str | None = None
 
 
 class DroneCatalog(BaseModel):

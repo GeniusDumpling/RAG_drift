@@ -1,6 +1,6 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.config import Settings, get_settings
 from app.schemas.drones import DroneCatalog, DroneDetail
@@ -9,7 +9,12 @@ from app.services.drones import DroneCatalogService, DroneCatalogUnavailable
 router = APIRouter(prefix="/drones", tags=["drones"])
 
 
-def get_drone_catalog(settings: Annotated[Settings, Depends(get_settings)]) -> DroneCatalogService:
+def get_drone_catalog(
+    settings: Annotated[Settings, Depends(get_settings)],
+    brand: Annotated[Literal["dji", "parrot"], Query(description="无人机品牌")] = "dji",
+) -> DroneCatalogService:
+    if brand == "parrot":
+        return DroneCatalogService(settings.parrot_documents_dir, manufacturer="Parrot")
     return DroneCatalogService(settings.drone_documents_dir)
 
 
@@ -25,7 +30,8 @@ def list_drones(
 
 @router.get("/{slug}", response_model=DroneDetail)
 def get_drone(
-    slug: str, service: Annotated[DroneCatalogService, Depends(get_drone_catalog)],
+    slug: str,
+    service: Annotated[DroneCatalogService, Depends(get_drone_catalog)],
 ) -> DroneDetail:
     try:
         detail = service.detail(slug)

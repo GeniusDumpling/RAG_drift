@@ -54,13 +54,20 @@ class SupplierRelation(Base, UuidPrimaryKeyMixin, TimestampMixin):
     source_urls: Mapped[list[str]] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
     )
+    drone_models: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
+    )
+    evidence_years: Mapped[list[int]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
+    )
+    evidence_items: Mapped[list[dict]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
+    )
     verify_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="未验证", server_default=text("'未验证'")
     )
 
-    verifications: Mapped[list["SupplierVerification"]] = relationship(
-        back_populates="relation"
-    )
+    verifications: Mapped[list["SupplierVerification"]] = relationship(back_populates="relation")
 
 
 class SupplierVerification(Base, UuidPrimaryKeyMixin, TimestampMixin):
@@ -94,5 +101,14 @@ class SupplierVerification(Base, UuidPrimaryKeyMixin, TimestampMixin):
         JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
     )
     verify_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    drone_models: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
+    )
+    evidence_years: Mapped[list[int]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
+    )
+    execution_status: Mapped[str] = mapped_column(
+        String(20), default="success", server_default=text("'success'"), nullable=False
+    )
 
     relation: Mapped[SupplierRelation | None] = relationship(back_populates="verifications")

@@ -98,7 +98,7 @@ def test_literature_routes_are_in_openapi_contract() -> None:
 
 @pytest.mark.asyncio
 async def test_llm_repairs_one_malformed_json_response(monkeypatch: pytest.MonkeyPatch) -> None:
-    llm = LiteratureLLM(Settings(DEEPSEEK_API_KEY="test-key"))
+    llm = LiteratureLLM(Settings(LLM_API_KEY="test-key"))
     request_json = AsyncMock(
         side_effect=[
             '{"directions":[{"id":"D1" "query":"UAV lidar"}]}',

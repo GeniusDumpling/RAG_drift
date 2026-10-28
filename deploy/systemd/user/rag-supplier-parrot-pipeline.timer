@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule RAG Parrot supplier pipeline every thirty minutes
+
+[Timer]
+OnCalendar=*-*-* *:00/30:00 Asia/Shanghai
+Persistent=true
+AccuracySec=1min
+Unit=rag-supplier-parrot-pipeline.service
+
+[Install]
+WantedBy=timers.target

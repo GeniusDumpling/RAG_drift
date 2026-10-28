@@ -16,7 +16,7 @@ from app.core.config import get_settings  # noqa: E402
 from app.models.content import ContentItem  # noqa: E402
 from app.services.video_graph import (  # noqa: E402
     PROMPT_VERSION,
-    DeepSeekVideoExtractor,
+    LLMVideoExtractor,
     enqueue_videos,
     load_material,
     process_next,
@@ -139,11 +139,11 @@ def main(argv: list[str] | None = None) -> int:
             with Session(engine) as session:
                 emit(inventory(session, args))
             return 0
-        version = f"{args.extractor_version}:{settings.deepseek_model}"
+        version = f"{args.extractor_version}:{settings.llm_model}"
         if len(version) > 160:
             raise ValueError("抽取版本和模型名称合计不能超过 160 个字符")
         extractor = (
-            DeepSeekVideoExtractor(settings, version=args.extractor_version)
+            LLMVideoExtractor(settings, version=args.extractor_version)
             if args.command in {"run", "watch"}
             else None
         )

@@ -18,7 +18,10 @@ def test_compose_environment_and_isolation(tmp_path: Path, proxy: str) -> None:
     shutil.copy(ROOT / "docker-compose.deploy.yml", tmp_path)
     (tmp_path / ".env").write_text(
         f"POSTGRES_PASSWORD=testonly123\nHTTP_PROXY={proxy}\nHTTPS_PROXY={proxy}\n"
-        "COLLECTOR_DATA_DIR=./artifacts\n",
+        "COLLECTOR_DATA_DIR=./artifacts\n"
+        "BASE_URL=https://alternative.example/v1\n"
+        "LLM_API_KEY=test-only-key\nLLM_MODEL=alternative-model\n"
+        "LLM_PROVIDER=openai-compatible\n",
         encoding="utf-8",
     )
     result = subprocess.run(
@@ -49,12 +52,25 @@ def test_compose_environment_and_isolation(tmp_path: Path, proxy: str) -> None:
         "QDRANT_COLLECTION",
         "EMBEDDING_MODEL",
         "EMBEDDING_DIMENSION",
+        "BASE_URL",
+        "LLM_API_KEY",
+        "LLM_MODEL",
     ):
         assert jobs["environment"][name] == services["app"]["environment"][name]
+    assert services["app"]["environment"]["BASE_URL"] == "https://alternative.example/v1"
+    assert services["app"]["environment"]["LLM_API_KEY"] == "test-only-key"
+    assert services["app"]["environment"]["LLM_MODEL"] == "alternative-model"
+    assert services["app"]["environment"]["LLM_PROVIDER"] == "openai-compatible"
     assert not services["postgres"].get("ports")
     assert not services["qdrant"].get("ports")
     assert services["app"]["ports"][0]["host_ip"] == "127.0.0.1"
     assert any(v["target"] == "/data/video" for v in jobs["volumes"])
+    for brand, directory in [("dji", "DJI无人机文档"), ("parrot", "Parrot无人机文档")]:
+        target = f"/data/{brand}-documents"
+        mount = next(v for v in services["app"]["volumes"] if v["target"] == target)
+        assert mount["read_only"] is True
+        assert mount["source"].endswith(directory)
+    assert services["app"]["environment"]["PARROT_DOCUMENTS_DIR"] == "/data/parrot-documents"
 
 
 def test_neo4j_overlay_ports_credentials_and_persistence(tmp_path: Path) -> None:

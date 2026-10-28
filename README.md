@@ -70,7 +70,7 @@ uv sync --extra dev --extra literature
 
 - **本地数据库端口**：当前 `docker-compose.yml` 映射为 `55432:5432`，而 `.env.example` 和后端默认值仍使用 `54329`。使用此 Compose 时，将 `DATABASE_URL`、`SYNC_DATABASE_URL` 的主机端口都改为 `55432`。开发 Compose 的 PostgreSQL、Qdrant 映射未显式限制为 localhost。
 - **向量服务**：默认使用 SiliconFlow BGE-M3，填写 `EMBEDDING_API_KEY`，或提供可复用的 `VLM_API_KEY`。
-- **答案生成**：填写 `DEEPSEEK_API_KEY`；缺少密钥时问答返回证据摘录。
+- **答案生成**：填写 `LLM_API_KEY`；缺少密钥时问答返回证据摘录。
 - **图谱连接**：默认 `VIDEO_GRAPH_BACKEND=postgres`。宿主机使用 Neo4j 时，`NEO4J_URI` 应为 `bolt://localhost:7687`；模板中的 `bolt://neo4j:7687` 用于 Compose 容器网络。
 
 启动本地服务：
@@ -175,11 +175,11 @@ make smoke          # 冒烟验证；包含播种和处理目标 run
 
 ### 4. 供应链分析（`tools/supplier-information`）
 
-百度定向搜索与网页正文采集后，调用模型抽取供应关系，再由独立流程复核证据并保存 `supplier_relations`、`supplier_verifications`。需 `supplier` extra、`BAIDU_QIANFAN_API_KEY` 和 `DEEPSEEK_API_KEY`，任务入口为 `pipeline.py` 和 `supplier_verify.py`；部署环境统一通过下文任务 runner 执行。
+百度定向搜索与网页正文采集后，调用模型抽取供应关系，再由独立流程复核证据并保存 `supplier_relations`、`supplier_verifications`。需 `supplier` extra、`BAIDU_QIANFAN_API_KEY` 和 `LLM_API_KEY`，任务入口为 `pipeline.py` 和 `supplier_verify.py`；部署环境统一通过下文任务 runner 执行。
 
 ### 5. 文献研究（`scripts/run_literature_worker.py`）
 
-按需跑 IEEE 文献调研：搜索 → 挑选 → 深度分析 → 生成报告，写入 `literature_*` 表。需要 DeepSeek 摘要（`DEEPSEEK_API_KEY`）与 `literature` extra。详见 [docs/literature-research.md](docs/literature-research.md)。
+按需跑 IEEE 文献调研：搜索 → 挑选 → 深度分析 → 生成报告，写入 `literature_*` 表。需要配置文本模型（`LLM_API_KEY`）与 `literature` extra。详见 [docs/literature-research.md](docs/literature-research.md)。
 
 ```bash
 .venv/bin/python scripts/run_literature_worker.py
@@ -225,7 +225,7 @@ bash deploy/run-job.sh discourse-collect
 
 问答请求可带 `session_id`。追问结合历史改写为独立检索问题，再依据本轮证据生成带 `[n]` 引用的答案。前端支持会话恢复；中断、模型故障及证据不足均记录生成状态。
 
-答案生成与追问改写独立使用 `DEEPSEEK_*` 配置；`LLM_PROVIDER` 控制查询优化 agent，默认 `fake` 为规则实现，设为 `deepseek` 才启用模型优化。缺少生成密钥或模型失败时返回明确标注的证据摘录；没有证据时不调用生成模型。
+文本模型调用统一读取项目根目录 `.env` 的 `BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`，环境变量优先；供应商工具不再从 `conf.yaml` 配置地址和模型。`BASE_URL` 填兼容 OpenAI Chat Completions 的 API 根地址（通常含 `/v1`），程序追加 `/chat/completions`。切换服务只需修改这三项并重启相关进程。`LLM_PROVIDER` 控制查询优化 agent，默认 `fake` 为规则实现，设为 `openai-compatible` 启用模型优化（兼容原有 `deepseek` 值）。缺少生成密钥或模型失败时返回明确标注的证据摘录；没有证据时不调用生成模型。
 
 协议、上下文预算与持久化说明见 [AI 问答](docs/ai-chat.md)。2026-10-21 的 [部署验收](docs/ai-chat-deployment-2026-10-21.md) 记录了两轮真实流式调用和追问改写，不代表已完成所有场景的回答质量评估。
 
@@ -326,13 +326,13 @@ curl -fsS -X POST http://localhost:8000/answer \
 
 `--reset-collection` 会删除并重建目标集合，仅在确认需要清空该集合时使用。iFixit 的版本校验、真实 tokenizer 校验和旧向量清理应使用其专用 `index` / `cleanup` 命令，全局重建脚本不负责这些步骤。
 
-## 无人机信息（第一版）
+## 无人机信息
 
-前端「工作空间 → 无人机信息」展示本地收集的 DJI 型号与技术参数，支持型号搜索、用途分类、参数分组和参数内容搜索。页面保留官方来源、采集时间、参数适用条件，以及索引中的资料缺失说明。
+前端「工作空间 → 无人机信息」支持切换 DJI 大疆和 Parrot，展示各品牌本地收集的型号与技术参数，支持型号搜索、用途分类、参数分组和参数内容搜索。切换品牌时重置旧筛选并取消旧请求。页面保留官方来源、资料版本、更新日期、已知采集时间和参数适用条件，以及索引中的资料缺失说明。
 
-后端直接读取 `data/DJI无人机文档/技术参数索引.csv` 和各型号的 `技术参数.html`，无需导入数据库。`GET /drones` 返回型号与收集概况，`GET /drones/{slug}` 返回按分组整理的参数。更新目录中的索引和文件后，重新进入页面即可读取新内容。
+后端分别读取 `data/DJI无人机文档`、`data/Parrot无人机文档` 下的 `技术参数索引.csv` 和各型号的 `技术参数.html`，无需导入数据库。`GET /drones`、`GET /drones/{slug}` 默认返回 DJI；添加 `?brand=parrot` 读取 Parrot，`brand=dji` 也支持；未知品牌返回 422，某个品牌目录不可用只影响该品牌。更新目录中的索引和文件后，重新加载页面即可读取新内容。Parrot 参数目录可通过 `.venv/bin/python -m tools.parrot_documents build-specs` 从本地采集资料生成，详见 [Parrot 文档工具](tools/parrot_documents/README.md)。
 
-本地运行可通过 `DRONE_DOCUMENTS_DIR` 指定文档目录，默认是项目根目录下的 `data/DJI无人机文档`。Docker Compose 将宿主机 `DJI_DOCUMENTS_DIR`（默认同一目录）以只读方式挂载到容器 `/data/dji-documents`；资料不打包进镜像。部署前应将该目录同步至宿主机，并重新构建和启动应用：
+本地运行通过 `DRONE_DOCUMENTS_DIR` 指定 DJI 目录、`PARROT_DOCUMENTS_DIR` 指定 Parrot 目录。Docker Compose 将宿主机 `DJI_DOCUMENTS_DIR`（默认 `./data/DJI无人机文档`）挂载至 `/data/dji-documents`，将 `PARROT_DOCUMENTS_DIR`（默认 `./data/Parrot无人机文档`）挂载至 `/data/parrot-documents`，均为只读；资料不打包进镜像。部署前应将两份资料目录同步至宿主机，并重新构建和启动应用：
 
 ```bash
 docker compose -f docker-compose.deploy.yml up -d --build app
@@ -359,7 +359,7 @@ docker compose -f docker-compose.deploy.yml up -d --build app
 .venv/bin/python tools/video-knowledge-graph/build_graph.py run --limit 1
 ```
 
-构图需 `DEEPSEEK_API_KEY`。`--limit` 仅限制处理数量，`run` 仍会扫描并排队整个范围；限定视频使用 `--content-id VIDEO_UUID`。实体和关系来自已保存的字幕证据，无字幕时仅生成摘要实体提及；图谱接口为 `/video-graph/*`。失败、部分完成、检查点恢复与增量轮询见工具说明。
+构图需 `LLM_API_KEY`。`--limit` 仅限制处理数量，`run` 仍会扫描并排队整个范围；限定视频使用 `--content-id VIDEO_UUID`。实体和关系来自已保存的字幕证据，无字幕时仅生成摘要实体提及；图谱接口为 `/video-graph/*`。失败、部分完成、检查点恢复与增量轮询见工具说明。
 
 ## 开发验证
 

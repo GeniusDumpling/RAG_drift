@@ -215,15 +215,16 @@ async def test_create_agent_call_persists_refreshes_summaries_and_schema_version
     assert persisted_agent_call.response_schema_version == "query_optimization.v1"
 
 
-def test_agent_client_deepseek_optimize_query_parses_entity_hints(
+@pytest.mark.no_db
+def test_agent_client_llm_optimize_query_parses_entity_hints(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = Settings(
-        DEEPSEEK_API_KEY="test-key",
-        DEEPSEEK_BASE_URL="https://api.deepseek.com/v1",
-        DEEPSEEK_MODEL="deepseek-chat",
+        LLM_API_KEY="test-key",
+        BASE_URL="https://llm.example/v1",
+        LLM_MODEL="custom-model",
     )
-    client = AgentClient(provider="deepseek", timeout_seconds=5, settings=settings)
+    client = AgentClient(provider="openai-compatible", timeout_seconds=5, settings=settings)
     raw = (
         '{"optimized_query_text":"Mavic 3 GPS spoofing 识别","keyword_terms":["GPS spoofing"],'
         '"entity_hints":["Mavic 3","PX4"],"time_hints_json":{},"query_intent":"troubleshoot",'
@@ -241,19 +242,20 @@ def test_agent_client_deepseek_optimize_query_parses_entity_hints(
     assert result.entity_hints == ["Mavic 3", "PX4"]
     assert "GPS spoofing" in result.keyword_terms
     assert result.query_intent == "troubleshoot"
-    assert result.trace_summary_json["provider"] == "deepseek"
+    assert result.trace_summary_json["provider"] == "openai-compatible"
     assert result.trace_summary_json["fallback"] is False
 
 
-def test_agent_client_deepseek_optimize_query_falls_back_on_invalid_json(
+@pytest.mark.no_db
+def test_agent_client_llm_optimize_query_falls_back_on_invalid_json(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = Settings(
-        DEEPSEEK_API_KEY="test-key",
-        DEEPSEEK_BASE_URL="https://api.deepseek.com/v1",
-        DEEPSEEK_MODEL="deepseek-chat",
+        LLM_API_KEY="test-key",
+        BASE_URL="https://llm.example/v1",
+        LLM_MODEL="custom-model",
     )
-    client = AgentClient(provider="deepseek", timeout_seconds=5, settings=settings)
+    client = AgentClient(provider="openai-compatible", timeout_seconds=5, settings=settings)
 
     monkeypatch.setattr(client, "_request_json_content", lambda **_: "not json at all")
 
@@ -264,12 +266,13 @@ def test_agent_client_deepseek_optimize_query_falls_back_on_invalid_json(
     assert result.trace_summary_json["fallback"] is True
 
 
-def test_agent_client_deepseek_optimize_query_requires_api_key() -> None:
-    settings = Settings(DEEPSEEK_API_KEY=None)
-    client = AgentClient(provider="deepseek", timeout_seconds=5, settings=settings)
+@pytest.mark.no_db
+def test_agent_client_llm_optimize_query_requires_api_key() -> None:
+    settings = Settings(LLM_API_KEY=None)
+    client = AgentClient(provider="openai-compatible", timeout_seconds=5, settings=settings)
 
     result = client.optimize_query(raw_query="telemetry", filters={}, mode="search")
 
     assert result.optimized_query_text == "telemetry"
     assert result.trace_summary_json["fallback"] is True
-    assert "DEEPSEEK_API_KEY" in result.trace_summary_json["error"]
+    assert "LLM_API_KEY" in result.trace_summary_json["error"]

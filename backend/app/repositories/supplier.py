@@ -8,32 +8,42 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.supplier import SupplierRelation, SupplierVerification
 from app.schemas.sources import Page
 from app.schemas.supplier import (
+    SupplierBrandRead,
     SupplierOverview,
     SupplierRelationRead,
     SupplierVerificationRead,
 )
 
 
-async def get_supplier_overview(session: AsyncSession) -> SupplierOverview:
-    """供应链概览统计（单表计数，无 join，轻量）。"""
-    total = int((await session.scalar(select(func.count()).select_from(SupplierRelation))) or 0)
-    confirmed = int(
-        (
-            await session.scalar(
-                select(func.count())
-                .select_from(SupplierRelation)
-                .where(SupplierRelation.credibility == "明确")
-            )
-        )
-        or 0
+async def list_supplier_brands(session: AsyncSession) -> list[SupplierBrandRead]:
+    statement = (
+        select(SupplierRelation.buyer_name, func.count())
+        .where(SupplierRelation.buyer_name.is_not(None), SupplierRelation.buyer_name != "")
+        .group_by(SupplierRelation.buyer_name)
+        .order_by(SupplierRelation.buyer_name)
     )
+    return [
+        SupplierBrandRead(buyer_name=name, total_suppliers=count)
+        for name, count in await session.execute(statement)
+    ]
+
+
+async def get_supplier_overview(
+    session: AsyncSession, *, buyer_name: str | None = None
+) -> SupplierOverview:
+    """Count only relationships in the selected brand, or all brands when omitted."""
+    statement = select(
+        SupplierRelation.credibility, SupplierRelation.verify_status, func.count()
+    ).group_by(SupplierRelation.credibility, SupplierRelation.verify_status)
+    if buyer_name:
+        statement = statement.where(SupplierRelation.buyer_name == buyer_name)
+    total = confirmed = 0
     status_counts: dict[str, int] = {}
-    for row in await session.execute(
-        select(SupplierRelation.verify_status, func.count()).group_by(
-            SupplierRelation.verify_status
-        )
-    ):
-        status_counts[str(row[0])] = int(row[1])
+    for credibility, status, count in await session.execute(statement):
+        total += count
+        if credibility == "明确":
+            confirmed += count
+        status_counts[status] = status_counts.get(status, 0) + count
     return SupplierOverview(
         total_suppliers=total,
         confirmed_relations=confirmed,
@@ -51,6 +61,7 @@ async def list_supplier_relations(
     q: str | None,
     credibility: str | None,
     verify_status: str | None,
+    buyer_name: str | None = None,
 ) -> Page[SupplierRelationRead]:
     """分页列出供应关系，支持关键词与状态/可信度过滤。"""
     latest_confidence = (
@@ -67,11 +78,16 @@ async def list_supplier_relations(
     statement = select(SupplierRelation, latest_confidence)
     count_statement = select(func.count()).select_from(SupplierRelation)
 
+    if buyer_name:
+        statement = statement.where(SupplierRelation.buyer_name == buyer_name)
+        count_statement = count_statement.where(SupplierRelation.buyer_name == buyer_name)
+
     if q:
         like = f"%{q}%"
         condition = or_(
             SupplierRelation.supplier_name.ilike(like),
             SupplierRelation.supply_content.ilike(like),
+            SupplierRelation.buyer_name.ilike(like),
         )
         statement = statement.where(condition)
         count_statement = count_statement.where(condition)

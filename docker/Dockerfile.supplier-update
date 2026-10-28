@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1
+# Context: tested dist/, selected backend files, and standalone supplier tools only.
+ARG APP_RUNTIME_IMAGE=intelligence-rag-app:latest
+FROM ${APP_RUNTIME_IMAGE}
+WORKDIR /app
+RUN python -m pip install --no-cache-dir 'PyMuPDF==1.28.2' \
+    && python -m pip check
+RUN rm -rf /app/frontend/dist
+COPY dist/ ./frontend/dist/
+COPY backend/ /tmp/rag-supplier-update/backend/
+RUN python - <<'PY'
+from pathlib import Path
+import app
+import shutil
+
+source = Path('/tmp/rag-supplier-update/backend/app')
+for target in {Path('/app/backend/app'), Path(app.__file__).parent}:
+    for changed in source.rglob('*.py'):
+        destination = target / changed.relative_to(source)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(changed, destination)
+shutil.copytree('/tmp/rag-supplier-update/backend/alembic', '/app/backend/alembic',
+                dirs_exist_ok=True)
+shutil.rmtree('/tmp/rag-supplier-update')
+PY
+COPY tools/supplier-information/ ./tools/supplier-information/

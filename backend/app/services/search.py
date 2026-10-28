@@ -25,7 +25,7 @@ from app.schemas.search import (
     SearchResponse,
 )
 from app.services.answer_context import prepare_answer_context
-from app.services.answer_generation import AnswerGenerationError, DeepSeekAnswerClient
+from app.services.answer_generation import AnswerGenerationError, LLMAnswerClient
 from app.services.embeddings import EmbeddingService, build_embedding_service
 from app.services.reranking import rerank_evidence
 from app.services.retrieval import retrieve_evidence
@@ -79,7 +79,7 @@ class SearchService:
         evidence: list[EvidenceObject] = []
         text = ""
         generation_started: float | None = None
-        generation = GenerationInfo(model=self.settings.deepseek_model)
+        generation = GenerationInfo(model=self.settings.llm_model)
         finished = False
         try:
             history: list[dict[str, str]] = []
@@ -88,15 +88,15 @@ class SearchService:
                 turn_id = turn.id
                 history = await chat.history(request.session_id)
             yield {"event": "status", "data": {"stage": "retrieving"}}
-            client = DeepSeekAnswerClient(
-                base_url=self.settings.deepseek_base_url,
-                api_key=self.settings.deepseek_api_key or "",
-                model=self.settings.deepseek_model,
+            client = LLMAnswerClient(
+                base_url=self.settings.base_url,
+                api_key=self.settings.llm_api_key or "",
+                model=self.settings.llm_model,
                 timeout_seconds=self.settings.agent_timeout_seconds,
             )
             retrieval_query = request.query
             if history:
-                if self.settings.deepseek_api_key:
+                if self.settings.llm_api_key:
                     try:
                         retrieval_query = await client.rewrite_question(request.query, history)
                         generation.rewrite_status = "rewritten"
@@ -138,7 +138,7 @@ class SearchService:
             if not evidence:
                 generation.status = "no_evidence"
                 generation.reason = "no_matching_evidence"
-            elif not self.settings.deepseek_api_key:
+            elif not self.settings.llm_api_key:
                 generation.status = "fallback"
                 generation.reason = "missing_api_key"
             else:

@@ -1,0 +1,40 @@
+# syntax=docker/dockerfile:1
+# Build context: prebuilt dist/ and only the three drone modules under app/.
+ARG APP_RUNTIME_IMAGE=intelligence-rag-app:latest
+FROM ${APP_RUNTIME_IMAGE}
+WORKDIR /app
+COPY app/ /tmp/rag-drone-update/app/
+RUN python - <<'PY'
+import ast
+import shutil
+from pathlib import Path
+
+import app
+
+source = Path('/tmp/rag-drone-update/app')
+for target in {Path('/app/backend/app'), Path(app.__file__).parent}:
+    for changed in source.rglob('*.py'):
+        destination = target / changed.relative_to(source)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(changed, destination)
+    # Retain the deployed settings implementation, including unrelated features.
+    config = target / 'core/config.py'
+    text = config.read_text()
+    if 'parrot_documents_dir:' not in text:
+        anchor = '    drone_documents_dir: Path = Field('
+        if text.count(anchor) != 1:
+            raise RuntimeError('Cannot locate deployed drone directory setting')
+        start = text.index(anchor)
+        end = text.index('\n    )', start) + len('\n    )')
+        addition = ('\n    parrot_documents_dir: Path = Field(\n'
+                    '        default=Path("data/Parrot无人机文档"), alias="PARROT_DOCUMENTS_DIR"\n'
+                    '    )')
+        text = text[:end] + addition + text[end:]
+        ast.parse(text)
+        config.write_text(text)
+shutil.rmtree('/app/frontend/dist')
+shutil.rmtree('/tmp/rag-drone-update')
+PY
+COPY dist/ ./frontend/dist/
+RUN python -m pip check \
+    && python -c "from app.core.config import Settings; from app.api.drones import router; assert 'parrot_documents_dir' in Settings.model_fields"

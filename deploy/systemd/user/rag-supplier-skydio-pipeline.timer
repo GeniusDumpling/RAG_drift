@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule RAG Skydio supplier pipeline every thirty minutes
+
+[Timer]
+OnCalendar=*-*-* *:05/30:00 Asia/Shanghai
+Persistent=true
+AccuracySec=1min
+Unit=rag-supplier-skydio-pipeline.service
+
+[Install]
+WantedBy=timers.target

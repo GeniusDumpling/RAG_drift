@@ -17,7 +17,7 @@ from app.models.search import SearchQuery
 from app.repositories.chat import ChatRepository, ChatSessionBusy
 from app.schemas.search import AnswerRequest, SearchFilters
 from app.services.answer_context import prepare_answer_context
-from app.services.answer_generation import AnswerGenerationError, DeepSeekAnswerClient
+from app.services.answer_generation import AnswerGenerationError, LLMAnswerClient
 from app.services.embeddings import SiliconFlowEmbeddingService
 from app.services.reranking import SiliconFlowReranker
 from app.services.retrieval import retrieve_evidence
@@ -107,7 +107,7 @@ def settings(*, api_key: str | None = None) -> Settings:
         _env_file=None,
         LLM_PROVIDER="fake",
         EMBEDDING_API_KEY="test",
-        DEEPSEEK_API_KEY=api_key,
+        LLM_API_KEY=api_key,
         QDRANT_URL="memory://chat-tests",
     )
 
@@ -228,7 +228,7 @@ async def test_stream_reset_and_final_answer_are_persisted(
         yield "unfinished and unsupported"
         raise AnswerGenerationError("simulated timeout")
 
-    monkeypatch.setattr(DeepSeekAnswerClient, "stream", broken_stream)
+    monkeypatch.setattr(LLMAnswerClient, "stream", broken_stream)
     session = (await chat_client.post("/chat-sessions")).json()
     response = await chat_client.post(
         "/answer/stream",
@@ -277,8 +277,8 @@ async def test_followup_rewrites_for_retrieval_and_reloads_history(
         assert history[0]["content"] == "PX4 telemetry"
         return "PX4 telemetry limitations"
 
-    monkeypatch.setattr(DeepSeekAnswerClient, "stream", model_stream)
-    monkeypatch.setattr(DeepSeekAnswerClient, "rewrite_question", rewrite)
+    monkeypatch.setattr(LLMAnswerClient, "stream", model_stream)
+    monkeypatch.setattr(LLMAnswerClient, "rewrite_question", rewrite)
     session_id = (await chat_client.post("/chat-sessions")).json()["id"]
     for question in ["PX4 telemetry", "它有什么限制？"]:
         result = await chat_client.post(
@@ -322,7 +322,7 @@ async def test_cancelling_stream_saves_partial_and_releases_session(
         yield "partial answer"
         yield " must not be used in follow-up"
 
-    monkeypatch.setattr(DeepSeekAnswerClient, "stream", stream)
+    monkeypatch.setattr(LLMAnswerClient, "stream", stream)
     repo = ChatRepository(db_session)
     session_id = (await repo.create_session()).id
     generator = SearchService(db_session, settings=settings(api_key="test")).stream_answer(
@@ -366,7 +366,7 @@ async def test_response_iterator_disconnect_finalizes_before_session_closes(
         yield "partial over SSE"
         yield "next fragment"
 
-    monkeypatch.setattr(DeepSeekAnswerClient, "stream", model_stream)
+    monkeypatch.setattr(LLMAnswerClient, "stream", model_stream)
     chat = ChatRepository(db_session)
     session_id = (await chat.create_session()).id
 

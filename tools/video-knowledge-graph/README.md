@@ -26,7 +26,7 @@
 .venv/bin/alembic upgrade head
 ```
 
-真实抽取复用 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` 和 `AGENT_TIMEOUT_SECONDS`。每个有材料的视频需要一次主题判断；相关视频每个待抽取切片再调用一次模型（无字幕时为摘要切片）；有效检查点会复用。`--limit` 限制每轮处理的视频数，不限制单条视频的模型调用数。没有密钥时直接报错，不生成模拟关系。
+真实抽取复用 `LLM_API_KEY`、`BASE_URL`、`LLM_MODEL` 和 `AGENT_TIMEOUT_SECONDS`。每个有材料的视频需要一次主题判断；相关视频每个待抽取切片再调用一次模型（无字幕时为摘要切片）；有效检查点会复用。`--limit` 限制每轮处理的视频数，不限制单条视频的模型调用数。没有密钥时直接报错，不生成模拟关系。
 
 视频主题判断和实体、关系抽取的 DeepSeek 请求均显式携带 `"thinking": {"type": "enabled"}` 和 `"reasoning_effort": "low"`，使用低强度思考模式，无需额外运行参数。继续执行或重试时，已有成功结果和切片检查点仍会复用。
 

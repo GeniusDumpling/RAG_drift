@@ -24,6 +24,18 @@ const inspireDetail: DroneDetail = { ...inspire, groups: [
   { name: '飞行器', parameters: [{ name: '型号', value: 'T600' }] },
 ] };
 const catalog = { items: [mavic, inspire], total: 2, parameter_count: 3, partial_count: 1 };
+const anafi: DroneSummary = {
+  ...mavic, slug: 'anafi-ukr', name: 'Parrot ANAFI UKR', manufacturer: 'Parrot',
+  category: '行业应用', collected_at: '', official_version: '8.5.0.0', updated_at: '2026-10-01',
+  source_url: 'https://www.parrot.com/ukr.pdf',
+};
+const anafiDetail: DroneDetail = { ...anafi, groups: [
+  { name: '飞行器 / AIRCRAFT', parameters: [
+    { name: '最长飞行时间 / Maximum flight time', value: '38 min at 6 m/s airspeed' },
+    { name: '质量 / Mass', value: '≤1,033 g' },
+  ] },
+] };
+const parrotCatalog = { items: [anafi], total: 1, parameter_count: 2, partial_count: 0 };
 
 function json(body: unknown) { return new Response(JSON.stringify(body), { status: 200 }); }
 function mockCatalog() {
@@ -122,5 +134,92 @@ describe('DronesPage', () => {
     fetchMock.mockResolvedValue(json({ items: [], total: 0, parameter_count: 0, partial_count: 0 }));
     fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
     expect(await screen.findByText('尚未收集无人机型号。')).toBeInTheDocument();
+  });
+
+  it('switches brands with scoped requests and clears old model and parameter filters', async () => {
+    const fetchMock = mockCatalog();
+    const original = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input) => {
+      const url = new URL(String(input), 'http://localhost');
+      if (url.searchParams.get('brand') === 'parrot') {
+        return Promise.resolve(json(url.pathname === '/drones' ? parrotCatalog : anafiDetail));
+      }
+      return original(input);
+    });
+    render(<DronesPage />);
+    await screen.findByText('6654 毫安时');
+    fireEvent.change(screen.getByLabelText('无人机类型'), { target: { value: '消费航拍' } });
+    fireEvent.change(screen.getByLabelText('搜索无人机型号'), { target: { value: 'mavic' } });
+    fireEvent.change(screen.getByLabelText('搜索技术参数'), { target: { value: '容量' } });
+    fireEvent.change(screen.getByLabelText('参数分组'), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Parrot', exact: true }));
+    expect(screen.queryByText('6654 毫安时')).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: anafi.name })).toBeInTheDocument();
+    expect(screen.getByText('38 min at 6 m/s airspeed')).toBeInTheDocument();
+    expect(screen.getByLabelText('搜索无人机型号')).toHaveValue('');
+    expect(screen.getByLabelText('无人机类型')).toHaveValue('');
+    expect(screen.getByLabelText('搜索技术参数')).toHaveValue('');
+    expect(screen.getByLabelText('参数分组')).toHaveValue('');
+    expect(screen.getByText('资料版本 8.5.0.0')).toBeInTheDocument();
+    expect(screen.getByText('2026-10-01')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Parrot', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('link', { name: '查看官方来源 ↗' })).toHaveAttribute('href', anafi.source_url);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/drones/anafi-ukr?brand=parrot'))).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'DJI 大疆', exact: true }));
+    expect(await screen.findByText('6654 毫安时')).toBeInTheDocument();
+    expect(screen.queryByText('38 min at 6 m/s airspeed')).not.toBeInTheDocument();
+  });
+
+  it('ignores late catalog responses from the previous brand', async () => {
+    let finishDji!: (response: Response) => void;
+    vi.stubGlobal('fetch', vi.fn((input) => {
+      const url = new URL(String(input), 'http://localhost');
+      if (url.pathname === '/drones' && !url.searchParams.has('brand')) {
+        return new Promise((resolve) => { finishDji = resolve; });
+      }
+      return Promise.resolve(json(url.pathname === '/drones' ? parrotCatalog : anafiDetail));
+    }));
+    render(<DronesPage />);
+    await waitFor(() => expect(finishDji).toBeTypeOf('function'));
+    fireEvent.click(screen.getByRole('button', { name: 'Parrot', exact: true }));
+    await screen.findByText('38 min at 6 m/s airspeed');
+    finishDji(json(catalog));
+    await waitFor(() => expect(screen.queryByText(mavic.name)).not.toBeInTheDocument());
+    expect(screen.getByText('38 min at 6 m/s airspeed')).toBeInTheDocument();
+  });
+
+  it('does not reuse a late detail for the same slug in another brand', async () => {
+    const sameSlug = { ...anafi, slug: mavic.slug };
+    let finishDji!: (response: Response) => void;
+    vi.stubGlobal('fetch', vi.fn((input) => {
+      const url = new URL(String(input), 'http://localhost');
+      const parrot = url.searchParams.get('brand') === 'parrot';
+      if (url.pathname === '/drones') return Promise.resolve(json(parrot
+        ? { ...parrotCatalog, items: [sameSlug] } : catalog));
+      if (parrot) return Promise.resolve(json({ ...anafiDetail, slug: mavic.slug }));
+      return new Promise((resolve) => { finishDji = resolve; });
+    }));
+    render(<DronesPage />);
+    await waitFor(() => expect(finishDji).toBeTypeOf('function'));
+    fireEvent.click(screen.getByRole('button', { name: 'Parrot', exact: true }));
+    await screen.findByText('38 min at 6 m/s airspeed');
+    finishDji(json(mavicDetail));
+    await waitFor(() => expect(screen.queryByText('6654 毫安时')).not.toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: anafi.name })).toBeInTheDocument();
+  });
+
+  it('lets users switch back when the other brand is unavailable', async () => {
+    const fetchMock = mockCatalog();
+    const original = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input) => String(input).includes('brand=parrot')
+      ? Promise.resolve(new Response(JSON.stringify({ detail: 'Parrot 资料暂不可用' }), { status: 503 }))
+      : original(input));
+    render(<DronesPage />);
+    await screen.findByText('6654 毫安时');
+    fireEvent.click(screen.getByRole('button', { name: 'Parrot', exact: true }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Parrot 资料暂不可用');
+    expect(screen.queryByText('6654 毫安时')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'DJI 大疆', exact: true }));
+    expect(await screen.findByText('6654 毫安时')).toBeInTheDocument();
   });
 });

@@ -4,6 +4,29 @@
 
 读取 `data/Parrot无人机文档/文档索引.csv` 和 `网页采集记录.csv`，处理 PDF 与 HTML，输出与独立 `drone_documents` 数据库兼容的数据包。不修改源文件。英文等来源语言完整保留，不执行全量翻译。HTML 为主输入，TXT 不重复入库。
 
+## 机型—参数目录
+
+```bash
+.venv/bin/python -m tools.parrot_documents build-specs
+# 可选：从其他采集目录读取，或将派生目录写到其他位置
+.venv/bin/python -m tools.parrot_documents build-specs --input data/Parrot无人机文档 --output /tmp/parrot-specs
+```
+
+当前可从本地资料整理 9 个机型/版本：ANAFI、ANAFI Thermal、ANAFI Ai、ANAFI USA、USA GOV、USA MIL、ANAFI UKR、UKR GOV、UKR XLR。前四个使用官方技术参数网页；USA GOV/MIL 使用各自手册参数章节；UKR 三个版本使用同一本手册中各自的明确章节及共享脚注。不是官网全部历史机型清单；缺失来源不补造参数，Sequoia 传感器不列为无人机。
+
+默认在原资料目录增加以下派生文件，原始下载索引、网页和 PDF 不变：
+
+| 文件 | 用途 |
+|---|---|
+| `技术参数索引.csv` | DJI 的 12 个索引字段，加厂商、用途分类、系列、来源类型、版本、页码与 JSON 路径 |
+| `<slug>/技术参数.html` / `.txt` / `.json` | 每个具体机型的分组参数、原文值及来源信息 |
+| `技术参数明细.csv` | 展平的机型、分组、参数、原始值、脚注、版本与来源 |
+| `机型参数目录.html` / `.json` | 可浏览的目录及包含全部参数的结构化目录 |
+| `技术参数汇总.json` / `技术参数缺失清单.json` | 覆盖范围、数量及缺失产品系列 |
+| `技术参数校验报告.json` | DJI 参数读取器数量核对、输出哈希、来源索引和源文件哈希 |
+
+输出 HTML 可由现有 DJI 参数解析器直接读取。部分名称提供中文对照，数值和适用条件保留原文；不把质量当作最大起飞质量，也不把不同电池、MIL/GOV/XLR 配置统一成一个数值。PDF 参数保存原页和坐标，UKR 参数保留测试脚注。网页没有明确版本或采集时间时保持为空，`built_at` 仅为整理时间。前端「无人机信息」通过 Parrot 品牌按钮读取该目录，后端使用 `PARROT_DOCUMENTS_DIR` 配置路径；本命令仅生成资料，不执行服务部署或入库。
+
 ## 本地解析与检查
 
 ```bash

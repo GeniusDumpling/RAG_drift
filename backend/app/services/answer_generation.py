@@ -20,7 +20,7 @@ class AnswerResponse(Protocol):
 AnswerPost = Callable[..., AnswerResponse]
 
 
-class DeepSeekAnswerClient:
+class LLMAnswerClient:
     def __init__(self, *, base_url: str, api_key: str, model: str, timeout_seconds: int) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -49,9 +49,9 @@ class DeepSeekAnswerClient:
             data = response.json()
             content = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
         except Exception as exc:
-            raise AnswerGenerationError("DeepSeek 答案生成请求失败") from exc
+            raise AnswerGenerationError("LLM 答案生成请求失败") from exc
         if not isinstance(content, str) or not content.strip():
-            raise AnswerGenerationError("DeepSeek 返回了空答案")
+            raise AnswerGenerationError("LLM 返回了空答案")
         return content.strip()
 
     def _payload(
@@ -114,20 +114,20 @@ class DeepSeekAnswerClient:
                             break
                         event = json.loads(data)
                         if event.get("error"):
-                            raise AnswerGenerationError("DeepSeek 流返回错误")
+                            raise AnswerGenerationError("LLM 流返回错误")
                         choices = event.get("choices") or []
                         if not choices:
                             continue
                         if choices[0].get("finish_reason") in ("length", "content_filter"):
-                            raise AnswerGenerationError("DeepSeek 回答未完整生成")
+                            raise AnswerGenerationError("LLM 回答未完整生成")
                         content = (choices[0].get("delta") or {}).get("content")
                         if isinstance(content, str) and content:
                             received_text = received_text or bool(content.strip())
                             yield content
         except Exception as exc:
-            raise AnswerGenerationError("DeepSeek 流式答案生成失败") from exc
+            raise AnswerGenerationError("LLM 流式答案生成失败") from exc
         if not completed or not received_text:
-            raise AnswerGenerationError("DeepSeek 返回了空答案或流意外中断")
+            raise AnswerGenerationError("LLM 返回了空答案或流意外中断")
 
     async def rewrite_question(self, query: str, history: list[dict[str, str]]) -> str:
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:

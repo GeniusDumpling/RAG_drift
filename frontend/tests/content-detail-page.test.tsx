@@ -291,7 +291,7 @@ describe('ContentDetailPage', () => {
     expect(screen.queryByText(EMPTY_STATE_COPY)).not.toBeInTheDocument();
   });
 
-  it('renders the empty state when no content records are available', async () => {
+  it('renders no placeholder copy when no content records are available', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/contents?limit=100&offset=0&item_type=thread')) {
@@ -309,7 +309,7 @@ describe('ContentDetailPage', () => {
 
     render(<ContentDetailPage />);
 
-    expect(await screen.findByText(EMPTY_STATE_COPY)).toBeInTheDocument();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(screen.queryByText(EMPTY_STATE_COPY)).not.toBeInTheDocument();
   });
 });

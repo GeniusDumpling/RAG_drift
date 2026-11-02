@@ -71,6 +71,8 @@ def test_answer_returns_summary_with_supporting_evidence(monkeypatch: pytest.Mon
     assert payload["supporting_evidence"][0]["canonical_url"] == "https://answer.example.com/settings"
     assert payload["query"]["mode"] == "answer"
     assert "[1]" in payload["answer"]
+    assert payload["generation"]["citation_check"]["status"] == "ok"
+    assert payload["generation"]["citation_check"]["cited_indices"] == [1]
 
 
 def test_answer_uses_more_than_three_diverse_sources_within_budget(

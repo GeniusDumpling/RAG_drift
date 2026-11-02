@@ -7,7 +7,6 @@ import { formatErrorMessage } from '../utils/errors';
 import { safeExternalHref } from '../utils/links';
 import { DocumentLibraryPanel } from './DocumentLibraryPanel';
 
-const EMPTY_STATE_COPY = '暂无数据。请先启动后端并运行 demo seed 脚本。';
 const CONTENT_UNAVAILABLE_COPY = 'Content 详情暂不可用：API 请求失败。';
 const LOADING_CONTENT_COPY = '正在加载 Content 数据...';
 const LOADING_CONTENT_DETAIL_COPY = '正在加载 Content 详情...';
@@ -294,7 +293,7 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
 
           <section className="card">
             <h2>索引文本预览</h2>
-            {indexedTextPreview ? <pre>{indexedTextPreview}</pre> : <p className="muted">{EMPTY_STATE_COPY}</p>}
+            {indexedTextPreview ? <pre>{indexedTextPreview}</pre> : null}
           </section>
 
           <section className="card">
@@ -331,16 +330,12 @@ export function ContentDetailPage({ selectedContentId: externallySelectedContent
                   </li>
                 ))}
               </ol>
-            ) : (
-              <p className="muted">{EMPTY_STATE_COPY}</p>
-            )}
+            ) : null}
           </section>
         </>
       ) : loading ? null : contentLoadFailed ? (
         <p className="card muted">{CONTENT_UNAVAILABLE_COPY}</p>
-      ) : (
-        <p className="card empty-state">{EMPTY_STATE_COPY}</p>
-      )}
+      ) : null}
       </>}
     </section>
   );

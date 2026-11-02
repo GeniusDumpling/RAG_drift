@@ -37,8 +37,7 @@ COPY worker ./worker
 COPY scripts ./scripts
 COPY tools ./tools
 RUN python -m pip install --upgrade pip \
-    && python -m pip install torch --index-url https://download.pytorch.org/whl/cpu \
-    && python -m pip install '.[local-embeddings,video-keyframes,video-asr,supplier]'
+    && python -m pip install '.[video-keyframes,video-asr,supplier]'
 RUN python -m playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
 

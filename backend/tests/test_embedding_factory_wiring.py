@@ -34,7 +34,7 @@ def test_search_service_uses_embedding_factory_when_embedding_not_injected(
         captured_settings.append(settings)
         return fake_embedding
 
-    settings = Settings(EMBEDDING_PROVIDER="sentence-transformers", EMBEDDING_MODEL="fake-model")
+    settings = Settings()
     monkeypatch.setattr(search_module, "build_embedding_service", fake_build_embedding_service)
 
     service = SearchService(
@@ -51,8 +51,6 @@ def test_worker_current_vector_target_uses_embedding_factory(monkeypatch: Any) -
     settings = Settings(
         QDRANT_URL="memory://factory-wiring",
         QDRANT_COLLECTION="semantic_collection",
-        EMBEDDING_PROVIDER="sentence-transformers",
-        EMBEDDING_MODEL="fake-model",
     )
     fake_embedding = FakeEmbedding()
 

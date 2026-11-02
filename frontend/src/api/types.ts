@@ -209,6 +209,9 @@ export type SearchQueryRead = {
 export type AnswerRequest = SearchRequest & { session_id?: UUID };
 
 export type GenerationInfo = {
+  response_mode?: 'knowledge' | 'conversation';
+  conversation_intent?: string | null;
+  history_used?: boolean;
   status: 'generated' | 'fallback' | 'no_evidence' | 'cancelled' | 'error';
   model: string | null;
   reason: string | null;

@@ -4,7 +4,6 @@ import { getRun, getRunEvents, listRuns } from '../api/client';
 import type { CrawlRun, CrawlRunEvent, Page } from '../api/types';
 import { formatErrorMessage } from '../utils/errors';
 
-const EMPTY_STATE_COPY = '暂无数据。请先启动后端并运行 demo seed 脚本。';
 const RUN_UNAVAILABLE_COPY = 'Run 数据暂不可用：API 请求失败。';
 const EVENTS_UNAVAILABLE_COPY = 'Run 事件暂不可用：API 请求失败。';
 const LOADING_RUN_COPY = '正在加载 Run 数据...';
@@ -249,9 +248,7 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
         </section>
       ) : loading ? null : runLoadFailed ? (
         <p className="card muted">{RUN_UNAVAILABLE_COPY}</p>
-      ) : (
-        <p className="card empty-state">{EMPTY_STATE_COPY}</p>
-      )}
+      ) : null}
 
       <section className="card">
         <h2>阶段计数</h2>
@@ -264,9 +261,9 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
               </div>
             ))}
           </div>
-        ) : (
-          <p className="muted">{loading ? LOADING_RUN_COPY : runLoadFailed ? RUN_UNAVAILABLE_COPY : EMPTY_STATE_COPY}</p>
-        )}
+        ) : loading || runLoadFailed ? (
+          <p className="muted">{loading ? LOADING_RUN_COPY : RUN_UNAVAILABLE_COPY}</p>
+        ) : null}
       </section>
 
       <section className="card">
@@ -294,7 +291,7 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
               </li>
             ))}
           </ol>
-        ) : (
+        ) : loading || eventError || runLoadFailed ? (
           <p className="muted">
             {loading
               ? eventLoading
@@ -302,11 +299,9 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
                 : LOADING_RUN_COPY
               : eventError
                 ? EVENTS_UNAVAILABLE_COPY
-                : runLoadFailed
-                  ? RUN_UNAVAILABLE_COPY
-                  : EMPTY_STATE_COPY}
+                : RUN_UNAVAILABLE_COPY}
           </p>
-        )}
+        ) : null}
       </section>
 
       <section className="card">
@@ -315,7 +310,7 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
           agentTraceEvents.map((event) => (
             <pre key={event.id}>{JSON.stringify(event.agent_trace_json, null, 2)}</pre>
           ))
-        ) : (
+        ) : loading || eventError || runLoadFailed ? (
           <p className="muted">
             {loading
               ? eventLoading
@@ -323,11 +318,9 @@ export function RunDetailPage({ selectedRunId: externallySelectedRunId = '' }: R
                 : LOADING_RUN_COPY
               : eventError
                 ? EVENTS_UNAVAILABLE_COPY
-                : runLoadFailed
-                  ? RUN_UNAVAILABLE_COPY
-                  : EMPTY_STATE_COPY}
+                : RUN_UNAVAILABLE_COPY}
           </p>
-        )}
+        ) : null}
       </section>
     </section>
   );

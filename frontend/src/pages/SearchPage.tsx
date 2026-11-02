@@ -5,7 +5,6 @@ import type { EvidenceObject, SearchQueryRead, SearchRequest } from '../api/type
 import { EvidenceCard } from '../components/EvidenceCard';
 import { formatErrorMessage } from '../utils/errors';
 
-const EMPTY_STATE_COPY = '暂无数据。请先启动后端并运行 demo seed 脚本。';
 const SEARCH_LOADING_COPY = '正在检索...';
 const ANSWER_LOADING_COPY = '正在生成答案...';
 
@@ -222,9 +221,7 @@ export function SearchPage({ initialQuery = '', onOpenContent, mode = 'search' }
         <h2>证据</h2>
         {evidence.length ? (
           evidence.map((item) => <EvidenceCard evidence={item} key={item.content_item_id + (item.item_type === 'video_description' ? '_video' : item.chunk_id)} onOpenContent={onOpenContent} />)
-        ) : loading || error ? null : (
-          <p className="card empty-state">{EMPTY_STATE_COPY}</p>
-        )}
+        ) : null}
       </section>
     </section>
   );

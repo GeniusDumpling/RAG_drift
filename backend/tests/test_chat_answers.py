@@ -18,6 +18,7 @@ from app.repositories.chat import ChatRepository, ChatSessionBusy
 from app.schemas.search import AnswerRequest, SearchFilters
 from app.services.answer_context import prepare_answer_context
 from app.services.answer_generation import AnswerGenerationError, LLMAnswerClient
+from app.services.conversation_policy import conversation_fallback, conversation_intent
 from app.services.embeddings import SiliconFlowEmbeddingService
 from app.services.reranking import SiliconFlowReranker
 from app.services.retrieval import retrieve_evidence
@@ -110,6 +111,147 @@ def settings(*, api_key: str | None = None) -> Settings:
         LLM_API_KEY=api_key,
         QDRANT_URL="memory://chat-tests",
     )
+
+
+@pytest.mark.parametrize("api_key", [None, "test"])
+async def test_social_turns_after_a_model_question_skip_retrieval_and_history(
+    db_session: AsyncSession,
+    chat_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    api_key: str | None,
+) -> None:
+    session_id = (await ChatRepository(db_session).create_session()).id
+    await SearchService(db_session, settings=settings()).answer(
+        AnswerRequest(query="Mavic 3 Pro有什么特点", session_id=session_id)
+    )
+    config = Settings(_env_file=None, LLM_API_KEY=api_key)
+    monkeypatch.setattr("app.services.search.get_settings", lambda: config)
+
+    def forbidden(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("Social message unexpectedly used history or retrieval")
+
+    async def model_stream(
+        self: Any, query: str, evidence: Any, **kwargs: Any
+    ) -> AsyncIterator[str]:
+        assert evidence == [] and kwargs == {"context": "", "history": []}
+        payload = self._payload(query, evidence, **kwargs)
+        assert "Mavic" not in json.dumps(payload)
+        yield conversation_fallback(conversation_intent(query))
+
+    monkeypatch.setattr("app.services.search.build_embedding_service", forbidden)
+    monkeypatch.setattr(SearchService, "_retrieve", forbidden)
+    monkeypatch.setattr(LLMAnswerClient, "rewrite_question", forbidden)
+    monkeypatch.setattr(LLMAnswerClient, "stream", model_stream)
+    for question in ("你好", "谢谢", "你能做什么", "好的", "你好", "再见", "你好"):
+        with monkeypatch.context() as scope:
+            scope.setattr(ChatRepository, "history", forbidden)
+            result = await chat_client.post(
+                "/answer/stream",
+                json={
+                    "query": question,
+                    "session_id": str(session_id),
+                },
+            )
+        frames = [frame.splitlines() for frame in result.text.strip().split("\n\n")]
+        events = [(frame[0][7:], json.loads(frame[1][6:])) for frame in frames]
+        assert events[-1][0] == "done"
+        final = events[-1][1]
+        generation = final["generation"]
+        assert generation["response_mode"] == "conversation"
+        assert generation["retrieval_query"] is None and not generation["history_used"]
+        assert generation["status"] == ("generated" if api_key else "fallback")
+        assert generation["context_chars"] == generation["evidence_count"] == 0
+        assert final["supporting_evidence"] == []
+        assert "Mavic" not in final["answer"] and "证据不足" not in final["answer"]
+        assert [data["stage"] for name, data in events if name == "status"] == ["generating"]
+        assert final["query"]["query_trace_json"]["retrieval"]["status"] == "skipped"
+    detail = (await chat_client.get(f"/chat-sessions/{session_id}")).json()
+    assert len(detail["turns"]) == 8
+    assert all(t["status"] == "completed" for t in detail["turns"])
+    assert [
+        m["content"]
+        for m in await ChatRepository(db_session).history(session_id)
+        if m["role"] == "user"
+    ] == ["Mavic 3 Pro有什么特点"]
+
+
+@pytest.mark.parametrize("api_key", [None, "test"])
+async def test_independent_question_does_not_inherit_old_topic_on_rewrite_failure(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    api_key: str | None,
+) -> None:
+    await seed(db_session)
+    session_id = (await ChatRepository(db_session).create_session()).id
+    service = SearchService(db_session, settings=settings())
+    await service.answer(AnswerRequest(query="PX4 telemetry", session_id=session_id))
+
+    async def unavailable(*args: Any, **kwargs: Any) -> str:
+        raise AnswerGenerationError("rewrite unavailable")
+
+    monkeypatch.setattr(LLMAnswerClient, "rewrite_question", unavailable)
+    response = await SearchService(db_session, settings=settings(api_key=api_key)).answer(
+        AnswerRequest(query="Parrot Bebop 2有哪些功能？", session_id=session_id)
+    )
+    assert response.generation.retrieval_query == "Parrot Bebop 2有哪些功能？"
+    assert not response.generation.history_used
+    assert response.generation.response_mode == "knowledge"
+
+
+async def test_failed_social_stream_resets_partial_output_to_a_local_reply(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def broken(*args: Any, **kwargs: Any) -> AsyncIterator[str]:
+        yield "未完成的回复"
+        raise AnswerGenerationError("model unavailable")
+
+    monkeypatch.setattr(LLMAnswerClient, "stream", broken)
+    service = SearchService(db_session, settings=settings(api_key="test"))
+    events = [e async for e in service.stream_answer(AnswerRequest(query="你好"))]
+    names = [e["event"] for e in events]
+    assert names.index("delta") < names.index("reset") < names.index("done")
+    response = events[-1]["data"]
+    assert response["generation"]["status"] == "fallback"
+    assert response["generation"]["response_mode"] == "conversation"
+    assert "未完成" not in response["answer"]
+    assert response["answer"].startswith("你好")
+    assert response["supporting_evidence"] == []
+
+
+async def test_explicit_topic_switch_skips_history_and_greeting_prefix_keeps_evidence(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await seed(db_session)
+    session_id = (await ChatRepository(db_session).create_session()).id
+    await SearchService(db_session, settings=settings()).answer(
+        AnswerRequest(query="Mavic 3 Pro", session_id=session_id)
+    )
+
+    def forbidden(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("Explicit topic switch must not use old history")
+
+    async def model_stream(
+        self: Any, query: str, evidence: Any, **kwargs: Any
+    ) -> AsyncIterator[str]:
+        assert evidence and kwargs["history"] == []
+        yield "PX4 telemetry [1]"
+
+    monkeypatch.setattr(ChatRepository, "history", forbidden)
+    monkeypatch.setattr(LLMAnswerClient, "rewrite_question", forbidden)
+    monkeypatch.setattr(LLMAnswerClient, "stream", model_stream)
+    service = SearchService(db_session, settings=settings(api_key="test"))
+    response = await service.answer(
+        AnswerRequest(
+            query="换个话题：你好，请介绍 PX4 telemetry",
+            session_id=session_id,
+        )
+    )
+    assert response.generation.response_mode == "knowledge"
+    assert response.supporting_evidence
+    assert not response.generation.history_used
+    assert response.generation.rewrite_status == "not_needed"
 
 
 @pytest.mark.parametrize("api_failure", [False, True])

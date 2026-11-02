@@ -1,7 +1,7 @@
 from datetime import timedelta
 from uuid import UUID
 
-from sqlalchemy import delete, exists, select
+from sqlalchemy import delete, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import utcnow
@@ -128,7 +128,14 @@ class ChatRepository:
             (
                 await self.session.scalars(
                     select(ChatTurn)
-                    .where(ChatTurn.session_id == session_id, ChatTurn.status == "completed")
+                    .where(
+                        ChatTurn.session_id == session_id,
+                        ChatTurn.status == "completed",
+                        or_(
+                            ChatTurn.generation["response_mode"].as_string().is_(None),
+                            ChatTurn.generation["response_mode"].as_string() != "conversation",
+                        ),
+                    )
                     .order_by(ChatTurn.created_at.desc(), ChatTurn.id.desc())
                     .limit(6)
                 )

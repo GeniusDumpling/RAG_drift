@@ -9,10 +9,8 @@ def test_runtime_image_includes_video_crawler_dependencies() -> None:
     assert "ffmpeg" in dockerfile
     assert "nodejs" in dockerfile
     assert "COPY tools ./tools" in dockerfile
-    assert "https://download.pytorch.org/whl/cpu" in dockerfile
-    assert "python -m pip install torch" in dockerfile
     assert (
-        "python -m pip install '.[local-embeddings,video-keyframes,video-asr,supplier]'"
+        "python -m pip install '.[video-keyframes,video-asr,supplier]'"
         in dockerfile
     )
     assert "EMBEDDING_PROVIDER=siliconflow" in dockerfile
@@ -42,5 +40,5 @@ def test_deploy_compose_uses_siliconflow_bge_m3() -> None:
     assert "EMBEDDING_PROVIDER: deterministic" not in compose
 
     assert "HF_HOME: /models/huggingface" in compose
-    assert "SENTENCE_TRANSFORMERS_HOME: /models/huggingface" in compose
+    assert "SENTENCE_TRANSFORMERS_HOME" not in compose
     assert "${MODEL_CACHE_DIR:-./model-cache/huggingface}:/models/huggingface" in compose

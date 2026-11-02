@@ -6,9 +6,9 @@
 
 系统整体采集与大模型分析流程、各子项进展：见 [系统总述与进展](docs/system-overview-and-progress.md)。
 
-最近一周进展：见 [项目进展周报（2026-10-16—2026-10-22）](docs/weekly-progress-2026-10-22.md)。
+最近一周进展：见 [项目进展周报（2026-10-24—2026-10-30）](docs/weekly-progress-2026-10-30.md)；[上一期周报](docs/weekly-progress-2026-10-22.md)。
 
-部署到另一台 Linux 服务器：见 [Docker + systemd 部署指南](docs/linux-server-deployment.md)。
+部署指南分两个版本：[在 Linux 服务器上部署](docs/deploy-linux-server.md) 与 [在 WSL 中部署](docs/deploy-wsl.md)。
 包含目标机代理/端口配置、五类定时任务、持久化、镜像发布及验证步骤；采集任务通过容器运行，无需宿主机 Python 环境。已有部署的升级先按指南核对数据卷和备份。
 
 一个用于可观测开源情报 RAG 的模块化单体原型：`backend`（FastAPI）提供检索问答 API，`worker` 处理异步任务，`frontend` 为 Web 界面，外挂 PostgreSQL（源内容）+ Qdrant（向量检索）+ Neo4j（视频图谱与构图任务）。
@@ -56,7 +56,7 @@ test -f .env || cp .env.example .env
 uv sync --extra dev                      # 基础依赖 + 开发工具
 # 采集/向量相关额外依赖（按需）：
 uv sync --extra dev --extra video-keyframes --extra supplier
-# 本地 embedding 另加 --extra local-embeddings；本地语音转录另加 --extra video-asr
+# 本地语音转录另加 --extra video-asr
 # 文献研究需 extra literature + playwright 浏览器
 uv sync --extra dev --extra literature
 .venv/bin/python -m playwright install chromium
@@ -208,7 +208,7 @@ bash deploy/run-job.sh discourse-collect
 
 论坛增量和历史回填共用互斥锁，默认 `FORUM_EMBED=0`；要在调度任务中写入向量，设置 `FORUM_EMBED=1`。历史游标、任务积压、加工结果和向量状态需分别观察，进程退出成功不等于有新增内容。
 
-前端任务控制依赖宿主机受限调度桥接，配置见 [定时任务控制](docs/scheduled-task-control.md)。安装步骤见 [Linux 部署指南](docs/linux-server-deployment.md)，论坛专用用户级 timer 见 [论坛采集说明](tools/forum-crawler/scripts/README.md)；同一采集任务应只启用一套调度。
+前端任务控制依赖宿主机受限调度桥接，配置见 [定时任务控制](docs/scheduled-task-control.md)。安装步骤见 [Linux 服务器部署指南](docs/deploy-linux-server.md)，论坛专用用户级 timer 见 [论坛采集说明](tools/forum-crawler/scripts/README.md)；同一采集任务应只启用一套调度。
 
 ## 检索与 AI 问答
 
@@ -311,7 +311,7 @@ curl -fsS -X POST http://localhost:8000/answer \
 
 | 变量 | 说明 |
 |---|---|
-| `EMBEDDING_PROVIDER` | 默认 `siliconflow`（远程 API）；本地可换 `sentence-transformers` |
+| `EMBEDDING_PROVIDER` | 仅支持 `siliconflow`（远程 API） |
 | `EMBEDDING_MODEL` / `EMBEDDING_DIMENSION` | 默认 `BAAI/bge-m3` / `1024` |
 | `EMBEDDING_API_KEY` | 可选；未设置时复用 `VLM_API_KEY` |
 | `QDRANT_URL` | 默认 `http://localhost:6333`；`memory://` 为进程本地内存模式 |
@@ -387,7 +387,7 @@ Neo4j、视频图谱和 iFixit 集成测试使用各自文档指定的测试连�
 ## 详细文档
 
 - [系统总述与进展](docs/system-overview-and-progress.md) · [历史数据库概览（2026-10-09）](docs/intelligence-database-summary.md)
-- [Linux / WSL 部署](docs/linux-server-deployment.md) · [Docker 部署](docs/docker-deploy.md) · [部署验证记录](docs/deployment-validation.md)
+- [在 Linux 服务器上部署](docs/deploy-linux-server.md) · [在 WSL 中部署](docs/deploy-wsl.md) · [部署验证记录](docs/deployment-validation.md)
 - [论坛采集与加工](tools/forum-crawler/scripts/README.md) · [定时任务控制](docs/scheduled-task-control.md)
 - [通用网页采集：百度搜索、原文证据及标准化 JSONL](tools/web-crawler/README.md)
 - [AI 问答实现](docs/ai-chat.md) · [AI 问答部署验收（2026-10-21）](docs/ai-chat-deployment-2026-10-21.md)

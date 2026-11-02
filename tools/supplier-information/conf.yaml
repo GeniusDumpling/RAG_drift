@@ -17,7 +17,7 @@ brands:
       fetch_retries: 2
       queries:
         - {q: 'Parrot ANAFI official white paper components suppliers', language: en}
-        - {q: 'Parrot ANAFI supplier partnership thermal processor', language: en}
+        - {q: 'Parrot supplier', language: en}
         - {q: 'Parrot 派诺特 无人机 供应商 芯片', language: zh-hans}
       seed_urls:
         - https://www.parrot.com/assets/s3fs-public/2023-02/ANAFI-USA-white-paper-en.pdf
@@ -34,7 +34,7 @@ brands:
       max_results: 6
       fetch_retries: 2
       queries:
-        - {q: 'Skydio X10 component suppliers Nidec NVIDIA FLIR', language: en}
+        - {q: 'Skydio suppliers', language: en}
         - {q: 'Skydio X10 official specifications supplier GNSS', language: en}
         - {q: 'Skydio 无人机 电机 热成像 供应商', language: zh-hans}
       seed_urls:

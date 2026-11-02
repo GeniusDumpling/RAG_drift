@@ -44,7 +44,6 @@ services:
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       VLM_API_KEY: ${VLM_API_KEY:-}
       HF_HOME: /models/huggingface
-      SENTENCE_TRANSFORMERS_HOME: /models/huggingface
       LLM_PROVIDER: ${LLM_PROVIDER:-fake}
       LITERATURE_LLM_PROVIDER: ${LITERATURE_LLM_PROVIDER:-openai-compatible}
       LLM_API_KEY: ${LLM_API_KEY:-}
@@ -115,7 +114,6 @@ services:
       NO_PROXY: localhost,127.0.0.1,postgres,qdrant,app,jobs,neo4j
       no_proxy: localhost,127.0.0.1,postgres,qdrant,app,jobs,neo4j
       HF_HOME: /models/huggingface
-      SENTENCE_TRANSFORMERS_HOME: /models/huggingface
       VIDEO_SEARCH_STATE_PATH: /data/video/search-state.json
       EMBEDDING_PROVIDER: siliconflow
       EMBEDDING_MODEL: BAAI/bge-m3

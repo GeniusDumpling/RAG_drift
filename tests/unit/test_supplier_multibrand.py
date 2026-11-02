@@ -205,8 +205,9 @@ def test_long_documents_are_bounded_and_keep_all_source_text():
     assert all(item["url"] == "https://p.test/pdf" for chunk in chunks for item in chunk)
 
 
-def test_verifier_rejects_invented_confirmation(monkeypatch):
+def test_verifier_rejects_invented_confirmation(monkeypatch, tmp_path):
     supplier_config.configure("skydio")
+    monkeypatch.setattr(supplier_config, "index_dir", lambda: tmp_path)
     monkeypatch.setattr(supplier_verify, "search", lambda *a: {"references": []})
     monkeypatch.setattr(
         supplier_verify, "fetch_fulltext", lambda *a, **k: "No relationship stated."

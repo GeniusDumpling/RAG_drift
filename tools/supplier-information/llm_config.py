@@ -49,6 +49,8 @@ def chat_completion(api_key, conf, system_prompt, user_content):
             )
             response.raise_for_status()
             result = response.json()
+            if callable(conf.get("response_callback")):
+                conf["response_callback"](result)
             choice = result["choices"][0]
             content = choice["message"].get("content") or ""
             finish = choice.get("finish_reason")

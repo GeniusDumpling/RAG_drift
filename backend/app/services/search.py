@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from time import perf_counter
@@ -24,8 +25,15 @@ from app.schemas.search import (
     SearchRequest,
     SearchResponse,
 )
-from app.services.answer_context import prepare_answer_context
+from app.services.answer_context import AnswerContext, prepare_answer_context
 from app.services.answer_generation import AnswerGenerationError, LLMAnswerClient
+from app.services.citation_check import validate_citations
+from app.services.conversation_policy import (
+    contextual_followup,
+    conversation_fallback,
+    conversation_intent,
+    explicit_topic_switch,
+)
 from app.services.embeddings import EmbeddingService, build_embedding_service
 from app.services.reranking import rerank_evidence
 from app.services.retrieval import retrieve_evidence
@@ -53,7 +61,14 @@ class SearchService:
             timeout_seconds=self.settings.agent_timeout_seconds,
             settings=self.settings,
         )
-        self.embedding = embedding or build_embedding_service(self.settings)
+        self._embedding = embedding
+
+    @property
+    def embedding(self) -> EmbeddingService:
+        # Social messages must also work when retrieval credentials are unavailable.
+        if self._embedding is None:
+            self._embedding = build_embedding_service(self.settings)
+        return self._embedding
 
     async def search(self, request: SearchRequest) -> SearchResponse:
         if request.mode != "search":
@@ -80,47 +95,62 @@ class SearchService:
         text = ""
         generation_started: float | None = None
         generation = GenerationInfo(model=self.settings.llm_model)
+        intent = conversation_intent(request.query)
+        generation.response_mode = "conversation" if intent else "knowledge"
+        generation.conversation_intent = intent
         finished = False
         try:
             history: list[dict[str, str]] = []
             if request.session_id is not None:
                 turn = await chat.begin_turn(request.session_id, request.query)
                 turn_id = turn.id
-                history = await chat.history(request.session_id)
-            yield {"event": "status", "data": {"stage": "retrieving"}}
+                if not intent and not explicit_topic_switch(request.query):
+                    history = await chat.history(request.session_id)
             client = LLMAnswerClient(
                 base_url=self.settings.base_url,
                 api_key=self.settings.llm_api_key or "",
                 model=self.settings.llm_model,
                 timeout_seconds=self.settings.agent_timeout_seconds,
             )
-            retrieval_query = request.query
-            if history:
-                if self.settings.llm_api_key:
-                    try:
-                        retrieval_query = await client.rewrite_question(request.query, history)
-                        generation.rewrite_status = "rewritten"
-                    except Exception:
-                        logger.warning("Follow-up rewriting failed", exc_info=True)
+            if intent:
+                query = await self._conversation_query(request, intent)
+                generation.reranking = {"status": "skipped", "reason": "conversation"}
+                context = AnswerContext([], "", [])
+            else:
+                yield {"event": "status", "data": {"stage": "retrieving"}}
+                retrieval_query = request.query
+                if history:
+                    if self.settings.llm_api_key:
+                        try:
+                            retrieval_query = await client.rewrite_question(request.query, history)
+                            generation.rewrite_status = (
+                                "rewritten" if retrieval_query != request.query else "unchanged"
+                            )
+                        except Exception:
+                            logger.warning("Follow-up rewriting failed", exc_info=True)
+                            generation.rewrite_status = "fallback"
+                    else:
                         generation.rewrite_status = "fallback"
-                else:
-                    generation.rewrite_status = "fallback"
-                if generation.rewrite_status == "fallback":
-                    # Keep the recent topic searchable even when rewriting is unavailable.
-                    previous = [m["content"] for m in history if m["role"] == "user"][-2:]
-                    retrieval_query = "\n".join([*previous, request.query])
-            generation.retrieval_query = retrieval_query
-            query, hits = await self._retrieve(request, retrieval_query=retrieval_query)
-            if self.settings.reranker_provider != "none":
-                yield {"event": "status", "data": {"stage": "reranking"}}
-            reranked = await rerank_evidence(self.session, retrieval_query, hits, self.settings)
-            generation.reranking = reranked.trace
-            context = await prepare_answer_context(
-                self.session,
-                reranked.evidence,
-                max_evidence=min(request.top_k, self.settings.answer_max_evidence),
-                preserve_order=reranked.trace["status"] == "reranked",
-            )
+                    if generation.rewrite_status == "fallback" and contextual_followup(
+                        request.query
+                    ):
+                        previous = [m["content"] for m in history if m["role"] == "user"][-2:]
+                        retrieval_query = "\n".join([*previous, request.query])
+                    if retrieval_query == request.query:
+                        history = []
+                generation.history_used = bool(history)
+                generation.retrieval_query = retrieval_query
+                query, hits = await self._retrieve(request, retrieval_query=retrieval_query)
+                if self.settings.reranker_provider != "none":
+                    yield {"event": "status", "data": {"stage": "reranking"}}
+                reranked = await rerank_evidence(self.session, retrieval_query, hits, self.settings)
+                generation.reranking = reranked.trace
+                context = await prepare_answer_context(
+                    self.session,
+                    reranked.evidence,
+                    max_evidence=min(request.top_k, self.settings.answer_max_evidence),
+                    preserve_order=reranked.trace["status"] == "reranked",
+                )
             evidence = context.evidence
             generation.evidence_count = len(evidence)
             generation.context_chars = len(context.text)
@@ -135,7 +165,7 @@ class SearchService:
             }
             yield {"event": "status", "data": {"stage": "generating"}}
             generation_started = perf_counter()
-            if not evidence:
+            if not evidence and not intent:
                 generation.status = "no_evidence"
                 generation.reason = "no_matching_evidence"
             elif not self.settings.llm_api_key:
@@ -162,7 +192,7 @@ class SearchService:
                     cause = exc.__cause__ or exc
                     generation.reason = f"model_error:{type(cause).__name__}"
             if generation.status != "generated":
-                text = _synthesize_answer(evidence)
+                text = conversation_fallback(intent) if intent else _synthesize_answer(evidence)
                 # Discard any partially emitted model answer before showing fallback excerpts.
                 yield {
                     "event": "reset",
@@ -171,6 +201,8 @@ class SearchService:
                         "generation": generation.model_dump(mode="json"),
                     },
                 }
+            if not intent and evidence:
+                generation.citation_check = validate_citations(text, len(evidence)).to_trace()
             generation.latency_ms = round((perf_counter() - generation_started) * 1000)
             generation.total_latency_ms = round((perf_counter() - started) * 1000)
             updated = await repo.record_generation(
@@ -242,6 +274,36 @@ class SearchService:
                     except Exception:
                         logger.exception("Could not persist interrupted answer")
 
+    async def _conversation_query(self, request: AnswerRequest, intent: str) -> SearchQueryRead:
+        """Keep the existing response/audit contract without executing retrieval."""
+        repo = SearchRepository(self.session)
+        item = await repo.create_search_query(
+            raw_query=request.query,
+            filter_json=_filter_json(request),
+            mode=request.mode,
+            top_k=request.top_k,
+        )
+        await repo.update_search_query_optimization(
+            search_query_id=item.id,
+            used_agent=False,
+            optimized=QueryOptimizationResponse(
+                optimized_query_text=request.query,
+                keyword_terms=[],
+                entity_hints=[],
+                time_hints_json={},
+                query_intent=intent,
+                confidence=1,
+                trace_summary_json={},
+            ),
+            trace={"routing": {"mode": "conversation", "intent": intent}},
+        )
+        item = await repo.update_search_query_retrieval(
+            search_query_id=item.id,
+            result_count=0,
+            retrieval_trace={"status": "skipped", "reason": "conversation"},
+        )
+        return SearchQueryRead.model_validate(item)
+
     async def _retrieve(
         self,
         request: SearchRequest | AnswerRequest,
@@ -257,11 +319,15 @@ class SearchService:
             top_k=request.top_k,
         )
 
-        optimized = await asyncio.to_thread(
-            self._optimize_query,
-            raw_query=retrieval_query or request.query,
-            filters=filter_json,
-            mode=request.mode,
+        optimized = (
+            _direct_optimization(retrieval_query or request.query)
+            if should_skip_optimization(retrieval_query or request.query)
+            else await asyncio.to_thread(
+                self._optimize_query,
+                raw_query=retrieval_query or request.query,
+                filters=filter_json,
+                mode=request.mode,
+            )
         )
         trace = dict(optimized.trace_summary_json)
         used_agent = not bool(trace.get("fallback"))
@@ -342,4 +408,46 @@ def _fallback_optimization(*, raw_query: str, error_message: str) -> QueryOptimi
         query_intent="fallback_raw_query",
         confidence=0.0,
         trace_summary_json={"fallback": True, "error": error_message},
+    )
+
+
+# 简单查询直接透传，跳过 LLM 查询优化（省 ~4s 串行延迟）。
+_SIMPLE_QUERY_MAX_CHARS = 40
+# 指代/省略词：出现说明查询依赖上下文，需要改写。
+_COREFERENCE_PATTERN = re.compile(
+    r"它|他们|她们|它们|这个|那个|这台|那种|这架|上述|前面|刚才|之前提到的"
+    r"|\b(it|they|them|this one|that one|the above)\b",
+    re.IGNORECASE,
+)
+
+
+def should_skip_optimization(query: str) -> bool:
+    """Return True when a query is short, self-contained, and fact-lookup style.
+
+    Deterministic gate: only skip when the query needs no disambiguation,
+    no coreference resolution, and no decomposition — plain keyword retrieval
+    on the raw query is then as good as an LLM rewrite.
+    """
+    stripped = query.strip()
+    if not stripped or len(stripped) > _SIMPLE_QUERY_MAX_CHARS:
+        return False
+    if _COREFERENCE_PATTERN.search(stripped):
+        return False
+    # 分析/对比/多子问题类查询需要优化拆解。
+    if re.search(r"对比|比较|区别|优劣|还是|以及|哪个更|为什么|怎么办|怎么选", stripped):
+        return False
+    return True
+
+
+def _direct_optimization(raw_query: str) -> QueryOptimizationResponse:
+    """No-LLM optimization: pass the raw query through with naive term split."""
+    stripped_query = raw_query.strip() or "[empty query]"
+    return QueryOptimizationResponse(
+        optimized_query_text=stripped_query,
+        keyword_terms=[term for term in stripped_query.split() if term],
+        entity_hints=[],
+        time_hints_json={},
+        query_intent="fact",
+        confidence=0.5,
+        trace_summary_json={"skipped": True, "reason": "simple_query"},
     )

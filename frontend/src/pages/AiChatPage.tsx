@@ -41,6 +41,7 @@ function answerLabel(message: ChatMessage): string {
   if (message.state === 'cancelled') return '已停止 · 内容未完成';
   if (message.state === 'error') return '生成失败 · 内容未完成';
   if (message.state === 'pending') return '正在生成';
+  if (message.generation?.response_mode === 'conversation') return '对话回复';
   if (message.generation?.status === 'fallback') return '证据摘录 · 未生成模型答案';
   if (message.generation?.status === 'no_evidence') return '未找到支持证据';
   return '基于证据的回答';
@@ -60,7 +61,7 @@ export function AiChatPage({ initialQuery = '', onOpenContent }: AiChatPageProps
   const [restoring, setRestoring] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [stage, setStage] = useState('正在检索证据');
+  const [stage, setStage] = useState('正在准备回答');
   const [error, setError] = useState('');
   const [historyError, setHistoryError] = useState('');
   const controller = useRef<AbortController>();
@@ -133,7 +134,7 @@ export function AiChatPage({ initialQuery = '', onOpenContent }: AiChatPageProps
     controller.current = abort;
     const currentVersion = ++version.current;
     const id = `live-${++nextId.current}`;
-    setInput(''); setError(''); setLoading(true); setStage('正在检索证据');
+    setInput(''); setError(''); setLoading(true); setStage('正在准备回答');
     setMessages((current) => [...current,
       { id: `${id}-user`, role: 'user', text: trimmed },
       { id, role: 'assistant', text: '', state: 'pending' },
@@ -252,7 +253,9 @@ export function AiChatPage({ initialQuery = '', onOpenContent }: AiChatPageProps
               <p className="chat-role">{message.role === 'user' ? '你的问题' : answerLabel(message)}</p>
               <p className="chat-message-text">{message.text || (message.state === 'pending' ? stage : '')}</p>
               {message.generation?.status === 'fallback' ? (
-                <p className="chat-fallback">本次未能生成模型答案，以下为检索到的原文摘录。</p>
+                <p className="chat-fallback">{message.generation.response_mode === 'conversation'
+                  ? '模型暂不可用，已返回简短回复。'
+                  : '本次未能生成模型答案，以下为检索到的原文摘录。'}</p>
               ) : null}
               {message.evidence?.length ? (
                 <details className="chat-evidence">

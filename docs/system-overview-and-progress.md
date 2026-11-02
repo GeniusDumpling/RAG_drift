@@ -195,7 +195,7 @@ PostgreSQL 是事实来源，Qdrant 是可重建的检索索引。前端通过�
 
 **待完善：**完成目标服务器部署验收与真实外部采集验证。历史记录中，最终源码的干净全量镜像重建未完成；`tests/unit` 曾有 36 项基线失败，主要涉及旧 `skills/` 路径与过期演示断言。本次仅整理文档，未复跑这些测试，不能据此宣称当前全量测试通过。
 
-部署说明见 [Linux 服务器部署指南](linux-server-deployment.md)，证据与限制见 [部署验证记录](deployment-validation.md)。工具目录已统一为 `tools/`，当前配置和测试应使用 `tools/forum-crawler`、`tools/video-crawler` 等路径；历史验证记录保留当时的问题描述。
+部署说明见 [在 Linux 服务器上部署](deploy-linux-server.md) 与 [在 WSL 中部署](deploy-wsl.md)，证据与限制见 [部署验证记录](deployment-validation.md)。工具目录已统一为 `tools/`，当前配置和测试应使用 `tools/forum-crawler`、`tools/video-crawler` 等路径；历史验证记录保留当时的问题描述。
 
 ## 五、当前阶段判断与后续建议
 
@@ -214,5 +214,5 @@ PostgreSQL 是事实来源，Qdrant 是可重建的检索索引。前端通过�
 - [情报数据库数据概览](intelligence-database-summary.md)：2026 年 10 月 9 日规模、字段与覆盖边界。
 - [文献研究](literature-research.md)：IEEE 访问和独立 worker 使用。
 - [定时采集控制](scheduled-task-control.md)：宿主机桥接、任务状态与手动触发。
-- [Linux 服务器部署指南](linux-server-deployment.md)：部署、持久化与验收。
+- [在 Linux 服务器上部署](deploy-linux-server.md) · [在 WSL 中部署](deploy-wsl.md)：部署、持久化与验收。
 - [部署验证记录](deployment-validation.md)：已执行验证及未验证事项。

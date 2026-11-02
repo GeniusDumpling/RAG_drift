@@ -194,7 +194,4 @@ def _mark_failed(*, content_chunk: ContentChunk, backend_name: str, error_messag
 
 
 def _provider_name(embedding: EmbeddingService) -> str:
-    class_name = embedding.__class__.__name__
-    if class_name == "SentenceTransformerEmbeddingService":
-        return "sentence-transformers"
-    return class_name
+    return embedding.__class__.__name__

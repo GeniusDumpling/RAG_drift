@@ -1,52 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Any
-
-import app.services.embeddings as embeddings
 import pytest
 from app.core.config import Settings
-from app.services.embeddings import (
-    SentenceTransformerEmbeddingService,
-    SiliconFlowEmbeddingService,
-    build_embedding_service,
-)
+from app.services.embeddings import SiliconFlowEmbeddingService, build_embedding_service
 
 pytestmark = pytest.mark.no_db
-
-
-class FakeVector:
-    def __init__(self, values: list[float]) -> None:
-        self.values = values
-
-    def tolist(self) -> list[float]:
-        return list(self.values)
-
-
-@pytest.fixture(autouse=True)
-def clear_sentence_transformer_cache() -> Iterator[None]:
-    cache_clear = getattr(embeddings, "_clear_sentence_transformer_model_cache", None)
-    if cache_clear is not None:
-        cache_clear()
-    yield
-    if cache_clear is not None:
-        cache_clear()
-
-
-class FakeSentenceTransformer:
-    instances: list[FakeSentenceTransformer] = []
-
-    def __init__(self, model_name: str) -> None:
-        self.model_name = model_name
-        self.encode_calls: list[tuple[str, bool]] = []
-        FakeSentenceTransformer.instances.append(self)
-
-    def get_sentence_embedding_dimension(self) -> int:
-        return 3
-
-    def encode(self, text: str, *, normalize_embeddings: bool) -> FakeVector:
-        self.encode_calls.append((text, normalize_embeddings))
-        return FakeVector([0.1, 0.2, 0.3])
 
 
 def test_embedding_settings_default_to_siliconflow_bge_m3() -> None:
@@ -57,86 +15,12 @@ def test_embedding_settings_default_to_siliconflow_bge_m3() -> None:
     assert settings.embedding_dimension == 1024
 
 
-def test_build_embedding_service_returns_siliconflow_bge_m3_by_default(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    FakeSentenceTransformer.instances.clear()
-    monkeypatch.setattr(
-        embeddings,
-        "_load_sentence_transformer_class",
-        lambda: FakeSentenceTransformer,
-    )
-
-    service = build_embedding_service(Settings())
+def test_build_embedding_service_returns_siliconflow_bge_m3_by_default() -> None:
+    service = build_embedding_service(Settings(VLM_API_KEY="test-key"))
 
     assert isinstance(service, SiliconFlowEmbeddingService)
     assert service.model_name == "BAAI/bge-m3"
     assert service.dimension == 1024
-
-
-def test_build_embedding_service_returns_sentence_transformer_provider(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    FakeSentenceTransformer.instances.clear()
-    monkeypatch.setattr(
-        embeddings,
-        "_load_sentence_transformer_class",
-        lambda: FakeSentenceTransformer,
-    )
-    settings = Settings(
-        EMBEDDING_PROVIDER="sentence-transformers",
-        EMBEDDING_MODEL="BAAI/bge-small-zh-v1.5",
-        EMBEDDING_DIMENSION=512,
-    )
-
-    service = build_embedding_service(settings)
-
-    assert isinstance(service, SentenceTransformerEmbeddingService)
-    assert service.model_name == "BAAI/bge-small-zh-v1.5"
-    assert service.dimension == 3
-    assert service.embed("遥控器 图传") == [0.1, 0.2, 0.3]
-    assert FakeSentenceTransformer.instances[0].encode_calls == [("遥控器 图传", True)]
-
-
-def test_sentence_transformer_provider_reuses_loaded_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    FakeSentenceTransformer.instances.clear()
-    monkeypatch.setattr(
-        embeddings,
-        "_load_sentence_transformer_class",
-        lambda: FakeSentenceTransformer,
-    )
-    service = SentenceTransformerEmbeddingService("BAAI/bge-small-zh-v1.5")
-
-    first_dimension = service.dimension
-    second_dimension = service.dimension
-    vector = service.embed("固件 升级")
-
-    assert first_dimension == 3
-    assert second_dimension == 3
-    assert vector == [0.1, 0.2, 0.3]
-    assert len(FakeSentenceTransformer.instances) == 1
-
-
-def test_sentence_transformer_provider_reuses_model_across_service_instances(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    FakeSentenceTransformer.instances.clear()
-    monkeypatch.setattr(
-        embeddings,
-        "_load_sentence_transformer_class",
-        lambda: FakeSentenceTransformer,
-    )
-
-    first_service = SentenceTransformerEmbeddingService("BAAI/bge-small-zh-v1.5")
-    second_service = SentenceTransformerEmbeddingService("BAAI/bge-small-zh-v1.5")
-
-    assert first_service.embed("遥控器 图传") == [0.1, 0.2, 0.3]
-    assert second_service.embed("固件 升级") == [0.1, 0.2, 0.3]
-    assert len(FakeSentenceTransformer.instances) == 1
-    assert FakeSentenceTransformer.instances[0].encode_calls == [
-        ("遥控器 图传", True),
-        ("固件 升级", True),
-    ]
 
 
 def test_unsupported_embedding_provider_raises_clear_error() -> None:
@@ -146,22 +30,9 @@ def test_unsupported_embedding_provider_raises_clear_error() -> None:
         build_embedding_service(settings)
 
 
-@pytest.mark.parametrize("provider", ["deterministic", "fake"])
+@pytest.mark.parametrize("provider", ["deterministic", "fake", "sentence-transformers"])
 def test_removed_embedding_providers_raise_clear_error(provider: str) -> None:
     settings = Settings(EMBEDDING_PROVIDER=provider)
 
     with pytest.raises(ValueError, match="Unsupported EMBEDDING_PROVIDER"):
         build_embedding_service(settings)
-
-
-def test_sentence_transformer_import_error_is_clear(monkeypatch: pytest.MonkeyPatch) -> None:
-    def raise_import_error() -> Any:
-        raise RuntimeError(
-            "sentence-transformers is required for EMBEDDING_PROVIDER=sentence-transformers"
-        )
-
-    monkeypatch.setattr(embeddings, "_load_sentence_transformer_class", raise_import_error)
-    service = SentenceTransformerEmbeddingService("BAAI/bge-small-zh-v1.5")
-
-    with pytest.raises(RuntimeError, match="sentence-transformers is required"):
-        service.embed("telemetry")

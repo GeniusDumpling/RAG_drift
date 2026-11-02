@@ -250,7 +250,7 @@ describe('Task 11 frontend quality fixes', () => {
     });
 
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
-    expect(screen.getAllByText(EMPTY_STATE_COPY).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText(EMPTY_STATE_COPY)).toHaveLength(0);
   });
 
   test('shows a content loading status before the empty state', async () => {
@@ -268,7 +268,7 @@ describe('Task 11 frontend quality fixes', () => {
     });
 
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
-    expect(screen.getByText(EMPTY_STATE_COPY)).toBeTruthy();
+    expect(screen.queryAllByText(EMPTY_STATE_COPY)).toHaveLength(0);
   });
 
   test('shows a dashboard loading status before the empty state', async () => {
@@ -295,6 +295,6 @@ describe('Task 11 frontend quality fixes', () => {
     });
 
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
-    expect(screen.getAllByText(EMPTY_STATE_COPY).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText(EMPTY_STATE_COPY)).toHaveLength(0);
   });
 });

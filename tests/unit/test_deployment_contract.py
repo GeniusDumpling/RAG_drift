@@ -7,7 +7,7 @@ def test_jobs_image_installs_all_scheduled_pipeline_dependencies() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
     assert "COPY tools ./tools" in dockerfile
-    assert ".[local-embeddings,video-keyframes,video-asr,supplier]" in dockerfile
+    assert ".[video-keyframes,video-asr,supplier]" in dockerfile
 
 
 def test_deploy_compose_defines_an_internal_jobs_runner_with_persistent_artifacts() -> None:
@@ -29,13 +29,15 @@ def test_deploy_compose_defines_an_internal_jobs_runner_with_persistent_artifact
     )
 
 
-def test_deployment_assets_document_host_timer_triggering_container_jobs() -> None:
-    guide = (ROOT / "docs/deployment-guide.md").read_text(encoding="utf-8")
+def test_deployment_guides_document_host_timer_triggering_container_jobs() -> None:
+    for guide_name in ("deploy-linux-server.md", "deploy-wsl.md"):
+        guide = (ROOT / "docs" / guide_name).read_text(encoding="utf-8")
 
-    assert "systemd" in guide
-    assert "docker compose -f docker-compose.deploy.yml run --rm jobs" in guide
-    assert "HTTP_PROXY" in guide
-    assert "COLLECTOR_DATA_DIR" in guide
+        assert "systemd" in guide
+        assert "docker compose -f docker-compose.deploy.yml run --rm jobs" in guide
+        assert "HTTP_PROXY" in guide
+        assert "COLLECTOR_DATA_DIR" in guide
+
     assert (ROOT / "deploy/systemd/intelligence-rag-video-collect.service").is_file()
     assert (ROOT / "deploy/systemd/intelligence-rag-video-collect.timer").is_file()
 

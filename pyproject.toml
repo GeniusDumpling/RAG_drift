@@ -32,9 +32,6 @@ dev = [
   "pytest-asyncio==0.25.2",
   "ruff==0.8.4"
 ]
-local-embeddings = [
-  "sentence-transformers==3.3.1"
-]
 video-asr = [
   "faster-whisper>=1.1,<2"
 ]

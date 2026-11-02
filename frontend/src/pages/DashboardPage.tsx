@@ -7,7 +7,6 @@ import { itemTypeLabel } from '../utils/links';
 import type { ContentListItem, CrawlJob, CrawlRun, Page, SourceSite } from '../api/types';
 import { formatErrorMessage } from '../utils/errors';
 
-const EMPTY_STATE_COPY = '暂无数据。请先启动后端并运行 demo seed 脚本。';
 const LOADING_STATE_COPY = '正在加载总览数据...';
 
 type DashboardData = {
@@ -59,10 +58,6 @@ export function DashboardPage() {
     };
   }, [data]);
 
-  const hasData = Boolean(
-    data.sources?.items.length || data.jobs?.items.length || data.runs?.items.length || data.contents?.items.length,
-  );
-
   return (
     <section>
       <div className="page-title">
@@ -101,8 +96,6 @@ export function DashboardPage() {
         </p>
       ) : null}
 
-      {!loading && !error && !hasData ? <p className="card empty-state">{EMPTY_STATE_COPY}</p> : null}
-
       <div className="grid two-column">
         <section className="card">
           <h2>最近运行</h2>
@@ -116,11 +109,9 @@ export function DashboardPage() {
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="muted">
-              {loading ? LOADING_STATE_COPY : error ? '最近 Runs 暂不可用：API 请求失败。' : EMPTY_STATE_COPY}
-            </p>
-          )}
+          ) : loading || error ? (
+            <p className="muted">{loading ? LOADING_STATE_COPY : '最近 Runs 暂不可用：API 请求失败。'}</p>
+          ) : null}
         </section>
 
         <section className="card">
@@ -135,15 +126,11 @@ export function DashboardPage() {
                 </li>
               ))}
             </ul>
-          ) : (
+          ) : loading || error ? (
             <p className="muted">
-              {loading
-                ? LOADING_STATE_COPY
-                : error
-                  ? '最近 Content 暂不可用：API 请求失败。'
-                  : EMPTY_STATE_COPY}
+              {loading ? LOADING_STATE_COPY : '最近 Content 暂不可用：API 请求失败。'}
             </p>
-          )}
+          ) : null}
         </section>
       </div>
     </section>

@@ -27,6 +27,19 @@ async function send() {
 }
 
 describe('AI chat streaming and sessions', () => {
+  it.each(['generated', 'fallback'] as const)('labels a %s social reply without evidence wording', async (status) => {
+    const social = { ...generation, status, response_mode: 'conversation' as const };
+    vi.mocked(api.streamAnswer).mockImplementation(async (_body, emit) => {
+      emit({ event: 'done', data: { query: {} as never, answer: '你好！你想了解什么？', supporting_evidence: [], generation: social } });
+    });
+    render(<AiChatPage initialQuery="你好" />);
+    await send();
+    expect(await screen.findByText('你好！你想了解什么？')).toBeInTheDocument();
+    expect(screen.getByText('对话回复')).toBeInTheDocument();
+    expect(screen.queryByText('基于证据的回答')).not.toBeInTheDocument();
+    expect(screen.queryByText('本次未能生成模型答案，以下为检索到的原文摘录。')).not.toBeInTheDocument();
+  });
+
   it('shows deltas before completion and passes the saved session id', async () => {
     let emit!: (event: AnswerStreamEvent) => void;
     let finish!: () => void;

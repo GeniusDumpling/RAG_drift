@@ -31,9 +31,6 @@ dev = [
   "pytest-asyncio==0.25.2",
   "ruff==0.8.4"
 ]
-local-embeddings = [
-  "sentence-transformers==3.3.1"
-]
 literature = [
   "pdfminer.six>=20240706",
   "playwright>=1.45.0"

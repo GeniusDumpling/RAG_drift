@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from datetime import datetime
 
 import db_ingest
@@ -24,12 +25,11 @@ from llm_config import chat_completion, get_llm_config
 from llm_supplier_analysis import (
     ground_metadata,
     load_confirmed_relations,
-    normalized_quote,
     parse_list,
     parse_years,
     save_confirmed_relations,
-    source_url,
 )
+from verification_evidence import match_evidence, parse_response
 
 logger = logging.getLogger(__name__)
 
@@ -40,15 +40,14 @@ VERIFY_SYSTEM_PROMPT = """你是无人机上游供应链验证分析师，仅依
 排除无人机经销商、兼容配件、泛泛合作、行业候选名单与常识推断。
 确认=原文有直接证据；否定=原文明说不存在该关系；缺少证据只能待确认，不能否定或确认。
 机型和证据年份只能填原文明确信息。未知留空，不能用抓取年份、当前年份或页脚版权年份代替。
-依据必须逐字引用提供全文的连续原句，来源必须使用输入URL。用以下格式输出：
-- 验证结论：确认 / 否定 / 待确认
-- 可信度：明确 / 疑似 / 不相关
-- 供应内容/模块：
-- 机型：
-- 证据年份：
-- 关系类型：直接供货 / 器件采用 / OEM代工
-- 依据（引用原文）：
-- 来源URL：
+依据必须逐字引用提供全文的连续原句，来源必须使用输入URL。
+只输出一个JSON对象，不要Markdown代码围栏。格式：
+{"verdict":"确认/否定/待确认", "confidence":"明确/疑似/不相关",
+ "supply":"供应内容", "models":[], "evidence_years":[], "relation_type":"器件采用",
+ "evidence":[{"url":"输入文档的一个完整URL", "quote":"该URL全文的连续原句"}]}
+多来源使用多个evidence对象，每个对象只能包含一个URL和一段连续原文。
+引用中禁止添加“网页1指出”等说明、拼接不连续句子或使用省略号代替原文。
+不要把多个URL用分号拼在一起。确认或否定必须提供至少一条原文证据；无证据输出待确认。
 """
 
 
@@ -81,7 +80,8 @@ def evidence_excerpt(body, supplier, max_chars=6500):
     """Provide bounded evidence around supplier mentions instead of cutting a PDF at its cover."""
     if len(body) <= max_chars:
         return body
-    matches = list(re.finditer(re.escape(supplier), body, flags=re.I))
+    name = re.split(r"[（(]", supplier, maxsplit=1)[0].strip()
+    matches = list(re.finditer(re.escape(name or supplier), body, flags=re.I))
     if not matches:
         return body[:max_chars]
     windows = []
@@ -114,6 +114,43 @@ def verify_supplier(api_key, sup, search_conf, llm_conf, verify_conf):
         "orig_sources": sup.get("sources", []),
         "orig_supply": sup.get("supply", ""),
     }
+    base["raw_response"] = ""
+    base["source_documents"] = []
+    base["diagnostic_path"] = str(
+        supplier_config.index_dir()
+        / "verification_runs"
+        / f"{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex}.json"
+    )
+    try:
+        result = _verify_supplier(base, api_key, sup, search_conf, llm_conf, verify_conf)
+    except Exception as exc:
+        base.update(verdict=f"验证失败：{exc}", confidence="", error=str(exc))
+        base["evidence"] = f"验证失败：{exc}\n\n## 模型原始响应\n{base['raw_response']}"
+        save_diagnostic(base)
+        raise VerificationFailure(base) from exc
+    save_diagnostic(result)
+    return result
+
+
+class VerificationFailure(ValueError):
+    def __init__(self, result):
+        super().__init__(result.get("error", result["verdict"]))
+        self.result = result
+
+
+def save_diagnostic(result):
+    path = result["diagnostic_path"]
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    temporary = path + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as handle:
+        os.chmod(temporary, 0o600)
+        json.dump(result, handle, ensure_ascii=False, indent=2)
+    os.replace(temporary, path)
+
+
+def _verify_supplier(base, api_key, sup, search_conf, llm_conf, verify_conf):
+    query = base["query"]
+    profile = supplier_config.brand()
     result = search(query, {**search_conf, "language": profile.get("language", "en")})
     refs = result.get("references", [])[: int(verify_conf.get("search_limit", 20))]
     base["searched"] = len(refs)
@@ -140,6 +177,7 @@ def verify_supplier(api_key, sup, search_conf, llm_conf, verify_conf):
             )
         time.sleep(float(verify_conf.get("fetch_delay", 0.5)))
     base["fetched"] = len(docs)
+    base["source_documents"] = docs
     if not docs:
         base.update(
             verdict="验证失败：没有抓取到可验证正文",
@@ -148,44 +186,65 @@ def verify_supplier(api_key, sup, search_conf, llm_conf, verify_conf):
         )
         return base
     logger.info("[LLM] Verifying %s using %d source documents", sup["supplier"], len(docs))
+
+    def record_response(payload):
+        base.setdefault("response_attempts", []).append(payload)
+        choices = payload.get("choices") or []
+        if choices:
+            base["raw_response"] = choices[0].get("message", {}).get("content") or ""
+        save_diagnostic(base)
+
     verdict_md = call_llm(
-        api_key, llm_conf, build_user_content(sup["supplier"], sup.get("supply", ""), docs)
+        api_key,
+        {**llm_conf, "response_callback": record_response},
+        build_user_content(sup["supplier"], sup.get("supply", ""), docs),
     )
 
-    def field(name):
-        match = re.search(rf"^-[ \t]*{re.escape(name)}：[ \t]*(.*)$", verdict_md, flags=re.M)
-        return match.group(1).strip() if match else ""
-
-    verdict = field("验证结论")
+    base["raw_response"] = verdict_md
+    # Save before parsing so malformed output survives parsing/grounding exceptions.
+    save_diagnostic(base)
+    parsed = parse_response(verdict_md)
+    verdict, confidence = parsed.get("verdict"), parsed.get("confidence")
     if verdict not in {"确认", "否定", "待确认"}:
         raise ValueError("Invalid LLM verification verdict")
-    confidence = field("可信度")
     if confidence not in {"明确", "疑似", "不相关"}:
         raise ValueError("Invalid LLM confidence")
-    quote = field("依据（引用原文）").strip('“”"')
-    url = source_url(field("来源URL"))
-
-    grounded = any(
-        d["url"] == url and quote and normalized_quote(quote) in normalized_quote(d["body"])
-        for d in docs
-    )
+    grounded = match_evidence(parsed["candidates"], docs)
     if verdict in {"确认", "否定"} and not grounded:
-        logger.warning("Ungrounded verdict for %s: url=%s quote=%r", sup["supplier"], url, quote)
         raise ValueError("LLM verdict has no matching source URL and verbatim quote")
-    source = next((doc for doc in docs if doc["url"] == url), {})
-    models, years = ground_metadata(
-        parse_list(field("机型")),
-        parse_years(field("证据年份")),
-        source.get("body", ""),
-        source.get("date", ""),
-    )
+    models, years = set(), set()
+    proposed_models = parsed.get("models", [])
+    proposed_years = parsed.get("evidence_years", [])
+    if isinstance(proposed_models, str):
+        proposed_models = parse_list(proposed_models)
+    if isinstance(proposed_years, str):
+        proposed_years = parse_years(proposed_years)
+    else:
+        proposed_years = parse_years(" ".join(map(str, proposed_years)))
+    for doc in docs:
+        if doc["url"] not in {item["url"] for item in grounded}:
+            continue
+        found_models, found_years = ground_metadata(
+            proposed_models, proposed_years, doc["body"], doc.get("date", "")
+        )
+        models.update(found_models)
+        years.update(found_years)
+    evidence_lines = [
+        f"- 验证结论：{verdict}",
+        f"- 可信度：{confidence}",
+        "- 供应内容/模块：" + str(parsed.get("supply", "")),
+        "- 关系类型：" + str(parsed.get("relation_type", "")),
+    ]
+    for item in grounded:
+        evidence_lines.extend(["- 依据（引用原文）：" + item["quote"], "- 来源URL：" + item["url"]])
     base.update(
         verdict=verdict,
         confidence=confidence,
-        supply=field("供应内容/模块"),
-        models=models,
-        evidence_years=years,
-        evidence=verdict_md,
+        supply=parsed.get("supply", ""),
+        models=sorted(models),
+        evidence_years=sorted(years),
+        evidence_items=grounded,
+        evidence="\n".join(evidence_lines),
     )
     return base
 
@@ -222,6 +281,9 @@ def main(confirmed_path: str = "") -> str:
     all_targets = db_ingest.load_supplier_relations_for_verification(
         mode, buyer_name=supplier_config.brand()["name"]
     )
+    selected = verify_conf.get("supplier_names")
+    if selected:
+        all_targets = [target for target in all_targets if target["supplier"] in selected]
     targets = all_targets
     if max_n > 0:
         targets = targets[:max_n]
@@ -233,6 +295,11 @@ def main(confirmed_path: str = "") -> str:
         logger.info(f"[{idx}/{total}] 验证：{sup['supplier']}")
         try:
             res = verify_supplier(api_key, sup, search_conf, llm_conf, verify_conf)
+        except VerificationFailure as e:
+            logger.warning(
+                "    %s 验证失败：%s（诊断：%s）", sup["supplier"], e, e.result["diagnostic_path"]
+            )
+            res = e.result
         except Exception as e:
             logger.warning(f"    {sup['supplier']} 验证失败：{e}")
             res = {
@@ -292,6 +359,8 @@ def main(confirmed_path: str = "") -> str:
         lines.append(f"- 原始供应内容：{r['orig_supply'] or '（无）'}")
         lines.append("- 机型：" + "；".join(r.get("models", [])))
         lines.append("- 证据年份：" + "；".join(map(str, r.get("evidence_years", []))))
+        if r.get("diagnostic_path"):
+            lines.append("- 诊断记录：" + r["diagnostic_path"])
         if r.get("orig_sources"):
             lines.append(f"- 原始来源：{'；'.join(r['orig_sources'])}")
         if not r.get("evidence"):

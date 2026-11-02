@@ -143,8 +143,8 @@ def ground_metadata(models, years, body, date=""):
 
 
 def source_url(value):
-    match = re.search(r"https?://[^\s<>`\])]+", value)
-    return urldefrag(match.group(0))[0] if match else ""
+    match = re.search(r'https?://[^\s<>`\[\]"“”；;，、]+', value)
+    return urldefrag(match.group(0).rstrip(').,;:：。'))[0] if match else ""
 
 
 def normalized_quote(value):

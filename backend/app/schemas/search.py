@@ -96,6 +96,9 @@ class SearchResponse(BaseModel):
 
 
 class GenerationInfo(BaseModel):
+    response_mode: Literal["knowledge", "conversation"] = "knowledge"
+    conversation_intent: str | None = None
+    history_used: bool = False
     status: Literal["generated", "fallback", "no_evidence", "cancelled", "error"] = "generated"
     model: str | None = None
     reason: str | None = None
@@ -107,6 +110,7 @@ class GenerationInfo(BaseModel):
     retrieval_query: str | None = None
     rewrite_status: str = "not_needed"
     reranking: dict[str, Any] = Field(default_factory=dict)
+    citation_check: dict[str, Any] = Field(default_factory=dict)
 
 
 class AnswerResponse(BaseModel):

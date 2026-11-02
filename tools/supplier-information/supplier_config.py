@@ -88,6 +88,9 @@ def cli(description, verification=False):
     parser.add_argument("--force", action="store_true", help="Reprocess known URLs")
     if verification:
         parser.add_argument("--mode", choices=["unverified", "failed", "all"])
+        parser.add_argument(
+            "--supplier", action="append", help="Exact supplier name; repeat to restrict targets"
+        )
         parser.add_argument("--max-suppliers", type=int, help="0 means all matching suppliers")
         parser.add_argument("--fetch-limit", type=int)
     args = parser.parse_args()
@@ -103,6 +106,8 @@ def cli(description, verification=False):
     if args.force:
         overrides["search"]["incremental"] = False
     if verification:
+        if args.supplier:
+            overrides["verify"]["supplier_names"] = args.supplier
         for field in ("mode", "max_suppliers", "fetch_limit"):
             if getattr(args, field) is not None:
                 overrides["verify"][field] = getattr(args, field)

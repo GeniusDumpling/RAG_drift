@@ -1,0 +1,18 @@
+{
+  "criteria_version": "video-graph-release-20261102-v1",
+  "target_retention_min": 0.8,
+  "known_bad_rejection_min": 0.9,
+  "output_review": {
+    "sample_size": 60,
+    "seed": 20261102,
+    "minimum_supported": 51,
+    "maximum_issue": 3,
+    "maximum_review": 6
+  },
+  "review_rubric": {
+    "supported": "完整来源支持主体、谓词、客体、实体类型及身份，否定、条件与配置被正确保留。",
+    "issue": "至少一个明确的主体、客体、谓词、类型、身份、否定、条件或证据支持错误；不因uncertain而忽略错误客体。",
+    "review": "来源转写、指代、身份或语义存在无法可靠判定的歧义，不强判对错。"
+  },
+  "scope": "固定来源回归加固定种子的新关系逐条原文判读；开发回归集，不是独立盲测或全库准确率。"
+}

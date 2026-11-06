@@ -18,6 +18,9 @@ RULES = {
     "worker 抽取版本与任务版本不一致，请使用 scan 对齐配置": "extractor_version_mismatch",
     "地理关系证据中必须包含宾语的原文名称": "geographic_object_not_in_quote",
     "located_in 不支持国家到国家的位置归属": "invalid_country_location",
+    "遗漏补充不能改写已有实体key": "completion_entity_conflict",
+    "遗漏补充引用不存在的实体key": "completion_entity_not_found",
+    "质量审核未完整覆盖所有实体和关系": "incomplete_quality_review",
 }
 
 

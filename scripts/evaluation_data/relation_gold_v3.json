@@ -1,0 +1,2454 @@
+{
+  "version": "relation-gold-v3",
+  "status": "human_reviewed",
+  "cases": [
+    {
+      "id": "EG001",
+      "language": "zh",
+      "models": [
+        "DJI Avata 360"
+      ],
+      "source": {
+        "title": "无人机还能不能飞？大疆Avata 360 ，室内VR全景拍摄生产力工具",
+        "url": "https://www.youtube.com/watch?v=_6E4tJWhqBM",
+        "chunk_id": "badd55cf-b558-4e5c-b868-9ed153d792ff",
+        "start_seconds": 238.3,
+        "end_seconds": 297.0
+      },
+      "text": [
+        "20分钟之内",
+        "咱能把这活干完了",
+        "Avata360有桨叶保护的安全设计",
+        "被桨保包裹",
+        "不用担心飞转的桨叶伤人",
+        "更不怕碰到障碍物炸机",
+        "Avatar系列在低空或是",
+        "近距离拍摄的时候呢",
+        "不会有任何的心理压力",
+        "在拍摄现场",
+        "除了声音有点吵以外的话",
+        "不会影响到任何人",
+        "但是你要在飞的时候",
+        "一定要小心啊",
+        "下边别有什么绿植啊窗帘",
+        "什么的卷到这个桨叶里边",
+        "避障Avata360有独立的视觉避障系统",
+        "下面呢还有传感器",
+        "全向避障功能呢",
+        "在拍摄360全景的时候会起作用",
+        "提示你四面八方潜在的障碍物",
+        "并且做出提示",
+        "甚至是刹停来确保安全"
+      ],
+      "entities": [
+        {
+          "name": "DJI Avata 360",
+          "type": "product",
+          "mentions": [
+            "Avata360"
+          ]
+        },
+        {
+          "name": "DJI Avata系列",
+          "type": "product_family",
+          "mentions": [
+            "Avatar系列"
+          ]
+        },
+        {
+          "name": "Avata 360桨叶保护罩",
+          "type": "component",
+          "mentions": [
+            "桨叶保护",
+            "桨保"
+          ]
+        },
+        {
+          "name": "视觉避障",
+          "type": "technology",
+          "mentions": [
+            "视觉避障系统"
+          ]
+        },
+        {
+          "name": "全向避障",
+          "type": "technology",
+          "mentions": [
+            "全向避障功能"
+          ]
+        },
+        {
+          "name": "DJI Avata 360 下方传感器",
+          "type": "component",
+          "mentions": [
+            "传感器"
+          ]
+        },
+        {
+          "name": "炸机",
+          "type": "fault",
+          "mentions": [
+            "炸机"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Avata 360",
+          "predicate": "contains",
+          "object": "Avata 360桨叶保护罩",
+          "assertion": "asserted",
+          "quote": [
+            "Avata360有桨叶保护的安全设计",
+            "被桨保包裹",
+            "不用担心飞转的桨叶伤人"
+          ]
+        },
+        {
+          "subject": "DJI Avata 360",
+          "predicate": "contains",
+          "object": "DJI Avata 360 下方传感器",
+          "assertion": "asserted",
+          "quote": [
+            "避障Avata360有独立的视觉避障系统",
+            "下面呢还有传感器"
+          ]
+        },
+        {
+          "subject": "DJI Avata 360",
+          "predicate": "supports",
+          "object": "视觉避障",
+          "assertion": "asserted",
+          "quote": "避障Avata360有独立的视觉避障系统"
+        },
+        {
+          "subject": "DJI Avata 360",
+          "predicate": "supports",
+          "object": "全向避障",
+          "assertion": "asserted",
+          "quote": [
+            "避障Avata360有独立的视觉避障系统",
+            "下面呢还有传感器",
+            "全向避障功能呢",
+            "在拍摄360全景的时候会起作用",
+            "提示你四面八方潜在的障碍物",
+            "并且做出提示",
+            "甚至是刹停来确保安全"
+          ],
+          "qualifiers": {
+            "modality": "conditional",
+            "scope": "全向避障功能呢\n在拍摄360全景的时候会起作用"
+          }
+        },
+        {
+          "subject": "Avata 360桨叶保护罩",
+          "predicate": "mitigates",
+          "object": "炸机",
+          "assertion": "asserted",
+          "quote": [
+            "Avata360有桨叶保护的安全设计",
+            "被桨保包裹",
+            "不用担心飞转的桨叶伤人",
+            "更不怕碰到障碍物炸机"
+          ],
+          "qualifiers": {
+            "modality": "capability"
+          }
+        }
+      ],
+      "notes": [
+        "实体严格沿用当前entity_gold_v3：保留桨保、下方传感器、炸机及两种避障能力；不补回已移除的桨叶。Avatar系列仍按已确认的Avata系列处理，不改写字幕。",
+        "关系标注：原传感器contains关系改指DJI Avata 360 下方传感器；桨保缓解碰撞炸机风险标mitigates、capability，表示来源描述的保护能力，不是设备已经炸机，也不标否定故障。该风险缓解关系已随本轮人工复核确认。",
+        "关系标注：全向避障仍保留拍摄360全景的条件；不凭规范名称补系列归属，保护罩包裹桨叶不自动标为组成关系。"
+      ]
+    },
+    {
+      "id": "EG002",
+      "language": "zh",
+      "models": [
+        "DJI Avata 360",
+        "DJI Avata"
+      ],
+      "source": {
+        "title": "大疆的全景无人机？！Avata360上手",
+        "url": "https://www.youtube.com/watch?v=UxbQRuKiwes",
+        "chunk_id": "83f9357a-93f1-4de7-8a70-2a5828f9f2ba",
+        "start_seconds": 0.0,
+        "end_seconds": 58.788
+      },
+      "text": [
+        "去年我们就说过",
+        "全景无人机这个市场",
+        "今年应该会变得热闹起来",
+        "但是谁能想到",
+        "大疆2026年开年首作就是全景无人机",
+        "这个Avata360",
+        "他们打磨了挺长的时间了",
+        "那么飞下来感觉就这个无人机",
+        "它的画质很好",
+        "有着我们熟悉的摇杆操作",
+        "也还可以用传统的遥控器来飞行",
+        "这都在我们预期之内",
+        "但什么在我们预期之外",
+        "是它的价格",
+        "这玩意单机身卖2788元",
+        "一架无人机有着超大的传感器",
+        "卖2788元",
+        "没错这个价位",
+        "它放了两块",
+        "1/1.1英寸的方形传感器",
+        "我不知道你下巴有没有合上",
+        "所以就让我们一起来看看吧",
+        "大疆做的第一架全景无人机",
+        "有什么过人之处",
+        "来个英雄镜头吧",
+        "首先它的外形",
+        "你乍一看和之前的Avata是比较相似的"
+      ],
+      "entities": [
+        {
+          "name": "DJI Avata 360",
+          "type": "product",
+          "mentions": [
+            "Avata360"
+          ]
+        },
+        {
+          "name": "DJI Avata系列",
+          "type": "product_family",
+          "mentions": [
+            "Avata"
+          ]
+        },
+        {
+          "name": "大疆",
+          "type": "organization",
+          "mentions": [
+            "大疆"
+          ]
+        },
+        {
+          "name": "Avata 360方形传感器",
+          "type": "component",
+          "mentions": [
+            "传感器",
+            "方形传感器"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Avata 360",
+          "predicate": "offered_by",
+          "object": "大疆",
+          "assertion": "asserted",
+          "quote": [
+            "大疆2026年开年首作就是全景无人机",
+            "这个Avata360",
+            "他们打磨了挺长的时间了"
+          ]
+        },
+        {
+          "subject": "DJI Avata 360",
+          "predicate": "contains",
+          "object": "Avata 360方形传感器",
+          "assertion": "asserted",
+          "quote": [
+            "这个Avata360",
+            "他们打磨了挺长的时间了",
+            "那么飞下来感觉就这个无人机",
+            "它的画质很好",
+            "有着我们熟悉的摇杆操作",
+            "也还可以用传统的遥控器来飞行",
+            "这都在我们预期之内",
+            "但什么在我们预期之外",
+            "是它的价格",
+            "这玩意单机身卖2788元",
+            "一架无人机有着超大的传感器",
+            "卖2788元",
+            "没错这个价位",
+            "它放了两块",
+            "1/1.1英寸的方形传感器"
+          ]
+        }
+      ],
+      "notes": [
+        "实体严格沿用v3：具体型号、Avata系列、大疆和方形传感器；摇杆及无型号遥控器已不在答案内。价格与1/1.1英寸仍是属性。",
+        "关系标注：删除摇杆/遥控器controls无人机的两条旧关系，只保留品牌和方形传感器组成关系；不补回已删端点。"
+      ]
+    },
+    {
+      "id": "EG003",
+      "language": "zh",
+      "models": [
+        "DJI Avata 360"
+      ],
+      "source": {
+        "title": "【3C老實說】DJI Avata 360 全景空拍機評測：人人都能一秒變身空拍高手，5大新玩法介紹、DJI Fly App / DJI Studio 操作教學",
+        "url": "https://www.youtube.com/watch?v=BXiP0SVRezc",
+        "chunk_id": "42d54db7-57bc-49d1-9685-1506546eee4c",
+        "start_seconds": 923.231,
+        "end_seconds": 979.5
+      },
+      "text": [
+        "過去對 360 後製存在一些困擾或覺得麻煩的人，",
+        "用這個功能我相信是非常方便的。",
+        "接下來展示用電腦應用。你可以直接讀卡內容，",
+        "也可以直接將 Avata 360 透過 USB 連接到電腦中。",
+        "我們首先開啟 DJI Studio，",
+        "然後選擇設備連接。",
+        "現在已經顯示出我飛機裡頭所有檔案了，",
+        "我就可以選影片出來做後製。點了之後跳出預覽，",
+        "你可以做 360 度的操作，",
+        "然後你可以直接下載或是點選創作。",
+        "偵測到文件在外部設備會建議你先把素材轉到電腦的本地磁碟再進行剪輯。",
+        "這邊已經把素材導入進來了，",
+        "這是一支 360 畫面的全景影片，"
+      ],
+      "entities": [
+        {
+          "name": "DJI Avata 360",
+          "type": "product",
+          "mentions": [
+            "Avata 360"
+          ]
+        },
+        {
+          "name": "DJI Studio",
+          "type": "software",
+          "mentions": [
+            "DJI Studio"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Studio",
+          "predicate": "applied_to",
+          "object": "DJI Avata 360",
+          "assertion": "asserted",
+          "quote": [
+            "也可以直接將 Avata 360 透過 USB 連接到電腦中。",
+            "我們首先開啟 DJI Studio，",
+            "然後選擇設備連接。",
+            "現在已經顯示出我飛機裡頭所有檔案了，",
+            "我就可以選影片出來做後製。點了之後跳出預覽，",
+            "你可以做 360 度的操作，",
+            "然後你可以直接下載或是點選創作。",
+            "偵測到文件在外部設備會建議你先把素材轉到電腦的本地磁碟再進行剪輯。"
+          ],
+          "qualifiers": {
+            "modality": "instruction"
+          }
+        }
+      ],
+      "notes": [
+        "本次人工答案仅保留Avata 360和DJI Studio；其他原文对象不由notes补回。",
+        "设备连接、创作等界面操作不另建软件实体。",
+        "关系标注：DJI Studio用于该无人机的设备连接、素材导入及后制流程，标applied_to；不是安装在无人机上的软件，也未说明能控制飞行。"
+      ]
+    },
+    {
+      "id": "EG004",
+      "language": "zh",
+      "models": [
+        "DJI Neo 2",
+        "DJI Flip",
+        "Antigravity A1"
+      ],
+      "source": {
+        "title": "【Yipee科技新聞點評】 大疆 Neo 2 最強宿敵登場？Insta360 摺疊口袋無人機專利曝光！掌上自拍空拍機大洗牌！",
+        "url": "https://www.youtube.com/watch?v=9bd--Zcc33M",
+        "chunk_id": "b06c18e4-c27e-4683-a43b-e9a1ed3aa613",
+        "start_seconds": 12.533,
+        "end_seconds": 68.5
+      },
+      "text": [
+        "哈囉哈囉大家好,我是柏青哥",
+        "Insta360 傳出摺疊空拍機直接對戰 DJI 的 Neo 2",
+        "我們來看怎麼回事吧",
+        "Insta360 進軍消費級無人機市場",
+        "雖然目前只推出 360 度空拍機 Antigravity A1",
+        "但近期外媒發現 Insta360 在中國取得摺疊無人機專利",
+        "外型似乎與《The New Camera》在2025年8月19日",
+        "曝光的神祕無人機原型相似",
+        "從目前線索來看",
+        "這款無人機可能具備摺疊機臂、環形螺旋槳保護罩",
+        "並採用輕量化設計",
+        "產品定位接近 DJI Neo 2 或 DJI Flip",
+        "不過,由於 Insta360 尚未公佈這款產品的相關消息",
+        "因此目前停留在外界推測階段"
+      ],
+      "entities": [
+        {
+          "name": "DJI Neo 2",
+          "type": "product",
+          "mentions": [
+            "Neo 2"
+          ]
+        },
+        {
+          "name": "DJI Flip",
+          "type": "product",
+          "mentions": [
+            "DJI Flip"
+          ]
+        },
+        {
+          "name": "Insta360 Antigravity A1",
+          "type": "product",
+          "mentions": [
+            "Antigravity A1"
+          ]
+        },
+        {
+          "name": "Insta360",
+          "type": "organization",
+          "mentions": [
+            "Insta360"
+          ]
+        },
+        {
+          "name": "DJI",
+          "type": "organization",
+          "mentions": [
+            "DJI"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Neo 2",
+          "predicate": "offered_by",
+          "object": "DJI",
+          "assertion": "asserted",
+          "quote": "Insta360 傳出摺疊空拍機直接對戰 DJI 的 Neo 2"
+        },
+        {
+          "subject": "DJI Flip",
+          "predicate": "offered_by",
+          "object": "DJI",
+          "assertion": "asserted",
+          "quote": "產品定位接近 DJI Neo 2 或 DJI Flip"
+        },
+        {
+          "subject": "Insta360 Antigravity A1",
+          "predicate": "offered_by",
+          "object": "Insta360",
+          "assertion": "asserted",
+          "quote": [
+            "Insta360 進軍消費級無人機市場",
+            "雖然目前只推出 360 度空拍機 Antigravity A1"
+          ]
+        }
+      ],
+      "notes": [
+        "标准答案保留明确型号及Insta360、DJI组织，Antigravity A1规范名采用本轮人工修订。",
+        "原型、报道媒体、主持人和泛称部件本次未纳入实体答案；日期、360度不是实体。",
+        "关系标注：品牌/推出方标offered_by；定位接近、对战和外形相似均不表示兼容。未命名原型及其推测部件不在已复核实体范围内。"
+      ]
+    },
+    {
+      "id": "EG005",
+      "language": "zh",
+      "models": [
+        "DJI Neo 3",
+        "DJI Neo 2",
+        "DJI Neo"
+      ],
+      "source": {
+        "title": "【Yipee科技新聞點評】DJI Neo 3 發表時間與售價曝光｜全新 RC Mini 螢幕遙控器、懸吊電機結構、鏡頭升級全解析！對比 Neo 2 差在哪？最快 10 月發表！",
+        "url": "https://www.youtube.com/watch?v=7NQZfyw-kNI",
+        "chunk_id": "f7efa3ff-5ca5-4ec9-88cd-d3f384e6d460",
+        "start_seconds": 191.5,
+        "end_seconds": 250.0
+      },
+      "text": [
+        "另外,DJI Neo 3 的相機模組看起來似乎比 Neo 2 更大",
+        "鏡頭向前突出的幅度也比前一代明顯",
+        "外媒因此推測 DJI 可能重新設計 Neo 3 的雲台或相機系統",
+        "但由於曝光的包裝盒上沒有標示感光元件尺寸、錄影規格、重量與續航",
+        "因此無法確認 DJI Neo 3 是否會繼續維持輕量化設計",
+        "也無法證實先前傳出搭載 1/1.3 或 1/1.1 吋感光元件的消息是否屬實",
+        "那麼 DJI Neo 3 預期什麼時候會發表呢?",
+        "依照 DJI Neo 系列過去的更新週期",
+        "第一代 DJI Neo 在 2024 年 9 月推出",
+        "DJI Neo 2 則是在 2025 年 10 月底推出",
+        "兩代相隔約 14 個月",
+        "按照這個週期推算",
+        "DJI Neo 3 可能要等到今年 12 月或 2027 年初才會亮相"
+      ],
+      "entities": [
+        {
+          "name": "DJI Neo 3",
+          "type": "product",
+          "mentions": [
+            "DJI Neo 3",
+            "Neo 3"
+          ]
+        },
+        {
+          "name": "DJI Neo 2",
+          "type": "product",
+          "mentions": [
+            "Neo 2",
+            "DJI Neo 2"
+          ]
+        },
+        {
+          "name": "DJI Neo系列",
+          "type": "product_family",
+          "mentions": [
+            "DJI Neo 系列"
+          ]
+        },
+        {
+          "name": "DJI",
+          "type": "organization",
+          "mentions": [
+            "DJI"
+          ]
+        },
+        {
+          "name": "Neo 3相机模组",
+          "type": "component",
+          "mentions": [
+            "相機模組"
+          ]
+        },
+        {
+          "name": "Neo 3镜头",
+          "type": "component",
+          "mentions": [
+            "鏡頭"
+          ]
+        },
+        {
+          "name": "Neo 3云台",
+          "type": "component",
+          "mentions": [
+            "雲台"
+          ]
+        },
+        {
+          "name": "Neo 3相机系统",
+          "type": "component",
+          "mentions": [
+            "相機系統"
+          ]
+        },
+        {
+          "name": "Neo 3感光元件",
+          "type": "component",
+          "mentions": [
+            "感光元件"
+          ]
+        },
+        {
+          "name": "DJI Neo",
+          "type": "product",
+          "mentions": [
+            "第一代 DJI Neo"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Neo 3",
+          "predicate": "offered_by",
+          "object": "DJI",
+          "assertion": "asserted",
+          "quote": "另外,DJI Neo 3 的相機模組看起來似乎比 Neo 2 更大"
+        },
+        {
+          "subject": "DJI Neo 2",
+          "predicate": "offered_by",
+          "object": "DJI",
+          "assertion": "asserted",
+          "quote": "DJI Neo 2 則是在 2025 年 10 月底推出"
+        },
+        {
+          "subject": "DJI Neo系列",
+          "predicate": "offered_by",
+          "object": "DJI",
+          "assertion": "asserted",
+          "quote": "依照 DJI Neo 系列過去的更新週期"
+        },
+        {
+          "subject": "DJI Neo系列",
+          "predicate": "has_model",
+          "object": "DJI Neo 2",
+          "assertion": "asserted",
+          "quote": [
+            "依照 DJI Neo 系列過去的更新週期",
+            "第一代 DJI Neo 在 2024 年 9 月推出",
+            "DJI Neo 2 則是在 2025 年 10 月底推出",
+            "兩代相隔約 14 個月"
+          ]
+        },
+        {
+          "subject": "DJI Neo系列",
+          "predicate": "has_model",
+          "object": "DJI Neo 3",
+          "assertion": "uncertain",
+          "quote": [
+            "依照 DJI Neo 系列過去的更新週期",
+            "第一代 DJI Neo 在 2024 年 9 月推出",
+            "DJI Neo 2 則是在 2025 年 10 月底推出",
+            "兩代相隔約 14 個月",
+            "按照這個週期推算",
+            "DJI Neo 3 可能要等到今年 12 月或 2027 年初才會亮相"
+          ],
+          "qualifiers": {
+            "modality": "hypothetical",
+            "scope": "按照這個週期推算\nDJI Neo 3 可能要等到今年 12 月或 2027 年初才會亮相"
+          }
+        },
+        {
+          "subject": "DJI Neo 3",
+          "predicate": "contains",
+          "object": "Neo 3相机模组",
+          "assertion": "uncertain",
+          "quote": "另外,DJI Neo 3 的相機模組看起來似乎比 Neo 2 更大",
+          "qualifiers": {
+            "modality": "hypothetical",
+            "scope": "另外,DJI Neo 3 的相機模組看起來似乎比 Neo 2 更大"
+          }
+        },
+        {
+          "subject": "DJI Neo 3",
+          "predicate": "contains",
+          "object": "Neo 3镜头",
+          "assertion": "uncertain",
+          "quote": [
+            "另外,DJI Neo 3 的相機模組看起來似乎比 Neo 2 更大",
+            "鏡頭向前突出的幅度也比前一代明顯"
+          ],
+          "qualifiers": {
+            "modality": "hypothetical",
+            "scope": "另外,DJI Neo 3 的相機模組看起來似乎比 Neo 2 更大\n鏡頭向前突出的幅度也比前一代明顯"
+          }
+        },
+        {
+          "subject": "DJI Neo 3",
+          "predicate": "contains",
+          "object": "Neo 3云台",
+          "assertion": "uncertain",
+          "quote": "外媒因此推測 DJI 可能重新設計 Neo 3 的雲台或相機系統",
+          "qualifiers": {
+            "modality": "hypothetical",
+            "scope": "外媒因此推測 DJI 可能重新設計 Neo 3 的雲台或相機系統"
+          }
+        },
+        {
+          "subject": "DJI Neo 3",
+          "predicate": "contains",
+          "object": "Neo 3相机系统",
+          "assertion": "uncertain",
+          "quote": "外媒因此推測 DJI 可能重新設計 Neo 3 的雲台或相機系統",
+          "qualifiers": {
+            "modality": "hypothetical",
+            "scope": "外媒因此推測 DJI 可能重新設計 Neo 3 的雲台或相機系統"
+          }
+        },
+        {
+          "subject": "DJI Neo 3",
+          "predicate": "contains",
+          "object": "Neo 3感光元件",
+          "assertion": "uncertain",
+          "quote": [
+            "外媒因此推測 DJI 可能重新設計 Neo 3 的雲台或相機系統",
+            "但由於曝光的包裝盒上沒有標示感光元件尺寸、錄影規格、重量與續航",
+            "因此無法確認 DJI Neo 3 是否會繼續維持輕量化設計",
+            "也無法證實先前傳出搭載 1/1.3 或 1/1.1 吋感光元件的消息是否屬實"
+          ],
+          "qualifiers": {
+            "modality": "hypothetical",
+            "scope": "但由於曝光的包裝盒上沒有標示感光元件尺寸、錄影規格、重量與續航\n因此無法確認 DJI Neo 3 是否會繼續維持輕量化設計\n也無法證實先前傳出搭載 1/1.3 或 1/1.1 吋感光元件的消息是否屬實"
+          }
+        },
+        {
+          "subject": "DJI Neo",
+          "predicate": "offered_by",
+          "object": "DJI",
+          "assertion": "asserted",
+          "quote": "第一代 DJI Neo 在 2024 年 9 月推出"
+        },
+        {
+          "subject": "DJI Neo系列",
+          "predicate": "has_model",
+          "object": "DJI Neo",
+          "assertion": "asserted",
+          "quote": [
+            "依照 DJI Neo 系列過去的更新週期",
+            "第一代 DJI Neo 在 2024 年 9 月推出",
+            "DJI Neo 2 則是在 2025 年 10 月底推出",
+            "兩代相隔約 14 個月"
+          ]
+        }
+      ],
+      "notes": [
+        "v3保留第一代DJI Neo：有明确推出日期及代际对比；日期本身不另建实体。Neo 3仍包含曝光、推测、未证实配置及未来发布信息。",
+        "关系标注：沿用旧版Neo 3关系的不确定性；新增DJI Neo offered_by DJI、DJI Neo系列 has_model DJI Neo两条明确关系，依据为系列更新周期及第一代推出句。",
+        "关系标注：无法确认不等于否定；不补相机模组、镜头、云台之间未明示的层级。"
+      ]
+    },
+    {
+      "id": "EG006",
+      "language": "zh",
+      "models": [
+        "DJI Mini 4 Pro",
+        "DJI Neo 2"
+      ],
+      "source": {
+        "title": "2026 新手無人機別亂買！DJI Neo 2 vs Lito 1 vs Lito X1 誰才是性價比之王？",
+        "url": "https://www.youtube.com/watch?v=A9n3aAoDDBg",
+        "chunk_id": "5ca7a343-1a30-40ce-ba18-074864b205dd",
+        "start_seconds": 249.94,
+        "end_seconds": 309.24
+      },
+      "text": [
+        "它们本身就是无人机",
+        "正在收音",
+        "大家可以看到 Neo 2 也在跟着我",
+        "哎哟差点断连",
+        "你光顾着看相机没在录像",
+        "跟大家讲讲 Mini 4 Pro 的规格",
+        "它定位为可折叠入门级无人机",
+        "重量 249 克",
+        "感光元件为 1/1.3 英寸 CMOS",
+        "和 Neo 2 是一样的",
+        "像素为 4800 万",
+        "也就是 4800 万像素",
+        "镜头焦距 24mm",
+        "光圈 f/1.7",
+        "搭配长续航电池最长飞行时间可达 45 分钟",
+        "支持 4K 60p/100p 等多种拍摄规格",
+        "同时配备三轴机械云台",
+        "它还具备全向避障功能",
+        "视觉全向避障",
+        "Mini 4 Pro 的定位则比 Neo 2 稍高一些",
+        "这款无人机自带遥控器"
+      ],
+      "entities": [
+        {
+          "name": "DJI Mini 4 Pro",
+          "type": "product",
+          "mentions": [
+            "Mini 4 Pro"
+          ]
+        },
+        {
+          "name": "DJI Neo 2",
+          "type": "product",
+          "mentions": [
+            "Neo 2"
+          ]
+        },
+        {
+          "name": "CMOS",
+          "type": "technology",
+          "mentions": [
+            "CMOS"
+          ]
+        },
+        {
+          "name": "Mini 4 Pro长续航电池",
+          "type": "component",
+          "mentions": [
+            "长续航电池"
+          ]
+        },
+        {
+          "name": "Mini 4 Pro三轴机械云台",
+          "type": "component",
+          "mentions": [
+            "三轴机械云台"
+          ]
+        },
+        {
+          "name": "视觉全向避障",
+          "type": "technology",
+          "mentions": [
+            "全向避障功能",
+            "视觉全向避障"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Neo 2",
+          "predicate": "uses",
+          "object": "CMOS",
+          "assertion": "asserted",
+          "quote": [
+            "跟大家讲讲 Mini 4 Pro 的规格",
+            "它定位为可折叠入门级无人机",
+            "重量 249 克",
+            "感光元件为 1/1.3 英寸 CMOS",
+            "和 Neo 2 是一样的"
+          ]
+        },
+        {
+          "subject": "DJI Mini 4 Pro",
+          "predicate": "compatible_with",
+          "object": "Mini 4 Pro长续航电池",
+          "assertion": "asserted",
+          "quote": [
+            "跟大家讲讲 Mini 4 Pro 的规格",
+            "它定位为可折叠入门级无人机",
+            "重量 249 克",
+            "感光元件为 1/1.3 英寸 CMOS",
+            "和 Neo 2 是一样的",
+            "像素为 4800 万",
+            "也就是 4800 万像素",
+            "镜头焦距 24mm",
+            "光圈 f/1.7",
+            "搭配长续航电池最长飞行时间可达 45 分钟"
+          ]
+        },
+        {
+          "subject": "DJI Mini 4 Pro",
+          "predicate": "contains",
+          "object": "Mini 4 Pro三轴机械云台",
+          "assertion": "asserted",
+          "quote": [
+            "跟大家讲讲 Mini 4 Pro 的规格",
+            "它定位为可折叠入门级无人机",
+            "重量 249 克",
+            "感光元件为 1/1.3 英寸 CMOS",
+            "和 Neo 2 是一样的",
+            "像素为 4800 万",
+            "也就是 4800 万像素",
+            "镜头焦距 24mm",
+            "光圈 f/1.7",
+            "搭配长续航电池最长飞行时间可达 45 分钟",
+            "支持 4K 60p/100p 等多种拍摄规格",
+            "同时配备三轴机械云台"
+          ]
+        },
+        {
+          "subject": "DJI Mini 4 Pro",
+          "predicate": "supports",
+          "object": "视觉全向避障",
+          "assertion": "asserted",
+          "quote": [
+            "同时配备三轴机械云台",
+            "它还具备全向避障功能",
+            "视觉全向避障",
+            "Mini 4 Pro 的定位则比 Neo 2 稍高一些"
+          ]
+        },
+        {
+          "subject": "DJI Mini 4 Pro",
+          "predicate": "uses",
+          "object": "CMOS",
+          "assertion": "asserted",
+          "quote": [
+            "跟大家讲讲 Mini 4 Pro 的规格",
+            "它定位为可折叠入门级无人机",
+            "重量 249 克",
+            "感光元件为 1/1.3 英寸 CMOS",
+            "和 Neo 2 是一样的"
+          ]
+        }
+      ],
+      "notes": [
+        "v3不再将感光元件、镜头和无型号遥控器作为实体；保留CMOS、长续航电池、三轴机械云台与视觉全向避障。参数数值仍不建实体。",
+        "关系标注：删除涉及上述已移除实体的4条关系。感光元件类型仍明确为CMOS，因此新增Mini 4 Pro uses CMOS；保留Neo 2 uses CMOS，但不把不同无人机的物理传感器合并。",
+        "关系标注：电池仅明示可搭配，标compatible_with；避障别名合并为同一功能，不补回遥控器的包装关系。"
+      ]
+    },
+    {
+      "id": "EG007",
+      "language": "zh",
+      "models": [
+        "DJI Lito 1",
+        "DJI Lito X1",
+        "DJI Mini 3",
+        "DJI Mini 4K"
+      ],
+      "source": {
+        "title": "CP值最高的入門空拍機！DJI Lito X1 & Lito 1 完整評測｜免登記免考照、光達避障、D-Log M全都有 #dji  #DJILitoX1 #肯吉老王開箱",
+        "url": "https://www.youtube.com/watch?v=2VqkvtTfK5g",
+        "chunk_id": "8c64ad80-2e84-4821-abae-9b07264db8e7",
+        "start_seconds": 61.833,
+        "end_seconds": 121.266
+      },
+      "text": [
+        "我覺得空拍機就是非常簡單",
+        "能夠幫你交代這整個景色的一個大景",
+        "帶出一個景色的感動",
+        "而近幾年因為分享",
+        "這麼多旅遊影片的關係",
+        "還有拍攝的一些分享",
+        "器材的分享",
+        "我也常常被問到一些",
+        "空拍機選擇啊",
+        "或是相關知識的問題",
+        "而如果你是一個空拍新手",
+        "或是正要入門空拍機的話",
+        "也許今天要講的",
+        "Lito 1跟Lito X1",
+        "可能是你可以考量的一個機種喔",
+        "那今天呢我們會從基本規格",
+        "實際的拍攝",
+        "還有我實際應用後的",
+        "實際心得來跟你一一的分享",
+        "那我們先來聊聊他的規格吧",
+        "先來說一下為什麼DJI",
+        "會有這一次的Lito系列",
+        "DJI呢把過往的Mini 3",
+        "或者是Mini 4K",
+        "這種平價機種全部整合起來",
+        "把它變成一個新的系列",
+        "就是今天要講的Lito 1",
+        "那Lito X1是高價版",
+        "Lito 1是平價版",
+        "那這兩個最大的落差呢",
+        "在於鏡頭 在於避障",
+        "還有在一些後製的一些設定上",
+        "待會我們會一一的做介紹"
+      ],
+      "entities": [
+        {
+          "name": "DJI Lito 1",
+          "type": "product",
+          "mentions": [
+            "Lito 1"
+          ]
+        },
+        {
+          "name": "DJI Lito X1",
+          "type": "product",
+          "mentions": [
+            "Lito X1"
+          ]
+        },
+        {
+          "name": "DJI Mini 3",
+          "type": "product",
+          "mentions": [
+            "Mini 3"
+          ]
+        },
+        {
+          "name": "DJI Mini 4K",
+          "type": "product",
+          "mentions": [
+            "Mini 4K"
+          ]
+        },
+        {
+          "name": "DJI Lito系列",
+          "type": "product_family",
+          "mentions": [
+            "Lito系列"
+          ]
+        },
+        {
+          "name": "DJI",
+          "type": "organization",
+          "mentions": [
+            "DJI"
+          ]
+        },
+        {
+          "name": "镜头",
+          "type": "component",
+          "mentions": [
+            "鏡頭"
+          ]
+        },
+        {
+          "name": "避障",
+          "type": "technology",
+          "mentions": [
+            "避障"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Lito 1",
+          "predicate": "offered_by",
+          "object": "DJI",
+          "assertion": "asserted",
+          "quote": [
+            "先來說一下為什麼DJI",
+            "會有這一次的Lito系列",
+            "DJI呢把過往的Mini 3",
+            "或者是Mini 4K",
+            "這種平價機種全部整合起來",
+            "把它變成一個新的系列",
+            "就是今天要講的Lito 1",
+            "那Lito X1是高價版",
+            "Lito 1是平價版"
+          ]
+        },
+        {
+          "subject": "DJI Lito X1",
+          "predicate": "offered_by",
+          "object": "DJI",
+          "assertion": "asserted",
+          "quote": [
+            "先來說一下為什麼DJI",
+            "會有這一次的Lito系列",
+            "DJI呢把過往的Mini 3",
+            "或者是Mini 4K",
+            "這種平價機種全部整合起來",
+            "把它變成一個新的系列",
+            "就是今天要講的Lito 1",
+            "那Lito X1是高價版",
+            "Lito 1是平價版"
+          ]
+        },
+        {
+          "subject": "DJI Mini 3",
+          "predicate": "offered_by",
+          "object": "DJI",
+          "assertion": "asserted",
+          "quote": [
+            "先來說一下為什麼DJI",
+            "會有這一次的Lito系列",
+            "DJI呢把過往的Mini 3",
+            "或者是Mini 4K",
+            "這種平價機種全部整合起來",
+            "把它變成一個新的系列",
+            "就是今天要講的Lito 1",
+            "那Lito X1是高價版",
+            "Lito 1是平價版"
+          ]
+        },
+        {
+          "subject": "DJI Mini 4K",
+          "predicate": "offered_by",
+          "object": "DJI",
+          "assertion": "asserted",
+          "quote": [
+            "先來說一下為什麼DJI",
+            "會有這一次的Lito系列",
+            "DJI呢把過往的Mini 3",
+            "或者是Mini 4K",
+            "這種平價機種全部整合起來",
+            "把它變成一個新的系列",
+            "就是今天要講的Lito 1",
+            "那Lito X1是高價版",
+            "Lito 1是平價版"
+          ]
+        },
+        {
+          "subject": "DJI Lito系列",
+          "predicate": "offered_by",
+          "object": "DJI",
+          "assertion": "asserted",
+          "quote": [
+            "先來說一下為什麼DJI",
+            "會有這一次的Lito系列",
+            "DJI呢把過往的Mini 3",
+            "或者是Mini 4K",
+            "這種平價機種全部整合起來",
+            "把它變成一個新的系列",
+            "就是今天要講的Lito 1",
+            "那Lito X1是高價版",
+            "Lito 1是平價版"
+          ]
+        },
+        {
+          "subject": "DJI Lito系列",
+          "predicate": "has_model",
+          "object": "DJI Lito 1",
+          "assertion": "asserted",
+          "quote": [
+            "先來說一下為什麼DJI",
+            "會有這一次的Lito系列",
+            "DJI呢把過往的Mini 3",
+            "或者是Mini 4K",
+            "這種平價機種全部整合起來",
+            "把它變成一個新的系列",
+            "就是今天要講的Lito 1",
+            "那Lito X1是高價版",
+            "Lito 1是平價版"
+          ]
+        },
+        {
+          "subject": "DJI Lito系列",
+          "predicate": "has_model",
+          "object": "DJI Lito X1",
+          "assertion": "asserted",
+          "quote": [
+            "先來說一下為什麼DJI",
+            "會有這一次的Lito系列",
+            "DJI呢把過往的Mini 3",
+            "或者是Mini 4K",
+            "這種平價機種全部整合起來",
+            "把它變成一個新的系列",
+            "就是今天要講的Lito 1",
+            "那Lito X1是高價版",
+            "Lito 1是平價版"
+          ]
+        }
+      ],
+      "notes": [
+        "Lito系列不是一台无人机；Lito 1、Lito X1和被比较的Mini型号分别列出。",
+        "镜头未逐一说明所属设备，暂保留泛称；后制设置是背景描述，不独立标成软件或技术。",
+        "关系标注：新系列明确包含Lito 1与Lito X1；整合过往Mini机种不表示Mini 3、Mini 4K属于Lito系列。只说镜头、避障有差别，不能确定各自配置，不给泛称镜头强加归属。"
+      ]
+    },
+    {
+      "id": "EG008",
+      "language": "zh",
+      "models": [
+        "DJI Flip",
+        "DJI Mavic 3 Pro",
+        "DJI Air 3",
+        "DJI Air 3S",
+        "DJI Mini 3",
+        "DJI Mini 4 Pro"
+      ],
+      "source": {
+        "title": "2788元的新形态无人机，好用吗？DJI Flip上手！",
+        "url": "https://www.youtube.com/watch?v=jrvhN6yNovA",
+        "chunk_id": "2af3c353-b40d-4599-a54f-737955735c2e",
+        "start_seconds": 268.397,
+        "end_seconds": 328.157
+      },
+      "text": [
+        "还是老规矩",
+        "样片这次我们上传了一些到官网",
+        "你可以免费下载下来调一调",
+        "试一试",
+        "不过我不知道你看完这些样片",
+        "你会不会有一种似曾相识的感觉",
+        "你没有猜错",
+        "DJI Flip搭载的传感器",
+        "是1/1.3英寸的传感器",
+        "还有等效24mm f1.7的广角镜头",
+        "有没有听着很熟悉呢",
+        "答案就是这块传感器我们已经测麻了",
+        "它是大疆Mavic 3 Pro的中焦镜头",
+        "Air 3的广角和长焦",
+        "Air 3S的长焦",
+        "Mini 3、Mini 4 Pro的广角",
+        "Action 4还有那些别的各种机型",
+        "都有可能用到这块传感器",
+        "那优点就是经过这么多的迭代",
+        "大疆已经把它调教到了一个登峰造极的地步",
+        "确实画面拍出来",
+        "即便不能给你带来惊喜",
+        "但是它确实还是挺能打的",
+        "它目前最高支持拍摄4K 60帧的HDR视频",
+        "还有4K 100帧的慢动作",
+        "那我们测试下来发现",
+        "它的动态范围还有解析力和Mini 4 Pro",
+        "不能说是相似",
+        "只能说是难分伯仲",
+        "在默认的锐化和降噪之下"
+      ],
+      "entities": [
+        {
+          "name": "DJI Flip",
+          "type": "product",
+          "mentions": [
+            "DJI Flip"
+          ]
+        },
+        {
+          "name": "DJI Mavic 3 Pro",
+          "type": "product",
+          "mentions": [
+            "大疆Mavic 3 Pro"
+          ]
+        },
+        {
+          "name": "DJI Air 3",
+          "type": "product",
+          "mentions": [
+            "Air 3"
+          ]
+        },
+        {
+          "name": "DJI Air 3S",
+          "type": "product",
+          "mentions": [
+            "Air 3S"
+          ]
+        },
+        {
+          "name": "DJI Mini 3",
+          "type": "product",
+          "mentions": [
+            "Mini 3"
+          ]
+        },
+        {
+          "name": "DJI Mini 4 Pro",
+          "type": "product",
+          "mentions": [
+            "Mini 4 Pro"
+          ]
+        },
+        {
+          "name": "DJI Action 4",
+          "type": "product",
+          "mentions": [
+            "Action 4"
+          ]
+        },
+        {
+          "name": "大疆",
+          "type": "organization",
+          "mentions": [
+            "大疆"
+          ]
+        },
+        {
+          "name": "Flip传感器",
+          "type": "component",
+          "mentions": [
+            "传感器"
+          ]
+        },
+        {
+          "name": "Flip广角镜头",
+          "type": "component",
+          "mentions": [
+            "广角镜头"
+          ]
+        },
+        {
+          "name": "HDR",
+          "type": "technology",
+          "mentions": [
+            "HDR"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Flip",
+          "predicate": "contains",
+          "object": "Flip传感器",
+          "assertion": "asserted",
+          "quote": [
+            "DJI Flip搭载的传感器",
+            "是1/1.3英寸的传感器"
+          ]
+        },
+        {
+          "subject": "DJI Flip",
+          "predicate": "contains",
+          "object": "Flip广角镜头",
+          "assertion": "asserted",
+          "quote": [
+            "DJI Flip搭载的传感器",
+            "是1/1.3英寸的传感器",
+            "还有等效24mm f1.7的广角镜头"
+          ]
+        },
+        {
+          "subject": "DJI Flip",
+          "predicate": "offered_by",
+          "object": "大疆",
+          "assertion": "asserted",
+          "quote": [
+            "DJI Flip搭载的传感器",
+            "是1/1.3英寸的传感器",
+            "还有等效24mm f1.7的广角镜头",
+            "有没有听着很熟悉呢",
+            "答案就是这块传感器我们已经测麻了",
+            "它是大疆Mavic 3 Pro的中焦镜头",
+            "Air 3的广角和长焦",
+            "Air 3S的长焦",
+            "Mini 3、Mini 4 Pro的广角",
+            "Action 4还有那些别的各种机型",
+            "都有可能用到这块传感器",
+            "那优点就是经过这么多的迭代",
+            "大疆已经把它调教到了一个登峰造极的地步"
+          ]
+        },
+        {
+          "subject": "DJI Mavic 3 Pro",
+          "predicate": "offered_by",
+          "object": "大疆",
+          "assertion": "asserted",
+          "quote": "它是大疆Mavic 3 Pro的中焦镜头"
+        }
+      ],
+      "notes": [
+        "v3移除对比机型的6个镜头实体，保留各型号、Flip传感器、Flip广角镜头、大疆及HDR。相同规格不代表同一个物理传感器。",
+        "关系标注：沿用人工复核后的4条关系；先前已删除的对比机型镜头关系与Flip supports HDR不自动恢复。HDR虽仍是实体，也不强制要求有关系。"
+      ]
+    },
+    {
+      "id": "EG009",
+      "language": "zh",
+      "models": [
+        "DJI Mini 4K"
+      ],
+      "source": {
+        "title": "从豁然开朗到“死黑一片”：这台Mini 4K无人机，怎么好像也有点“近视”？ #广东麦克疯#越南 #航拍機 #老挝旅游 #越南旅遊",
+        "url": "https://www.youtube.com/watch?v=7MJjAlpvj7w",
+        "chunk_id": "329cb125-b784-4c15-a694-0bd3784f91ee",
+        "start_seconds": 0.0,
+        "end_seconds": 58.6
+      },
+      "text": [
+        "在阳台虽然感觉楼距好近景观受限",
+        "但是升空之后",
+        "你的心情就会截然不同了",
+        "它就像是大地上面的一幅精美油画",
+        "而我所在的地方",
+        "就是组成它的颜色之一",
+        "如果没有无人机",
+        "真的会以为这里是沙漠",
+        "但是航拍的视角可以告诉你",
+        "不远处就是海边了",
+        "这里只是长得像沙漠一样的沙滩",
+        "这些画面",
+        "是我用新买到的MINI 4K",
+        "无人机拍下的",
+        "它号称重量不到250克",
+        "在这个行李费快要贵过机票的年代",
+        "它真的是太懂消费者了",
+        "正在操作无人机的",
+        "是老挝本地的朋友",
+        "这是他第一次飞无人机",
+        "但是我也不是很担心",
+        "毕竟价格比之前那台"
+      ],
+      "entities": [
+        {
+          "name": "DJI Mini 4K",
+          "type": "product",
+          "mentions": [
+            "MINI 4K"
+          ]
+        }
+      ],
+      "relations": [],
+      "notes": [
+        "v3仅保留DJI Mini 4K，老挝不在实体答案内；参数与泛称环境不建实体。",
+        "关系标注：relations保持为空，不从操作者的本地身份推导飞行地点，也不补回地理端点。"
+      ]
+    },
+    {
+      "id": "EG010",
+      "language": "zh",
+      "models": [
+        "DJI Neo 2",
+        "DJI Mavic 4 Pro"
+      ],
+      "source": {
+        "title": "Inside a DJI Store in China with Prices 🇨🇳 DJI Pocket 4P + MORE (2026)",
+        "url": "https://www.youtube.com/watch?v=TtfVuyfODLU",
+        "chunk_id": "a7fbe2c6-5546-484c-9a87-b8909487ae1c",
+        "start_seconds": 737.84,
+        "end_seconds": 795.2
+      },
+      "text": [
+        "戴上它。这就是你操控无人机的方式。这里还有一个遥控器。",
+        "我喜欢他们提供的酒精湿巾，这样你就可以在",
+        "店里清洁和试戴。令人惊喜的是，这款护目镜也兼容我们的无人机 Neo 2。好了，",
+        "跟我来。接下来，我们当然不能错过 DJI Mavic 4",
+        "Pro。看看这个庞然大物，真是令人印象深刻。DJI Mavic 4 Pro 搭配",
+        "RC 2 遥控器的售价是 13,888 元人民币。下一个套装是 17,888 元人民币，我记得里面包含",
+        "额外的电池组和其他一些配件。DJI Mavic 4 Pro 的终极套装售价是 23,988"
+      ],
+      "entities": [
+        {
+          "name": "DJI Neo 2",
+          "type": "product",
+          "mentions": [
+            "Neo 2"
+          ]
+        },
+        {
+          "name": "DJI Mavic 4 Pro",
+          "type": "product",
+          "mentions": [
+            "DJI Mavic 4\nPro",
+            "DJI Mavic 4 Pro"
+          ]
+        },
+        {
+          "name": "RC 2",
+          "type": "product",
+          "mentions": [
+            "RC 2 遥控器"
+          ]
+        },
+        {
+          "name": "护目镜",
+          "type": "product",
+          "mentions": [
+            "护目镜"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Mavic 4 Pro",
+          "predicate": "compatible_with",
+          "object": "RC 2",
+          "assertion": "asserted",
+          "quote": [
+            "Pro。看看这个庞然大物，真是令人印象深刻。DJI Mavic 4 Pro 搭配",
+            "RC 2 遥控器的售价是 13,888 元人民币。下一个套装是 17,888 元人民币，我记得里面包含"
+          ]
+        },
+        {
+          "subject": "DJI Neo 2",
+          "predicate": "compatible_with",
+          "object": "护目镜",
+          "assertion": "asserted",
+          "quote": "店里清洁和试戴。令人惊喜的是，这款护目镜也兼容我们的无人机 Neo 2。好了，"
+        }
+      ],
+      "notes": [
+        "v3保留无型号护目镜，类型为完整设备product；不补成Goggles 3。开头未具名遥控器仍不保留，明确型号RC 2另列。",
+        "关系标注：保留Mavic 4 Pro compatible_with RC 2，新增Neo 2 compatible_with 护目镜。两组配对分开，不能把RC 2接到Neo 2，也不从戴上护目镜推断其直接操控Neo 2。"
+      ]
+    },
+    {
+      "id": "EG011",
+      "language": "en",
+      "models": [
+        "DJI Neo 2"
+      ],
+      "source": {
+        "title": "How to Trippy Spin with DJI Neo 2 (FPV Stick Tutorial) 🛸​#DJINeo2 #TrippySpin  #DJIFPV #djineo",
+        "url": "https://www.youtube.com/watch?v=qAgye8oJBKA",
+        "chunk_id": "2eec52cc-9260-4e0e-b095-376747d01199",
+        "start_seconds": 0.56,
+        "end_seconds": 18.32
+      },
+      "text": [
+        "How to perform a trippy spin with DJI Neo 2. [screaming] The obstacle must",
+        "be at least 5 m high. Camera is [music] pan to 30°. Punch up and pitch down when",
+        "nearing the pole. Throttle diagonally and roll to the side. Focus on pole",
+        "and adjust sticks accordingly. When done, lower the speed and level up."
+      ],
+      "entities": [
+        {
+          "name": "DJI Neo 2",
+          "type": "product",
+          "mentions": [
+            "DJI Neo 2"
+          ]
+        },
+        {
+          "name": "Trippy Spin",
+          "type": "method",
+          "mentions": [
+            "trippy spin"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "Trippy Spin",
+          "predicate": "applied_to",
+          "object": "DJI Neo 2",
+          "assertion": "asserted",
+          "quote": [
+            "How to perform a trippy spin with DJI Neo 2. [screaming] The obstacle must",
+            "be at least 5 m high. Camera is [music] pan to 30°. Punch up and pitch down when",
+            "nearing the pole. Throttle diagonally and roll to the side. Focus on pole",
+            "and adjust sticks accordingly. When done, lower the speed and level up."
+          ],
+          "qualifiers": {
+            "modality": "instruction"
+          }
+        }
+      ],
+      "notes": [
+        "trippy spin是命名飞行动作；普通pitch、roll、调速指令不逐句扩成独立实体。",
+        "杆子是飞行参照物，不是无人机组件；角度、5米和音乐提示不建实体。",
+        "关系标注：Trippy Spin是教程中的飞行动作，方向为方法applied_to设备，不视作无人机内置自动功能。"
+      ]
+    },
+    {
+      "id": "EG012",
+      "language": "en",
+      "models": [
+        "DJI Air 3"
+      ],
+      "source": {
+        "title": "Fix Your DJI Air 3 Drone Like a Pro: Gimbal Ribbon Cable Replacement Guide",
+        "url": "https://www.youtube.com/watch?v=_VofSIgvXOc",
+        "chunk_id": "51bebaa7-7925-4359-880b-60cdd99de2ec",
+        "start_seconds": 40.32,
+        "end_seconds": 89.92
+      },
+      "text": [
+        "approach will greatly assist you in successfully reassembling your DJI Air 3 drone. And you need",
+        "not worry about misplacing any screws; they will all stay securely on the magnetic mat.",
+        "Remove the battery before you start disassembling the DJI Air 3 drone.",
+        "Flip your drone over and remove the screws securing the bottom cover.",
+        "Remember, each screw might be a slightly different size, so keep track of where they go.",
+        "Use plastic tools to carefully open the drone body and ensure safe handling."
+      ],
+      "entities": [
+        {
+          "name": "DJI Air 3",
+          "type": "product",
+          "mentions": [
+            "DJI Air 3 drone",
+            "DJI Air 3"
+          ]
+        },
+        {
+          "name": "DJI Air 3 Battery",
+          "type": "component",
+          "mentions": [
+            "battery"
+          ]
+        },
+        {
+          "name": "DJI Air 3 Screws",
+          "type": "component",
+          "mentions": [
+            "screws",
+            "screw"
+          ]
+        },
+        {
+          "name": "bottom cover",
+          "type": "component",
+          "mentions": [
+            "bottom cover"
+          ]
+        },
+        {
+          "name": "drone body ",
+          "type": "component",
+          "mentions": [
+            "drone body"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Air 3",
+          "predicate": "contains",
+          "object": "DJI Air 3 Battery",
+          "assertion": "asserted",
+          "quote": "Remove the battery before you start disassembling the DJI Air 3 drone."
+        },
+        {
+          "subject": "DJI Air 3",
+          "predicate": "contains",
+          "object": "DJI Air 3 Screws",
+          "assertion": "asserted",
+          "quote": [
+            "approach will greatly assist you in successfully reassembling your DJI Air 3 drone. And you need",
+            "not worry about misplacing any screws; they will all stay securely on the magnetic mat.",
+            "Remove the battery before you start disassembling the DJI Air 3 drone.",
+            "Flip your drone over and remove the screws securing the bottom cover."
+          ]
+        },
+        {
+          "subject": "DJI Air 3",
+          "predicate": "contains",
+          "object": "bottom cover",
+          "assertion": "asserted",
+          "quote": [
+            "Remove the battery before you start disassembling the DJI Air 3 drone.",
+            "Flip your drone over and remove the screws securing the bottom cover."
+          ]
+        },
+        {
+          "subject": "DJI Air 3",
+          "predicate": "contains",
+          "object": "drone body ",
+          "assertion": "asserted",
+          "quote": [
+            "approach will greatly assist you in successfully reassembling your DJI Air 3 drone. And you need",
+            "not worry about misplacing any screws; they will all stay securely on the magnetic mat.",
+            "Remove the battery before you start disassembling the DJI Air 3 drone.",
+            "Flip your drone over and remove the screws securing the bottom cover.",
+            "Remember, each screw might be a slightly different size, so keep track of where they go.",
+            "Use plastic tools to carefully open the drone body and ensure safe handling."
+          ]
+        },
+        {
+          "subject": "DJI Air 3 Screws",
+          "predicate": "connected_to",
+          "object": "bottom cover",
+          "assertion": "asserted",
+          "quote": [
+            "approach will greatly assist you in successfully reassembling your DJI Air 3 drone. And you need",
+            "not worry about misplacing any screws; they will all stay securely on the magnetic mat.",
+            "Remove the battery before you start disassembling the DJI Air 3 drone.",
+            "Flip your drone over and remove the screws securing the bottom cover."
+          ]
+        }
+      ],
+      "notes": [
+        "v3新增bottom cover与drone body，电池及螺丝仍保留。drone body实体名末尾的空格逐字沿用实体文件，未擅自改名。",
+        "关系标注：保留设备与电池、螺丝的组成关系，新增设备与底盖、机身的组成关系；移除步骤不等于产品永久不包含部件。",
+        "关系标注：screws securing the bottom cover按人工复核确认为螺丝connected_to底盖，表示机械固定连接；不推断底盖与机身的额外层级。"
+      ]
+    },
+    {
+      "id": "EG013",
+      "language": "en",
+      "models": [
+        "DJI Mini 4 Pro"
+      ],
+      "source": {
+        "title": "DJI Mini 4 Pro｜First Use Guide",
+        "url": "https://www.youtube.com/watch?v=JtYyP_y5Az0",
+        "chunk_id": "407b1b7d-ff77-49eb-82e3-259fe12fe6c6",
+        "start_seconds": 4.08,
+        "end_seconds": 58.8
+      },
+      "text": [
+        "thank you",
+        "welcome to DJI Mini 4 Pro tutorial",
+        "we will guide you through the unboxing and first use process of the product",
+        "open the package and take out the aircraft remote controller and accessories",
+        "downloading the DJI fly app scan the QR code on the package to download and install the DJI fly",
+        "app you can also watch the tutorial videos and read the user manual after scanning the QR code",
+        "remove the propeller holder and gimbal protector unfold the aircraft arms and turn"
+      ],
+      "entities": [
+        {
+          "name": "DJI Mini 4 Pro",
+          "type": "product",
+          "mentions": [
+            "DJI Mini 4 Pro"
+          ]
+        },
+        {
+          "name": "remote controller",
+          "type": "product",
+          "mentions": [
+            "remote controller"
+          ]
+        },
+        {
+          "name": "DJI Fly",
+          "type": "software",
+          "mentions": [
+            "DJI fly app",
+            "DJI fly\napp"
+          ]
+        },
+        {
+          "name": "propeller holder",
+          "type": "component",
+          "mentions": [
+            "propeller holder"
+          ]
+        },
+        {
+          "name": "gimbal protector",
+          "type": "component",
+          "mentions": [
+            "gimbal protector"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Mini 4 Pro",
+          "predicate": "packaged_with",
+          "object": "remote controller",
+          "assertion": "asserted",
+          "quote": [
+            "welcome to DJI Mini 4 Pro tutorial",
+            "we will guide you through the unboxing and first use process of the product",
+            "open the package and take out the aircraft remote controller and accessories"
+          ]
+        },
+        {
+          "subject": "DJI Fly",
+          "predicate": "applied_to",
+          "object": "DJI Mini 4 Pro",
+          "assertion": "asserted",
+          "quote": [
+            "welcome to DJI Mini 4 Pro tutorial",
+            "we will guide you through the unboxing and first use process of the product",
+            "open the package and take out the aircraft remote controller and accessories",
+            "downloading the DJI fly app scan the QR code on the package to download and install the DJI fly",
+            "app you can also watch the tutorial videos and read the user manual after scanning the QR code"
+          ],
+          "qualifiers": {
+            "modality": "instruction"
+          }
+        },
+        {
+          "subject": "DJI Mini 4 Pro",
+          "predicate": "packaged_with",
+          "object": "propeller holder",
+          "assertion": "asserted",
+          "quote": [
+            "welcome to DJI Mini 4 Pro tutorial",
+            "we will guide you through the unboxing and first use process of the product",
+            "open the package and take out the aircraft remote controller and accessories",
+            "downloading the DJI fly app scan the QR code on the package to download and install the DJI fly",
+            "app you can also watch the tutorial videos and read the user manual after scanning the QR code",
+            "remove the propeller holder and gimbal protector unfold the aircraft arms and turn"
+          ]
+        },
+        {
+          "subject": "DJI Mini 4 Pro",
+          "predicate": "packaged_with",
+          "object": "gimbal protector",
+          "assertion": "asserted",
+          "quote": [
+            "welcome to DJI Mini 4 Pro tutorial",
+            "we will guide you through the unboxing and first use process of the product",
+            "open the package and take out the aircraft remote controller and accessories",
+            "downloading the DJI fly app scan the QR code on the package to download and install the DJI fly",
+            "app you can also watch the tutorial videos and read the user manual after scanning the QR code",
+            "remove the propeller holder and gimbal protector unfold the aircraft arms and turn"
+          ]
+        }
+      ],
+      "notes": [
+        "DJI Fly是软件；遥控器虽未给型号，仍按完整设备标为product。",
+        "本次未保留用户手册、机臂；二维码不当作软件，笼统accessories不另造部件实体。",
+        "关系标注：开箱取出遥控器、移除桨叶固定器与云台保护罩，按随产品附带的物品标packaged_with，保护件不当作机身永久组成。首次使用流程中的DJI Fly标applied_to，不臆造其安装在无人机上或直接操控飞行。"
+      ]
+    },
+    {
+      "id": "EG014",
+      "language": "en",
+      "models": [
+        "DJI Avata 2"
+      ],
+      "source": {
+        "title": "DJI Made Flipping a Drone Look This Easy",
+        "url": "https://www.youtube.com/watch?v=AWQJTxxNpAI",
+        "chunk_id": "2f9c6f09-d666-470f-bd0e-242324499b53",
+        "start_seconds": 0.13,
+        "end_seconds": 24.075
+      },
+      "text": [
+        "That is a full drone flip.",
+        "DJI's Avata 2 makes flying feel",
+        "like sitting inside the camera.",
+        "Pair it with Goggles 3 and RC",
+        "Motion 3. Your hand steers the view,",
+        "and Easy ACRO gives you flips, rolls,",
+        "and a one hundred eighty degree drift.",
+        "The camera can shoot 4K while the world",
+        "becomes your racecourse. Forget another slow shot of",
+        "the skyline. This is the shot that",
+        "makes you lean sideways in your chair."
+      ],
+      "entities": [
+        {
+          "name": "DJI Avata 2",
+          "type": "product",
+          "mentions": [
+            "Avata 2"
+          ]
+        },
+        {
+          "name": "DJI",
+          "type": "organization",
+          "mentions": [
+            "DJI"
+          ]
+        },
+        {
+          "name": "Goggles 3",
+          "type": "product",
+          "mentions": [
+            "Goggles 3"
+          ]
+        },
+        {
+          "name": "RC Motion 3",
+          "type": "product",
+          "mentions": [
+            "RC\nMotion 3"
+          ]
+        },
+        {
+          "name": "Easy ACRO",
+          "type": "technology",
+          "mentions": [
+            "Easy ACRO"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Avata 2",
+          "predicate": "offered_by",
+          "object": "DJI",
+          "assertion": "asserted",
+          "quote": [
+            "DJI's Avata 2 makes flying feel",
+            "like sitting inside the camera."
+          ]
+        },
+        {
+          "subject": "DJI Avata 2",
+          "predicate": "compatible_with",
+          "object": "Goggles 3",
+          "assertion": "asserted",
+          "quote": [
+            "DJI's Avata 2 makes flying feel",
+            "like sitting inside the camera.",
+            "Pair it with Goggles 3 and RC",
+            "Motion 3. Your hand steers the view,"
+          ]
+        },
+        {
+          "subject": "DJI Avata 2",
+          "predicate": "compatible_with",
+          "object": "RC Motion 3",
+          "assertion": "asserted",
+          "quote": [
+            "DJI's Avata 2 makes flying feel",
+            "like sitting inside the camera.",
+            "Pair it with Goggles 3 and RC",
+            "Motion 3. Your hand steers the view,"
+          ]
+        },
+        {
+          "subject": "DJI Avata 2",
+          "predicate": "supports",
+          "object": "Easy ACRO",
+          "assertion": "asserted",
+          "quote": [
+            "DJI's Avata 2 makes flying feel",
+            "like sitting inside the camera.",
+            "Pair it with Goggles 3 and RC",
+            "Motion 3. Your hand steers the view,",
+            "and Easy ACRO gives you flips, rolls,",
+            "and a one hundred eighty degree drift."
+          ]
+        }
+      ],
+      "notes": [
+        "Goggles 3、RC Motion 3是完整设备，标为product；Easy ACRO是功能。",
+        "本次不将翻转、翻滚、漂移或相机另列为实体；4K是参数，坐在相机里是比喻。",
+        "关系标注：Pair it with分别建立无人机与两台完整设备的可配用关系；不据同句出现建立Goggles 3与RC Motion 3之间的连接关系。"
+      ]
+    },
+    {
+      "id": "EG015",
+      "language": "en",
+      "models": [
+        "Parrot ANAFI"
+      ],
+      "source": {
+        "title": "Parrot Anafi 4k Drone - Photographer's  Review",
+        "url": "https://www.youtube.com/watch?v=8PjamSNj4BA",
+        "chunk_id": "5ab6abaf-fdab-4222-b795-7bc66978cffd",
+        "start_seconds": 57.36,
+        "end_seconds": 115.22
+      },
+      "text": [
+        "This is all that I use for the Parrot Anafi you've got the charging",
+        "cable USB \"C\" I've got a spare battery I've got the drone itself",
+        "I've got the USB cable for the iPhone or the whichever phone you have and then I've got the controller",
+        "Now as you can see it sort of looks like a big bug or a",
+        "dragonfly or something. It even sounds like bees when it's flying",
+        "but it's it's very quiet very fast it takes fantastic video and",
+        "it stays up for a long time. Now to fold it up you literally just fold these down",
+        "here, push that up there and then it folds into this sort of long skinny compact"
+      ],
+      "entities": [
+        {
+          "name": "Parrot ANAFI",
+          "type": "product",
+          "mentions": [
+            "Parrot Anafi"
+          ]
+        },
+        {
+          "name": "ANAFI遥控器",
+          "type": "product",
+          "mentions": [
+            "controller"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "Parrot ANAFI",
+          "predicate": "compatible_with",
+          "object": "ANAFI遥控器",
+          "assertion": "asserted",
+          "quote": [
+            "This is all that I use for the Parrot Anafi you've got the charging",
+            "cable USB \"C\" I've got a spare battery I've got the drone itself",
+            "I've got the USB cable for the iPhone or the whichever phone you have and then I've got the controller"
+          ]
+        }
+      ],
+      "notes": [
+        "v3仅保留Parrot ANAFI和ANAFI遥控器，手机已移除；数据线、电池和昆虫比喻均不补回。",
+        "关系标注：删除无人机与手机的可配用关系，保留与遥控器的可配用关系；个人使用清单不等于原厂包装清单。"
+      ]
+    },
+    {
+      "id": "EG016",
+      "language": "en",
+      "models": [
+        "DJI Mini 3",
+        "DJI Mini 4 Pro"
+      ],
+      "source": {
+        "title": "Crashed? Here's How to Replace DJI Mini Drone Propellers / 3 and 4 Pro",
+        "url": "https://www.youtube.com/watch?v=XUoFNFt8Mng",
+        "chunk_id": "892fac3a-270d-4c8f-8ee0-9cc7212c41bf",
+        "start_seconds": 0.16,
+        "end_seconds": 17.561
+      },
+      "text": [
+        "Crashed your DJI Mini 3 or 4 drone?",
+        "Let's fix it by replacing the propellers.",
+        "Here's the key: they're mirrored, so two turn clockwise and two counterclockwise.",
+        "Check the curved markings - the striped arms get the striped propellers.",
+        "Unscrew the old ones.",
+        "Line up the new.",
+        "Tighten snugly, but not too tight.",
+        "And just like that, your drone is ready to fly!"
+      ],
+      "entities": [
+        {
+          "name": "DJI Mini 3",
+          "type": "product",
+          "mentions": [
+            "DJI Mini 3"
+          ]
+        },
+        {
+          "name": "propellers",
+          "type": "component",
+          "mentions": [
+            "propellers"
+          ]
+        },
+        {
+          "name": "striped arms",
+          "type": "component",
+          "mentions": [
+            "striped arms"
+          ]
+        },
+        {
+          "name": "striped propellers",
+          "type": "component",
+          "mentions": [
+            "striped propellers"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Mini 3",
+          "predicate": "contains",
+          "object": "propellers",
+          "assertion": "asserted",
+          "quote": [
+            "Crashed your DJI Mini 3 or 4 drone?",
+            "Let's fix it by replacing the propellers.",
+            "Here's the key: they're mirrored, so two turn clockwise and two counterclockwise.",
+            "Check the curved markings - the striped arms get the striped propellers."
+          ]
+        },
+        {
+          "subject": "DJI Mini 3",
+          "predicate": "contains",
+          "object": "striped arms",
+          "assertion": "asserted",
+          "quote": [
+            "Crashed your DJI Mini 3 or 4 drone?",
+            "Let's fix it by replacing the propellers.",
+            "Here's the key: they're mirrored, so two turn clockwise and two counterclockwise.",
+            "Check the curved markings - the striped arms get the striped propellers."
+          ]
+        },
+        {
+          "subject": "DJI Mini 3",
+          "predicate": "contains",
+          "object": "striped propellers",
+          "assertion": "asserted",
+          "quote": [
+            "Crashed your DJI Mini 3 or 4 drone?",
+            "Let's fix it by replacing the propellers.",
+            "Here's the key: they're mirrored, so two turn clockwise and two counterclockwise.",
+            "Check the curved markings - the striped arms get the striped propellers."
+          ]
+        },
+        {
+          "subject": "striped propellers",
+          "predicate": "installed_on",
+          "object": "striped arms",
+          "assertion": "asserted",
+          "quote": "Check the curved markings - the striped arms get the striped propellers.",
+          "qualifiers": {
+            "modality": "instruction"
+          }
+        }
+      ],
+      "notes": [
+        "v3保留propellers，并新增striped arms、striped propellers；原文4 drone仍不补为具体型号。Crashed问句不作为已发生故障。",
+        "关系标注：新增Mini 3包含条纹机臂及条纹螺旋桨，并按striped arms get the striped propellers标后者installed_on前者，保留instruction步骤语境。",
+        "关系标注：propellers与striped propellers按实体答案分别引用，不把一般类别与条纹子集之间的关系错标为部件contains。"
+      ]
+    },
+    {
+      "id": "EG017",
+      "language": "en",
+      "models": [
+        "DJI Air 3"
+      ],
+      "source": {
+        "title": "DJI Air 3: The Complete Disassembly and Reassembly Guide",
+        "url": "https://www.youtube.com/watch?v=8k8JhMTr9xc",
+        "chunk_id": "793d7a1d-7f95-4a21-b681-1e2216cb0985",
+        "start_seconds": 741.95,
+        "end_seconds": 787.49
+      },
+      "text": [
+        "The ESC (Electronic Speed Controllers) board controls the motors which directly alters",
+        "the in-flight drone directional changes depending on the commands.",
+        "If your DJI Air 3 drone has an ESC error and you can't fix this error by refreshing the",
+        "drone firmware, it is most likely the ESC board is failing, so you need to replace it.",
+        "To replace the ESC board, you need to desolder the drone's arm wires.",
+        "If you do not have soldering experience and the required tools, I'd recommend sending",
+        "your drone to DJI service for ESC board replacement or repair."
+      ],
+      "entities": [
+        {
+          "name": "DJI Air 3",
+          "type": "product",
+          "mentions": [
+            "DJI Air 3"
+          ]
+        },
+        {
+          "name": "Air 3电调板",
+          "type": "component",
+          "mentions": [
+            "ESC (Electronic Speed Controllers) board",
+            "ESC board"
+          ]
+        },
+        {
+          "name": "Air 3 motors",
+          "type": "component",
+          "mentions": [
+            "motors"
+          ]
+        },
+        {
+          "name": "ESC error",
+          "type": "fault",
+          "mentions": [
+            "ESC error"
+          ]
+        },
+        {
+          "name": "DJI",
+          "type": "organization",
+          "mentions": [
+            "DJI service"
+          ]
+        },
+        {
+          "name": "firmware",
+          "type": "software",
+          "mentions": [
+            "firmware"
+          ]
+        },
+        {
+          "name": "DJI Air 3 arm wires",
+          "type": "component",
+          "mentions": [
+            "arm wires"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Air 3",
+          "predicate": "contains",
+          "object": "Air 3电调板",
+          "assertion": "asserted",
+          "quote": [
+            "The ESC (Electronic Speed Controllers) board controls the motors which directly alters",
+            "the in-flight drone directional changes depending on the commands.",
+            "If your DJI Air 3 drone has an ESC error and you can't fix this error by refreshing the",
+            "drone firmware, it is most likely the ESC board is failing, so you need to replace it.",
+            "To replace the ESC board, you need to desolder the drone's arm wires."
+          ]
+        },
+        {
+          "subject": "DJI Air 3",
+          "predicate": "contains",
+          "object": "Air 3 motors",
+          "assertion": "asserted",
+          "quote": [
+            "The ESC (Electronic Speed Controllers) board controls the motors which directly alters",
+            "the in-flight drone directional changes depending on the commands.",
+            "If your DJI Air 3 drone has an ESC error and you can't fix this error by refreshing the",
+            "drone firmware, it is most likely the ESC board is failing, so you need to replace it."
+          ]
+        },
+        {
+          "subject": "Air 3电调板",
+          "predicate": "controls",
+          "object": "Air 3 motors",
+          "assertion": "asserted",
+          "quote": [
+            "The ESC (Electronic Speed Controllers) board controls the motors which directly alters",
+            "the in-flight drone directional changes depending on the commands."
+          ]
+        },
+        {
+          "subject": "DJI Air 3",
+          "predicate": "uses",
+          "object": "firmware",
+          "assertion": "asserted",
+          "quote": [
+            "If your DJI Air 3 drone has an ESC error and you can't fix this error by refreshing the",
+            "drone firmware, it is most likely the ESC board is failing, so you need to replace it."
+          ]
+        },
+        {
+          "subject": "DJI Air 3",
+          "predicate": "reports_fault",
+          "object": "ESC error",
+          "assertion": "asserted",
+          "quote": [
+            "If your DJI Air 3 drone has an ESC error and you can't fix this error by refreshing the",
+            "drone firmware, it is most likely the ESC board is failing, so you need to replace it."
+          ],
+          "qualifiers": {
+            "modality": "conditional",
+            "scope": "If your DJI Air 3 drone has an ESC error and you can't fix this error by refreshing the\ndrone firmware, it is most likely the ESC board is failing, so you need to replace it."
+          }
+        },
+        {
+          "subject": "DJI Air 3",
+          "predicate": "offered_by",
+          "object": "DJI",
+          "assertion": "asserted",
+          "quote": "If your DJI Air 3 drone has an ESC error and you can't fix this error by refreshing the"
+        },
+        {
+          "subject": "DJI Air 3",
+          "predicate": "contains",
+          "object": "DJI Air 3 arm wires",
+          "assertion": "asserted",
+          "quote": [
+            "If your DJI Air 3 drone has an ESC error and you can't fix this error by refreshing the",
+            "drone firmware, it is most likely the ESC board is failing, so you need to replace it.",
+            "To replace the ESC board, you need to desolder the drone's arm wires."
+          ]
+        },
+        {
+          "subject": "DJI Air 3 arm wires",
+          "predicate": "connected_to",
+          "object": "Air 3电调板",
+          "assertion": "asserted",
+          "quote": "To replace the ESC board, you need to desolder the drone's arm wires."
+        }
+      ],
+      "notes": [
+        "v3新增DJI Air 3 arm wires；固件仍是software，电调板、马达、ESC故障与DJI组织沿用原答案。",
+        "关系标注：保留If故障条件，不表示所有Air 3当前均有ESC故障；刷新固件失败不直接变成固件negated mitigates。",
+        "关系标注：新增设备contains机臂导线；更换电调板需要解焊机臂导线，按人工复核确认导线connected_to电调板，表示维修步骤涉及的电气连接；不额外补出导线与马达的连接。"
+      ]
+    },
+    {
+      "id": "EG018",
+      "language": "en",
+      "models": [
+        "DJI Mini 3",
+        "DJI Mavic Mini",
+        "DJI Mini 2"
+      ],
+      "source": {
+        "title": "NEW DJI Mini 3 - The BEST Budget Drone EVER! (4K)",
+        "url": "https://www.youtube.com/watch?v=RvSjkLzcFbw",
+        "chunk_id": "61053ddf-ddf3-421a-8329-3eb512027765",
+        "start_seconds": 115.86,
+        "end_seconds": 161.56
+      },
+      "text": [
+        "True vertical shooting which is a very welcome addition to both of these drones, sharing content",
+        "on social media in the native aspect ratio without having to crop out two thirds of the screen.",
+        "The pro version and the mini 3 can now also shoot upwards past level horizon which neither of the",
+        "original Mavic mini or Mini 2 could do. This is great for capturing climbing shots and low angles.",
+        "So what else do they have in common. They both fly at the same speed at 16",
+        "meters per second in sport mode. Thats 24mph. Let’s see what 24mph looks like!",
+        "The mini 3"
+      ],
+      "entities": [
+        {
+          "name": "DJI Mini 3",
+          "type": "product",
+          "mentions": [
+            "mini 3"
+          ]
+        },
+        {
+          "name": "DJI Mavic Mini",
+          "type": "product",
+          "mentions": [
+            "Mavic mini"
+          ]
+        },
+        {
+          "name": "DJI Mini 2",
+          "type": "product",
+          "mentions": [
+            "Mini 2"
+          ]
+        },
+        {
+          "name": "sport mode",
+          "type": "technology",
+          "mentions": [
+            "sport mode"
+          ]
+        },
+        {
+          "name": "Pro版本",
+          "type": "product",
+          "mentions": [
+            "pro version"
+          ]
+        },
+        {
+          "name": "True vertical shooting",
+          "type": "technology",
+          "mentions": [
+            "True vertical shooting"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Mini 3",
+          "predicate": "supports",
+          "object": "sport mode",
+          "assertion": "asserted",
+          "quote": [
+            "The pro version and the mini 3 can now also shoot upwards past level horizon which neither of the",
+            "original Mavic mini or Mini 2 could do. This is great for capturing climbing shots and low angles.",
+            "So what else do they have in common. They both fly at the same speed at 16",
+            "meters per second in sport mode. Thats 24mph. Let’s see what 24mph looks like!"
+          ]
+        },
+        {
+          "subject": "Pro版本",
+          "predicate": "supports",
+          "object": "sport mode",
+          "assertion": "asserted",
+          "quote": [
+            "The pro version and the mini 3 can now also shoot upwards past level horizon which neither of the",
+            "original Mavic mini or Mini 2 could do. This is great for capturing climbing shots and low angles.",
+            "So what else do they have in common. They both fly at the same speed at 16",
+            "meters per second in sport mode. Thats 24mph. Let’s see what 24mph looks like!"
+          ]
+        },
+        {
+          "subject": "DJI Mini 3",
+          "predicate": "supports",
+          "object": "True vertical shooting",
+          "assertion": "asserted",
+          "quote": [
+            "True vertical shooting which is a very welcome addition to both of these drones, sharing content",
+            "on social media in the native aspect ratio without having to crop out two thirds of the screen.",
+            "The pro version and the mini 3 can now also shoot upwards past level horizon which neither of the",
+            "original Mavic mini or Mini 2 could do. This is great for capturing climbing shots and low angles.",
+            "So what else do they have in common. They both fly at the same speed at 16",
+            "meters per second in sport mode. Thats 24mph. Let’s see what 24mph looks like!"
+          ]
+        },
+        {
+          "subject": "Pro版本",
+          "predicate": "supports",
+          "object": "True vertical shooting",
+          "assertion": "asserted",
+          "quote": [
+            "True vertical shooting which is a very welcome addition to both of these drones, sharing content",
+            "on social media in the native aspect ratio without having to crop out two thirds of the screen.",
+            "The pro version and the mini 3 can now also shoot upwards past level horizon which neither of the",
+            "original Mavic mini or Mini 2 could do. This is great for capturing climbing shots and low angles.",
+            "So what else do they have in common. They both fly at the same speed at 16",
+            "meters per second in sport mode. Thats 24mph. Let’s see what 24mph looks like!"
+          ]
+        }
+      ],
+      "notes": [
+        "v3保留Pro版本及True vertical shooting；Pro版本仅按片段内泛称使用，不补成Mini 3 Pro或其他具体型号。",
+        "关系标注：both/They both在本段回指Pro版本与Mini 3，新增Pro版本支持sport mode以及两台设备分别支持True vertical shooting的关系。开头both的指代已随本轮人工复核确认。",
+        "关系标注：Mavic mini、Mini 2的否定从句针对向上仰拍，不是竖拍或sport mode；不把该否定套到其他功能。"
+      ]
+    },
+    {
+      "id": "EG019",
+      "language": "en",
+      "models": [
+        "DJI Avata 360"
+      ],
+      "source": {
+        "title": "Avata 360 Single-Lens Mode | Struggling with Head Tracking + Motion 3 | Turn On Caption (CC)",
+        "url": "https://www.youtube.com/watch?v=sjEluw4GIqI",
+        "chunk_id": "3d78b0e7-a2ca-4e10-a796-b7ff7b3a5933",
+        "start_seconds": 8.0,
+        "end_seconds": 61.0
+      },
+      "text": [
+        "Today's experiment: Avata 360 in single-lens mode, with RC Motion 3 and Head Tracking.",
+        "The Avata 360 takes off in spherical mode. I switch to single-lens mode after takeoff.",
+        "I'm nodding and turning my head to check how Head Tracking moves the camera and drone.",
+        "Checking that Head Tracking is enabled."
+      ],
+      "entities": [
+        {
+          "name": "DJI Avata 360",
+          "type": "product",
+          "mentions": [
+            "Avata 360"
+          ]
+        },
+        {
+          "name": "RC Motion 3",
+          "type": "product",
+          "mentions": [
+            "RC Motion 3"
+          ]
+        },
+        {
+          "name": "Head Tracking",
+          "type": "technology",
+          "mentions": [
+            "Head Tracking"
+          ]
+        },
+        {
+          "name": "single-lens mode",
+          "type": "technology",
+          "mentions": [
+            "single-lens mode"
+          ]
+        },
+        {
+          "name": "spherical mode",
+          "type": "technology",
+          "mentions": [
+            "spherical mode"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Avata 360",
+          "predicate": "compatible_with",
+          "object": "RC Motion 3",
+          "assertion": "asserted",
+          "quote": "Today's experiment: Avata 360 in single-lens mode, with RC Motion 3 and Head Tracking."
+        },
+        {
+          "subject": "DJI Avata 360",
+          "predicate": "supports",
+          "object": "single-lens mode",
+          "assertion": "asserted",
+          "quote": "The Avata 360 takes off in spherical mode. I switch to single-lens mode after takeoff."
+        },
+        {
+          "subject": "DJI Avata 360",
+          "predicate": "supports",
+          "object": "spherical mode",
+          "assertion": "asserted",
+          "quote": "The Avata 360 takes off in spherical mode. I switch to single-lens mode after takeoff."
+        },
+        {
+          "subject": "DJI Avata 360",
+          "predicate": "supports",
+          "object": "Head Tracking",
+          "assertion": "uncertain",
+          "quote": [
+            "Today's experiment: Avata 360 in single-lens mode, with RC Motion 3 and Head Tracking.",
+            "The Avata 360 takes off in spherical mode. I switch to single-lens mode after takeoff.",
+            "I'm nodding and turning my head to check how Head Tracking moves the camera and drone.",
+            "Checking that Head Tracking is enabled."
+          ],
+          "qualifiers": {
+            "modality": "hypothetical",
+            "scope": "I'm nodding and turning my head to check how Head Tracking moves the camera and drone.",
+            "mode": "single-lens mode"
+          }
+        }
+      ],
+      "notes": [
+        "v3移除Avata 360 camera，保留两种模式、Head Tracking、RC Motion 3及无人机；点头转头不是额外方法实体。",
+        "关系标注：删除设备contains相机关系；保留RC Motion 3可配用、两种模式支持，以及单镜头范围内Head Tracking的uncertain支持关系。旧版人工删除的两条Head Tracking controls关系不恢复。"
+      ]
+    },
+    {
+      "id": "EG020",
+      "language": "en",
+      "models": [
+        "DJI Mini 5 Pro"
+      ],
+      "source": {
+        "title": "DJI Mini 5 Pro engel algılama testi: teller, yapraklar ve yağmur! 🚁",
+        "url": "https://www.youtube.com/watch?v=ZqTrQBWrol0",
+        "chunk_id": "a1893f08-19fa-4421-9df1-60bb4c86204b",
+        "start_seconds": 0.0,
+        "end_seconds": 34.5
+      },
+      "text": [
+        "DJI Mini 5 Pro OBSTACLE AVOIDANCE TEST",
+        "TEST 1 Flying between wires",
+        "Side by side with the cable-car wire",
+        "TEST 2 It even detects leaves",
+        "TEST 3 Flying in heavy rain",
+        "Which one was the hardest? Tell me in the comments"
+      ],
+      "entities": [
+        {
+          "name": "DJI Mini 5 Pro",
+          "type": "product",
+          "mentions": [
+            "DJI Mini 5 Pro"
+          ]
+        },
+        {
+          "name": "OBSTACLE AVOIDANCE",
+          "type": "technology",
+          "mentions": [
+            "OBSTACLE AVOIDANCE"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "subject": "DJI Mini 5 Pro",
+          "predicate": "supports",
+          "object": "OBSTACLE AVOIDANCE",
+          "assertion": "asserted",
+          "quote": [
+            "DJI Mini 5 Pro OBSTACLE AVOIDANCE TEST",
+            "TEST 1 Flying between wires",
+            "Side by side with the cable-car wire",
+            "TEST 2 It even detects leaves"
+          ]
+        }
+      ],
+      "notes": [
+        "电线、树叶、雨是测试环境或障碍物，不是无人机硬件，也不是无人机支持的技术。",
+        "只标来源提及的避障能力，不据标题或测试问题判断实测结果真伪。",
+        "关系标注：标题与“detects leaves”支持避障能力；不据测试清单补出与电线、树叶、雨的功能关系，也不声称每项测试均成功。"
+      ]
+    }
+  ]
+}

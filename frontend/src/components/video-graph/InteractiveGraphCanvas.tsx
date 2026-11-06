@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Graph, GraphData, LayoutOptions, NodeData, EdgeData, IElementEvent } from '@antv/g6';
 import type { VideoGraphData, VideoGraphEdge, VideoGraphNode } from '../../api/types';
-import { DARK_ENTITY_COLORS, DEFAULT_GRAPH_APPEARANCE, ENTITY_LABELS, PREDICATE_LABELS } from './presentation';
+import { DARK_ENTITY_COLORS, DEFAULT_GRAPH_APPEARANCE, ENTITY_LABELS, PREDICATE_LABELS, relationNodeSize } from './presentation';
 import type { GraphAppearance } from './presentation';
-import { parallelEdgeStyles } from './data';
+import { nodeRelationCounts, parallelEdgeStyles } from './data';
 import { atMinimumZoom, fitDefaultViewport, INITIAL_ZOOM_RANGE } from './viewport';
 
 export type GraphDimension = '2d' | '3d';
@@ -29,18 +29,14 @@ function forceLayoutOptions(appearance = DEFAULT_GRAPH_APPEARANCE, is3D = false)
 
 function graphData(data: VideoGraphData, instance?: Graph, is3D = false): GraphData {
   const curves = parallelEdgeStyles(data.edges);
-  const degree = new Map<string, number>();
-  for (const edge of data.edges) {
-    degree.set(edge.source, (degree.get(edge.source) ?? 0) + 1);
-    degree.set(edge.target, (degree.get(edge.target) ?? 0) + 1);
-  }
+  const relationCounts = nodeRelationCounts(data.edges);
   const existing = new Set(instance?.getNodeData().map((node) => node.id));
   return {
     nodes: data.nodes.map((node, i) => {
       const position = instance && existing.has(node.id) ? instance.getElementPosition(node.id) : null;
       const angle = i * Math.PI * (3 - Math.sqrt(5));
       const radius = Math.sqrt(i + 1) * 42;
-      return { id: node.id, data: { ...node, degree: degree.get(node.id) ?? 0 },
+      return { id: node.id, data: { ...node, relationCount: relationCounts.get(node.id) ?? 0 },
         style: { x: position?.[0] ?? 500 + Math.cos(angle) * radius,
           y: position?.[1] ?? 300 + Math.sin(angle) * radius,
           ...(is3D ? { z: position?.[2] ?? Math.sin(i * 1.7) * radius * 0.6 } : {}) } };
@@ -132,7 +128,7 @@ export function InteractiveGraphCanvas(props: Props) {
             style: (node: NodeData) => {
               const config = latest.current.appearance ?? DEFAULT_GRAPH_APPEARANCE;
               return {
-                size: (is3D ? 4 : 1) * (7 + Math.min(11, Math.log2(1 + Number(node.data?.degree ?? 0)) * 2.6)) * config.nodeScale,
+                size: relationNodeSize(Number(node.data?.relationCount ?? 0), is3D, config.nodeScale),
                 ...(is3D ? { materialType: 'phong', latitudeBands: 12, longitudeBands: 12,
                   materialShininess: 24 } : {}),
                 fill: DARK_ENTITY_COLORS[String(node.data?.entity_type ?? node.data?.kind)] ?? '#9998a8',

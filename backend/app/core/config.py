@@ -68,6 +68,15 @@ class Settings(LLMSettings):
     video_graph_backend: Literal["postgres", "neo4j"] = Field(
         default="postgres", alias="VIDEO_GRAPH_BACKEND"
     )
+    video_graph_request_timeout_seconds: int = Field(
+        default=120, ge=1, le=120, alias="VIDEO_GRAPH_REQUEST_TIMEOUT_SECONDS"
+    )
+    video_graph_reasoning_effort: Literal["none", "low", "high", "max"] = Field(
+        default="none", alias="VIDEO_GRAPH_REASONING_EFFORT"
+    )
+    video_graph_extraction_effort: Literal["none", "low", "high", "max"] = Field(
+        default="none", alias="VIDEO_GRAPH_EXTRACTION_EFFORT"
+    )
     neo4j_uri: str = Field(default="bolt://localhost:7687", alias="NEO4J_URI")
     neo4j_user: str = Field(default="neo4j", alias="NEO4J_USER")
     neo4j_password: str | None = Field(default=None, alias="NEO4J_PASSWORD")

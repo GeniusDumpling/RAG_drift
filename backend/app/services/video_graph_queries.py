@@ -1,5 +1,6 @@
 """Bounded graph browsing and evidence context for a future GraphRAG orchestrator."""
 
+import json
 import uuid
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -299,7 +300,7 @@ def timestamp_url(url: str, seconds: float | None) -> str:
 
 
 def read_evidence(row: Any) -> GraphEvidenceRead:
-    evidence, build, item = row
+    evidence, build, item, *extra = row
     return GraphEvidenceRead(
         id=evidence.id,
         relation_id=evidence.relation_id,
@@ -314,6 +315,17 @@ def read_evidence(row: Any) -> GraphEvidenceRead:
         confidence=evidence.confidence,
         caption_source=evidence.caption_source,
         extractor_version=build.extractor_version,
+        qualifiers=(extra[0] or {}) if extra else {},
+    )
+
+
+def evidence_context(entry: GraphEvidenceRead, index: int) -> str:
+    conditions = ("\n适用条件: " + json.dumps(entry.qualifiers, ensure_ascii=False)
+                  if entry.qualifiers else "")
+    return (
+        f"[{index}] {entry.title or '视频'}\nURL: {entry.video_url}\n"
+        f"陈述状态: {entry.assertion}（字幕陈述，未独立事实验证）"
+        f"{conditions}\n原文: {entry.quote}"
     )
 
 
@@ -326,7 +338,9 @@ def relation_evidence(
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
-    query = active_evidence(content_id, assertion).where(
+    query = active_evidence(content_id, assertion).add_columns(
+        VideoGraphRelation.qualifiers_json
+    ).join(VideoGraphRelation, VideoGraphRelation.id == VideoGraphEvidence.relation_id).where(
         VideoGraphEvidence.relation_id == relation_id
     )
     total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
@@ -438,6 +452,8 @@ def video_status(session: Session, content_id: uuid.UUID) -> dict[str, Any] | No
         and all(c.evidence_type == "video_summary" for c in material.extraction_chunks),
         "coverage": desired_output.get("coverage"),
         "active_coverage": active_output.get("published_coverage"),
+        "quality": desired_output.get("quality"),
+        "active_quality": active_output.get("quality"),
         "skipped_chunks": list(desired_output.get("chunk_errors", {}).values()),
         "projection_activated": desired_output.get("projection_activated", False),
         "retained_active_build_id": desired_output.get("retained_active_build_id"),
@@ -456,6 +472,10 @@ def retrieve_context(session: Session, request: GraphRetrieveRequest) -> GraphRe
                 )
             ),
             func.strpos(query_name, VideoGraphAlias.normalized_alias) > 0,
+            VideoGraphAlias.scope_key.in_([
+                "", "v2:global",
+                *([f"v2:video:{request.content_item_id}"] if request.content_item_id else []),
+            ]),
         )
         .order_by(func.length(VideoGraphAlias.normalized_alias).desc(), VideoGraphAlias.entity_id)
         .limit(20)
@@ -489,6 +509,8 @@ def retrieve_context(session: Session, request: GraphRetrieveRequest) -> GraphRe
     relation_ids = [uuid.UUID(edge.id) for edge in graph.edges if edge.kind == "relation"]
     rows = session.execute(
         active_evidence(request.content_item_id)
+        .add_columns(VideoGraphRelation.qualifiers_json)
+        .join(VideoGraphRelation, VideoGraphRelation.id == VideoGraphEvidence.relation_id)
         .where(VideoGraphEvidence.relation_id.in_(relation_ids))
         .order_by(VideoGraphEvidence.confidence.desc(), VideoGraphEvidence.id)
         .limit(request.top_k * 5)
@@ -503,10 +525,7 @@ def retrieve_context(session: Session, request: GraphRetrieveRequest) -> GraphRe
         if key in seen:
             continue
         seen.add(key)
-        block = (
-            f"[{len(evidence) + 1}] {entry.title or '视频'}\nURL: {entry.video_url}\n"
-            f"陈述状态: {entry.assertion}（字幕陈述，未独立事实验证）\n原文: {entry.quote}"
-        )
+        block = evidence_context(entry, len(evidence) + 1)
         if used_chars + len(block) + 2 > request.max_chars:
             continue
         evidence.append(entry)

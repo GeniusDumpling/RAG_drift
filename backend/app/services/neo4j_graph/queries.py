@@ -15,7 +15,7 @@ from app.schemas.video_graph import (
 from app.services.graph_display import connected_display_graph
 from app.services.neo4j_graph.store import decode
 from app.services.video_graph import load_material, normalized_name
-from app.services.video_graph_queries import timestamp_url
+from app.services.video_graph_queries import evidence_context, timestamp_url
 
 ACTIVE = (
     "MATCH (v:VGVideo)-[:HAS_BUILD]->(b:VGBuild) "
@@ -223,6 +223,7 @@ class GraphQueries:
             confidence=ev["confidence"],
             caption_source=ev.get("caption_source"),
             extractor_version=b["extractor_version"],
+            qualifiers=decode(r.get("qualifiers_json")),
         )
 
     def relation_evidence(
@@ -316,6 +317,8 @@ class GraphQueries:
             and all(c.evidence_type == "video_summary" for c in material.extraction_chunks),
             coverage=desired.get("coverage"),
             active_coverage=active.get("published_coverage"),
+            quality=desired.get("quality"),
+            active_quality=active.get("quality"),
             skipped_chunks=list(desired.get("chunk_errors", {}).values()),
             projection_activated=desired.get("projection_activated", False),
             retained_active_build_id=desired.get("retained_active_build_id"),
@@ -326,6 +329,8 @@ class GraphQueries:
         aliases = self.store.read(
             MENTIONS + "MATCH (a:VGAlias)-[:ALIAS_OF]->(e) "
             "WHERE $query CONTAINS a.normalized_alias "
+            "AND (coalesce(a.scope_key,'') IN ['', 'v2:global'] "
+            "OR ($content_id IS NOT NULL AND a.scope_key='v2:video:'+$content_id)) "
             "RETURN DISTINCT a.normalized_alias AS alias,e.id AS id "
             "ORDER BY size(alias) DESC,id LIMIT 20",
             content_id=cid,
@@ -366,10 +371,7 @@ class GraphQueries:
             if key in seen:
                 continue
             seen.add(key)
-            block = (
-                f"[{len(evidence)+1}] {entry.title or '视频'}\nURL: {entry.video_url}\n"
-                f"陈述状态: {entry.assertion}（字幕陈述，未独立事实验证）\n原文: {entry.quote}"
-            )
+            block = evidence_context(entry, len(evidence) + 1)
             if used + len(block) + 2 > request.max_chars:
                 continue
             evidence.append(entry)

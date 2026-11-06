@@ -21,6 +21,7 @@ from app.services.video_graph import (
     update_coverage,
     validate_extraction,
 )
+from app.services.video_graph_identity import entity_identity, is_quality_version
 
 LABELS = ("VGVideo", "VGBuild", "VGEntity", "VGAlias", "VGRelation", "VGEvidence", "VGMention")
 
@@ -114,12 +115,15 @@ class GraphStore:
             raise LeaseLostError("任务租约已被其他 worker 接管")
         return dict(row["b"])
 
-    def enqueue(self, material, version, retry_failed=False, retry_partial=False):
+    def enqueue(self, material, version, retry_failed=False, retry_partial=False,
+                *, expected_active_id=...):
         vid = str(material.id)
         key = digest([vid, material.fingerprint, version])
         with self.transaction() as tx:
             tx.run("MERGE (v:VGVideo {id:$id}) ON CREATE SET v.withdrawn=false", id=vid).consume()
             state = self.lock(tx, vid)
+            if expected_active_id is not ... and state.get("active_build_id") != expected_active_id:
+                raise ValueError("回补期间有效版本已变化，请重新生成清单")
             tx.run(
                 "MATCH (v:VGVideo {id:$id}) SET v.title=$title, v.url=$url, "
                 "v.source_key=$source, v.deleted=false",
@@ -179,7 +183,8 @@ class GraphStore:
                             continue
                         try:
                             result = validate_extraction(
-                                chunk, ChunkExtraction.model_validate(previous["chunks"][old])
+                                chunk, ChunkExtraction.model_validate(previous["chunks"][old]),
+                                material=material, require_review=is_quality_version(version),
                             )
                         except ValueError:
                             continue
@@ -349,7 +354,8 @@ class GraphStore:
                 output["retained_active_build_id"] = state["active_build_id"]
             elif status != "failed":
                 output.pop("retained_active_build_id", None)
-                self.publish(tx, material, str(build_id), output)
+                self.publish(tx, material, str(build_id), output,
+                             require_review=is_quality_version(build["extractor_version"]))
                 output["published_chunk_ids"] = sorted(passed)
                 output["published_coverage"] = dict(coverage)
                 tx.run(
@@ -368,7 +374,7 @@ class GraphStore:
             return status
 
     @staticmethod
-    def publish(tx, material, build_id, output):
+    def publish(tx, material, build_id, output, *, require_review=False):
         # Delete only this build's projection. Other videos and historical builds survive.
         tx.run(
             "MATCH (b:VGBuild {id:$id})-[:HAS_MENTION|HAS_EVIDENCE]->(n) " "DETACH DELETE n",
@@ -380,57 +386,55 @@ class GraphStore:
             raw = output.get("chunks", {}).get(str(chunk.id))
             if raw is None:
                 continue
-            extraction = validate_extraction(chunk, ChunkExtraction.model_validate(raw))
+            extraction = validate_extraction(
+                chunk, ChunkExtraction.model_validate(raw), material=material,
+                require_review=require_review,
+            )
             entity_ids = {}
             for entity in extraction.entities:
-                alias_id = digest([entity.entity_type, normalized_name(entity.surface_text)])
-                existing = tx.run(
-                    "MATCH (a:VGAlias {id:$id})-[:ALIAS_OF]->(e:VGEntity) " "RETURN e.id AS id",
-                    id=alias_id,
-                ).single()
-                name = canonical_name(entity.surface_text, entity.entity_type)
-                eid = (
-                    existing["id"]
-                    if existing
-                    else str(
-                        uuid.uuid5(
-                            ENTITY_NAMESPACE, f"{entity.entity_type}:{normalized_name(name)}"
-                        )
-                    )
-                )
+                if extraction.schema_version == 2:
+                    identity = entity_identity(entity, material)
+                    eid = str(identity.id)
+                    name = identity.name
+                    tx.run(
+                        "MERGE (e:VGEntity {id:$id}) ON CREATE SET e.name=$name, "
+                        "e.canonical_name=$name,e.entity_type=$kind,e.scope_key=$scope",
+                        id=eid, name=name, kind=entity.entity_type, scope=identity.scope_key,
+                    ).consume()
+                    for scope, alias in {
+                        (identity.alias_scope, entity.surface_text),
+                        (identity.scope_key, identity.name),
+                    }:
+                        aid = digest([entity.entity_type, scope, normalized_name(alias), eid])
+                        tx.run(
+                            "MATCH (e:VGEntity {id:$id}) MERGE (a:VGAlias {id:$aid}) "
+                            "ON CREATE SET a.surface_text=$surface,a.normalized_alias=$normalized, "
+                            "a.entity_type=$kind,a.scope_key=$scope "
+                            "MERGE (a)-[:ALIAS_OF]->(e)",
+                            id=eid, aid=aid, surface=alias, normalized=normalized_name(alias),
+                            kind=entity.entity_type, scope=scope,
+                        ).consume()
+                else:
+                    eid, name = self_legacy_entity(tx, entity)
                 entity_ids[entity.key] = eid
-                tx.run(
-                    "MERGE (e:VGEntity {id:$id}) ON CREATE SET e.name=$name, "
-                    "e.canonical_name=$name,e.entity_type=$kind "
-                    "MERGE (a:VGAlias {id:$aid}) ON CREATE SET a.surface_text=$surface, "
-                    "a.normalized_alias=$normalized,a.entity_type=$kind "
-                    "MERGE (a)-[:ALIAS_OF]->(e)",
-                    id=eid,
-                    name=name,
-                    kind=entity.entity_type,
-                    aid=alias_id,
-                    surface=entity.surface_text,
-                    normalized=normalized_name(entity.surface_text),
-                ).consume()
                 start, end = locate_quote(chunk.text, entity.surface_text)
                 mid = digest([build_id, str(chunk.id), eid, start, end])
                 tx.run(
                     "MATCH (b:VGBuild {id:$bid}),(e:VGEntity {id:$eid}) "
                     "MERGE (m:VGMention {id:$id}) SET m += $props "
                     "MERGE (b)-[:HAS_MENTION]->(m) MERGE (m)-[:REFERS_TO]->(e)",
-                    bid=build_id,
-                    eid=eid,
-                    id=mid,
+                    bid=build_id, eid=eid, id=mid,
                     props={
-                        "content_item_id": str(material.id),
-                        "content_chunk_id": str(chunk.id),
-                        "surface_text": entity.surface_text,
-                        "start_char": start,
-                        "end_char": end,
+                        "content_item_id": str(material.id), "content_chunk_id": str(chunk.id),
+                        "surface_text": entity.surface_text, "start_char": start, "end_char": end,
                         "confidence": min(entity.confidence, 0.5)
-                        if chunk.evidence_type == "video_summary"
-                        else entity.confidence,
+                        if chunk.evidence_type == "video_summary" else entity.confidence,
                         "evidence_type": chunk.evidence_type,
+                        "canonical_name": entity.canonical_name,
+                        "identity_scope": entity.identity_scope,
+                        "identity_source": entity.identity_source,
+                        "identity_quote": entity.identity_quote,
+                        "attributes_json": encode(entity.attributes),
                     },
                 ).consume()
             for relation in extraction.relations:
@@ -442,7 +446,6 @@ class GraphStore:
                 start, end = locate_quote(chunk.text, relation.quote)
                 quote = chunk.text[start:end]
                 evid = digest([build_id, rid, str(chunk.id), digest(quote), relation.assertion])
-                # Evidence IDs remain UUIDs for the existing API contract.
                 evid = str(uuid.uuid5(ENTITY_NAMESPACE, evid))
                 tx.run(
                     "MATCH (s:VGEntity {id:$subject}),(o:VGEntity {id:$object}) "
@@ -450,30 +453,42 @@ class GraphStore:
                     "r.relation_key=$key,r.qualifiers_json=$qualifiers "
                     "MERGE (r)-[:SUBJECT]->(s) MERGE (r)-[:OBJECT]->(o) "
                     "MERGE (s)-[f:VG_FACT {id:$id}]->(o) SET f.predicate=$predicate",
-                    subject=subject,
-                    object=obj,
-                    id=rid,
-                    predicate=relation.predicate,
-                    key=key,
-                    qualifiers=encode(relation.qualifiers),
+                    subject=subject, object=obj, id=rid, predicate=relation.predicate,
+                    key=key, qualifiers=encode(relation.qualifiers),
                 ).consume()
                 tx.run(
                     "MATCH (b:VGBuild {id:$bid}),(r:VGRelation {id:$rid}) "
                     "MERGE (e:VGEvidence {id:$id}) SET e += $props "
                     "MERGE (b)-[:HAS_EVIDENCE]->(e) MERGE (e)-[:SUPPORTS]->(r)",
-                    bid=build_id,
-                    rid=rid,
-                    id=evid,
+                    bid=build_id, rid=rid, id=evid,
                     props={
-                        "content_chunk_id": str(chunk.id),
-                        "quote": quote,
-                        "quote_hash": digest(quote),
-                        "char_start": start,
-                        "char_end": end,
-                        "start_seconds": chunk.start_seconds,
-                        "end_seconds": chunk.end_seconds,
-                        "assertion": relation.assertion,
-                        "confidence": relation.confidence,
+                        "content_chunk_id": str(chunk.id), "quote": quote,
+                        "quote_hash": digest(quote), "char_start": start, "char_end": end,
+                        "start_seconds": chunk.start_seconds, "end_seconds": chunk.end_seconds,
+                        "assertion": relation.assertion, "confidence": relation.confidence,
                         "caption_source": material.caption_source,
                     },
                 ).consume()
+
+
+def self_legacy_entity(tx, entity):
+    """Keep the old alias namespace readable while v2 replaces projections."""
+    alias_id = digest([entity.entity_type, normalized_name(entity.surface_text)])
+    existing = tx.run(
+        "MATCH (a:VGAlias {id:$id})-[:ALIAS_OF]->(e:VGEntity) RETURN e.id AS id",
+        id=alias_id,
+    ).single()
+    name = canonical_name(entity.surface_text, entity.entity_type)
+    eid = existing["id"] if existing else str(uuid.uuid5(
+        ENTITY_NAMESPACE, f"{entity.entity_type}:{normalized_name(name)}"
+    ))
+    tx.run(
+        "MERGE (e:VGEntity {id:$id}) ON CREATE SET e.name=$name, "
+        "e.canonical_name=$name,e.entity_type=$kind "
+        "MERGE (a:VGAlias {id:$aid}) ON CREATE SET a.surface_text=$surface, "
+        "a.normalized_alias=$normalized,a.entity_type=$kind "
+        "MERGE (a)-[:ALIAS_OF]->(e)",
+        id=eid, name=name, kind=entity.entity_type, aid=alias_id,
+        surface=entity.surface_text, normalized=normalized_name(entity.surface_text),
+    ).consume()
+    return eid, name

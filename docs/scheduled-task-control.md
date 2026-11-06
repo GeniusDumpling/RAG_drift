@@ -72,6 +72,26 @@ curl --fail http://127.0.0.1:8000/scheduled-tasks
 
 ## 验证
 
+### 现有宿主机采集脚本的数据库连接
+
+当前 WSL 的 `rag-*.service` 直接执行宿主机 `.venv`，读取根目录 `.env` 中的
+`DATABASE_URL` / `SYNC_DATABASE_URL`。它们使用 `127.0.0.1:54329`；Compose 的
+PostgreSQL 服务通过 `127.0.0.1:${POSTGRES_HOST_PORT:-54329}:5432` 提供本机通道。
+容器中的 app/jobs 继续使用 `postgres:5432`。
+
+检查通道（不打印数据库密码）：
+
+```bash
+docker port intelligence-rag-postgres-deploy 5432
+docker exec intelligence-rag-postgres-deploy pg_isready -U intelligence -d intelligence_rag
+```
+
+端口输出默认应为 `127.0.0.1:54329`。修改端口映射需要重建 PostgreSQL 容器，必须复用
+原有数据卷；仅执行 `docker restart` 不会应用映射。若自定义 `POSTGRES_HOST_PORT`，需同步
+宿主机连接串中的端口。仅发布到 loopback，不绑定 `0.0.0.0`。
+
+### 页面与桥接测试
+
 ```bash
 .venv/bin/python -m pytest tests/unit/test_scheduler_control.py -q
 npm --prefix frontend test -- --run tests/sources-page.test.tsx

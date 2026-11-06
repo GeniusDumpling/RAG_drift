@@ -1,0 +1,271 @@
+[
+  {
+    "name": "DJI",
+    "type": "organization",
+    "aliases": [
+      "大疆",
+      "大疆创新",
+      "大疆創新"
+    ]
+  },
+  {
+    "name": "Insta360",
+    "type": "organization",
+    "aliases": []
+  },
+  {
+    "name": "Parrot",
+    "type": "organization",
+    "aliases": []
+  },
+  {
+    "name": "DJI Fly",
+    "type": "software",
+    "aliases": [
+      "DJI fly app"
+    ]
+  },
+  {
+    "name": "DJI Studio",
+    "type": "software",
+    "aliases": []
+  },
+  {
+    "name": "Betaflight",
+    "type": "software",
+    "aliases": []
+  },
+  {
+    "name": "ArduPilot",
+    "type": "software",
+    "aliases": []
+  },
+  {
+    "name": "PX4",
+    "type": "software",
+    "aliases": []
+  },
+  {
+    "name": "firmware",
+    "type": "software",
+    "aliases": [
+      "固件",
+      "韌體"
+    ]
+  },
+  {
+    "name": "MAVLink",
+    "type": "protocol",
+    "aliases": []
+  },
+  {
+    "name": "CMOS",
+    "type": "technology",
+    "aliases": []
+  },
+  {
+    "name": "HDR",
+    "type": "technology",
+    "aliases": []
+  },
+  {
+    "name": "GPS",
+    "type": "technology",
+    "aliases": []
+  },
+  {
+    "name": "GNSS",
+    "type": "technology",
+    "aliases": []
+  },
+  {
+    "name": "RTK",
+    "type": "technology",
+    "aliases": []
+  },
+  {
+    "name": "SLAM",
+    "type": "technology",
+    "aliases": []
+  },
+  {
+    "name": "Head Tracking",
+    "type": "technology",
+    "aliases": [
+      "头部追踪",
+      "頭部追蹤"
+    ]
+  },
+  {
+    "name": "Easy ACRO",
+    "type": "technology",
+    "aliases": []
+  },
+  {
+    "name": "DJI Neo",
+    "type": "product",
+    "aliases": []
+  },
+  {
+    "name": "DJI Neo 2",
+    "type": "product",
+    "aliases": [
+      "DJI Neo2",
+      "Neo 2",
+      "Neo2"
+    ]
+  },
+  {
+    "name": "DJI Avata 2",
+    "type": "product",
+    "aliases": [
+      "Avata 2"
+    ]
+  },
+  {
+    "name": "DJI Avata 360",
+    "type": "product",
+    "aliases": [
+      "Avata 360",
+      "Avata360"
+    ]
+  },
+  {
+    "name": "DJI Flip",
+    "type": "product",
+    "aliases": []
+  },
+  {
+    "name": "DJI Mini 2",
+    "type": "product",
+    "aliases": [
+      "Mini 2"
+    ]
+  },
+  {
+    "name": "DJI Mini 3",
+    "type": "product",
+    "aliases": [
+      "Mini 3"
+    ]
+  },
+  {
+    "name": "DJI Mini 4 Pro",
+    "type": "product",
+    "aliases": [
+      "Mini 4 Pro"
+    ]
+  },
+  {
+    "name": "DJI Mini 4K",
+    "type": "product",
+    "aliases": [
+      "Mini 4K"
+    ]
+  },
+  {
+    "name": "DJI Mini 5 Pro",
+    "type": "product",
+    "aliases": [
+      "Mini 5 Pro"
+    ]
+  },
+  {
+    "name": "DJI Air 3",
+    "type": "product",
+    "aliases": [
+      "Air 3"
+    ]
+  },
+  {
+    "name": "DJI Air 3S",
+    "type": "product",
+    "aliases": [
+      "Air 3S"
+    ]
+  },
+  {
+    "name": "DJI Mavic 3 Pro",
+    "type": "product",
+    "aliases": [
+      "Mavic 3 Pro"
+    ]
+  },
+  {
+    "name": "DJI Mavic 4 Pro",
+    "type": "product",
+    "aliases": [
+      "Mavic 4 Pro"
+    ]
+  },
+  {
+    "name": "DJI Matrice 400",
+    "type": "product",
+    "aliases": [
+      "Matrice 400"
+    ]
+  },
+  {
+    "name": "DJI Mavic Mini",
+    "type": "product",
+    "aliases": [
+      "Mavic Mini"
+    ]
+  },
+  {
+    "name": "Parrot ANAFI",
+    "type": "product",
+    "aliases": []
+  },
+  {
+    "name": "Goggles 3",
+    "type": "product",
+    "aliases": [
+      "DJI Goggles 3"
+    ]
+  },
+  {
+    "name": "RC Motion 3",
+    "type": "product",
+    "aliases": [
+      "DJI RC Motion 3"
+    ]
+  },
+  {
+    "name": "RC 2",
+    "type": "product",
+    "aliases": [
+      "DJI RC 2"
+    ]
+  },
+  {
+    "name": "RC-N3",
+    "type": "product",
+    "aliases": [
+      "DJI RC-N3"
+    ]
+  },
+  {
+    "name": "RC-N1C",
+    "type": "product",
+    "aliases": [
+      "DJI RC-N1C"
+    ]
+  },
+  {
+    "name": "DJI Neo series",
+    "type": "product_family",
+    "aliases": [
+      "DJI Neo 系列",
+      "DJI Neo系列"
+    ]
+  },
+  {
+    "name": "DJI Avata series",
+    "type": "product_family",
+    "aliases": [
+      "DJI Avata 系列",
+      "DJI Avata系列"
+    ]
+  }
+]

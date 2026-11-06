@@ -1,0 +1,3513 @@
+{
+  "format_version": 1,
+  "target_version": "video-graph-v2:deepseek-v4.1-flash-economy:faaf6f998b63-none-none",
+  "evaluation_hash": "0364b62164ade9c757d3a306ecde85509edd2a750902e876ce72e5ecd29f4eec",
+  "dataset_hash": "695f382b949cce8804f419f7d38a2240bda0eef41f0c0ba9d79d49619ef2c491",
+  "criteria_hash": "3237f01c3e84ceba5ca21bc1aa57825e842c08ec291fe518ccf4158a1a285330",
+  "criteria": {
+    "criteria_version": "video-graph-release-20261102-v1",
+    "target_retention_min": 0.8,
+    "known_bad_rejection_min": 0.9,
+    "output_review": {
+      "sample_size": 60,
+      "seed": 20261102,
+      "minimum_supported": 51,
+      "maximum_issue": 3,
+      "maximum_review": 6
+    },
+    "review_rubric": {
+      "supported": "完整来源支持主体、谓词、客体、实体类型及身份，否定、条件与配置被正确保留。",
+      "issue": "至少一个明确的主体、客体、谓词、类型、身份、否定、条件或证据支持错误；不因uncertain而忽略错误客体。",
+      "review": "来源转写、指代、身份或语义存在无法可靠判定的歧义，不强判对错。"
+    },
+    "scope": "固定来源回归加固定种子的新关系逐条原文判读；开发回归集，不是独立盲测或全库准确率。"
+  },
+  "target_metrics": {
+    "cases": 69,
+    "successful_cases": 69,
+    "errors": [],
+    "pending": [],
+    "supported_targets": 33,
+    "supported_retained": 16,
+    "supported_retention": 0.48484848484848486,
+    "bad_targets": 28,
+    "bad_targets_rejected": 28,
+    "bad_target_rejection": 1.0,
+    "review_cases": 8,
+    "gate": false,
+    "gate_scope": "Frozen target retention/rejection only; new output relations require separate source review."
+  },
+  "population_relations": 331,
+  "deterministic_checks": {
+    "distinct_sources": 66,
+    "validated_target_outputs": 69,
+    "entity_occurrences": 779,
+    "relation_occurrences": 354,
+    "global_entity_occurrences": 476,
+    "video_entity_occurrences": 303
+  },
+  "sample_videos": 29,
+  "samples": [
+    {
+      "relation_key": "81cd32cab73b85b15eaf4e0e2fa5bff7ab69b120c9e8aa8fd27109bca4623e76",
+      "case_id": "R001",
+      "relation_index": 2,
+      "video_id": "bc58f2f4-abdd-4138-90f9-2508e723dbfc",
+      "chunk_id": "876686ec-c15f-46a9-86e4-41db36fc0071",
+      "title": "DJI Mini 4k Drone | The Complete Beginner’s Guide & How To Fly",
+      "url": "https://www.youtube.com/watch?v=KD5O1Mx68XQ",
+      "start_seconds": 495.56,
+      "end_seconds": 530.92,
+      "source_text": "Moving back to the app once you've mastered takeoff and\nlanding there are lots of other settings to explore.\nOn the Fly screen, starting in the top left corner and going clockwise you have the mode you're in.\nHere I'm in N mode, which is Normal, and that will change if you go to Cinematic or Sport mode.\nNext to it you have your flight warnings such as GPS availability,\nrestricted areas and if the gimbal is stuck.\nMoving along to the right corner you have the remaining battery.\nAt 20% the remote control will start to beep loudly letting you know you're\non low power and at 10% the drone will automatically return to home and land,\nwhich is a really great bit of safety built-in that will stop many an accident.\nYou've then got your remote control signal to the",
+      "subject": {
+        "key": "e13",
+        "surface_text": "drone",
+        "entity_type": "product",
+        "confidence": 0.9,
+        "canonical_name": "DJI Mini 4K",
+        "identity_scope": "global",
+        "identity_quote": "DJI Mini 4k Drone",
+        "identity_source": "title",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e14",
+        "surface_text": "return to home",
+        "entity_type": "technology",
+        "confidence": 0.85,
+        "canonical_name": "return to home",
+        "identity_scope": "global",
+        "identity_quote": "the drone will automatically return to home and land",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e13",
+        "object": "e14",
+        "predicate": "supports",
+        "quote": "at 10% the drone will automatically return to home and land",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {
+          "battery_threshold": "10%"
+        }
+      },
+      "support": {
+        "source_index": "9",
+        "basis": "capability",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "capability",
+        "index": "2"
+      },
+      "sample_id": "Q001",
+      "judgment": "supported",
+      "note": "10%电量时自动返航，电量阈值已保留。"
+    },
+    {
+      "relation_key": "73c9ec6f44d785a3f86c023957f15eed66717865434a1602497131350083947c",
+      "case_id": "R001",
+      "relation_index": 3,
+      "video_id": "bc58f2f4-abdd-4138-90f9-2508e723dbfc",
+      "chunk_id": "876686ec-c15f-46a9-86e4-41db36fc0071",
+      "title": "DJI Mini 4k Drone | The Complete Beginner’s Guide & How To Fly",
+      "url": "https://www.youtube.com/watch?v=KD5O1Mx68XQ",
+      "start_seconds": 495.56,
+      "end_seconds": 530.92,
+      "source_text": "Moving back to the app once you've mastered takeoff and\nlanding there are lots of other settings to explore.\nOn the Fly screen, starting in the top left corner and going clockwise you have the mode you're in.\nHere I'm in N mode, which is Normal, and that will change if you go to Cinematic or Sport mode.\nNext to it you have your flight warnings such as GPS availability,\nrestricted areas and if the gimbal is stuck.\nMoving along to the right corner you have the remaining battery.\nAt 20% the remote control will start to beep loudly letting you know you're\non low power and at 10% the drone will automatically return to home and land,\nwhich is a really great bit of safety built-in that will stop many an accident.\nYou've then got your remote control signal to the",
+      "subject": {
+        "key": "e12",
+        "surface_text": "remote control",
+        "entity_type": "product",
+        "confidence": 0.9,
+        "canonical_name": "remote control",
+        "identity_scope": "video",
+        "identity_quote": "remote control",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e19",
+        "surface_text": "low power",
+        "entity_type": "fault",
+        "confidence": 0.8,
+        "canonical_name": "low power",
+        "identity_scope": "global",
+        "identity_quote": "letting you know you're\non low power",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e12",
+        "object": "e19",
+        "predicate": "reports_fault",
+        "quote": "At 20% the remote control will start to beep loudly letting you know you're\non low power",
+        "assertion": "asserted",
+        "confidence": 0.8,
+        "qualifiers": {
+          "battery_threshold": "20%"
+        }
+      },
+      "support": {
+        "source_index": "13",
+        "basis": "failure",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "failure",
+        "index": "3"
+      },
+      "sample_id": "Q002",
+      "judgment": "supported",
+      "note": "原文明确20%时遥控器鸣叫提示低电量，阈值已保留。"
+    },
+    {
+      "relation_key": "e5c71ff671e036fa15b455bb0e7ef81829a0c744396b9e22b140ca2546b46df9",
+      "case_id": "R002",
+      "relation_index": 0,
+      "video_id": "36a3baed-3d73-4fea-9c3b-d89f24e75425",
+      "chunk_id": "b2106c8a-bff2-4c20-abee-7285272531e1",
+      "title": "The $400 Drone vs $38K Missile—Electronic Warfare Wins",
+      "url": "https://www.youtube.com/watch?v=9F60n3FCoJ8",
+      "start_seconds": 0.0,
+      "end_seconds": 59.92,
+      "source_text": "A $400 drone just took out a $2 million vehicle.\nNo economical shot existed.\nA stinger missile, $38,000.\nThe drone is hunting?\n$400.\nThat's buying a Ferrari to catch a bicycle.\nSo military switched to electronic warfare.\nKill the signal, not the drone.\nDrones run on 2.4 or 5.8 GHz.\nFlood that with noise, and the drone goes deaf, then drops.\nSpoofing is sneakier.\nYou fake the GPS instead of blocking it.\nFeed it, false coordinates, and the drone lands right where you want.\nMilitary drones fight back with frequency hopping, jumping between channels faster than any jammer can follow.\nSo engineers built a gun that hits every frequency at once.\nThe drone gun tactical silences drones out to 2 kilometers.\nBut pre-programmed drones need no radio and no GPS.\nJamming does nothing to them.",
+      "subject": {
+        "key": "e1",
+        "surface_text": "$400 drone",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "$400 drone",
+        "identity_scope": "global",
+        "identity_quote": "A $400 drone just took out a $2 million vehicle.",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "price": "$400"
+        }
+      },
+      "object": {
+        "key": "e5",
+        "surface_text": "2.4 or 5.8 GHz",
+        "entity_type": "technology",
+        "confidence": 0.85,
+        "canonical_name": "2.4 or 5.8 GHz",
+        "identity_scope": "global",
+        "identity_quote": "Drones run on 2.4 or 5.8 GHz.",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "frequency": "2.4 or 5.8 GHz"
+        }
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e5",
+        "predicate": "uses",
+        "quote": "Drones run on 2.4 or 5.8 GHz.",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "1",
+        "basis": "use",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "use",
+        "index": "0"
+      },
+      "sample_id": "Q003",
+      "judgment": "issue",
+      "note": "2.4 or 5.8 GHz是频段参数值，却作为technology实体；原文还以Drones泛指，不足以唯一绑定$400 drone。"
+    },
+    {
+      "relation_key": "e720a2f153b6b00ff42b205c10f06eb9f222ef663720ce31802b320d81012cc1",
+      "case_id": "R005",
+      "relation_index": 4,
+      "video_id": "8a4ac8c9-46f1-4ea3-bd0f-c41c10edd5e0",
+      "chunk_id": "78b906c6-fcc4-414a-aa25-b57445a340c5",
+      "title": "DJI Avata 2｜First Use",
+      "url": "https://www.youtube.com/watch?v=3QW3V_D0Etg",
+      "start_seconds": 238.2,
+      "end_seconds": 292.566,
+      "source_text": "At this time\ntilt the motion controller up or down to make the aircraft ascend or descend at an angle\nTilt the top of the motion controller in either direction to make the aircraft rotate\nThe circle in the goggles will move according to your gestures\nand the aircraft will fly in the direction of the circle in the goggles\nApply more pressure when pressing the accelerator to accelerate\nPush the accelerator forward to fly the aircraft backward\nBraking and Hovering\nRelease the accelerator to stop and hover\nYou can also press the lock button to brake and hover in place\nafter which the orientation of the aircraft and the gimbal tilt cannot be controlled by tilting the motion controller\nThis allows the AR Cursor to be used to change settings in the goggles",
+      "subject": {
+        "key": "e2",
+        "surface_text": "motion controller",
+        "entity_type": "product",
+        "confidence": 0.9,
+        "canonical_name": "motion controller",
+        "identity_scope": "global",
+        "identity_quote": "tilt the motion controller up or down",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e6",
+        "surface_text": "gimbal",
+        "entity_type": "component",
+        "confidence": 0.85,
+        "canonical_name": "gimbal",
+        "identity_scope": "video",
+        "identity_quote": "the gimbal tilt cannot be controlled",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e2",
+        "object": "e6",
+        "predicate": "controls",
+        "quote": "the orientation of the aircraft and the gimbal tilt cannot be controlled by tilting the motion controller",
+        "assertion": "negated",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "6",
+        "basis": "control",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "control",
+        "index": "4"
+      },
+      "sample_id": "Q004",
+      "judgment": "issue",
+      "note": "不能控制云台的前提是按锁定键刹停后；引文与qualifiers丢失该条件，变成无条件否定。"
+    },
+    {
+      "relation_key": "dd443ff80d9fdcaf1171c21a520559c425e145b4d6a1b1b9730549402900f853",
+      "case_id": "R006",
+      "relation_index": 1,
+      "video_id": "d9dd6e8e-1e94-45d8-83c7-e4a2c2acfbd5",
+      "chunk_id": "8b738a4a-f70e-46ad-bd9b-6c2c3e8f713d",
+      "title": "DJI Pocket 4P vs Pocket 3: The Truth Before You Buy",
+      "url": "https://www.youtube.com/watch?v=tC3o_TiB4qg",
+      "start_seconds": 200.72,
+      "end_seconds": 238.72,
+      "source_text": "All right, guys. Guys, I've gone ahead and put the prices on screen as of recording so you guys\ncan see that the Osmo Pocket 4P is significantly more expensive, especially in Canada where I am.\n$300 more is a bit crazy for the vlog combo comparing to the creator combo. I\n100% recommend getting the creator combo for the Pocket 3. And even if you do have a mic already,\nhaving the battery handle, having the wide-angle lens that come with the creator combo of the\nPocket 3, I think makes it well worth it. For the Pocket 4P, you can get away with either\nversion. I did pick up the standard version myself and then bought a couple things. Okay,\nseparate 40 bucks on Amazon. I definitely have a way better experience with this bag. There's",
+      "subject": {
+        "key": "e3",
+        "surface_text": "creator combo",
+        "entity_type": "product",
+        "confidence": 0.9,
+        "canonical_name": "Pocket 3 Creator Combo",
+        "identity_scope": "global",
+        "identity_quote": "creator combo for the Pocket 3",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e7",
+        "surface_text": "wide-angle lens",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "Pocket 3 Creator Combo wide-angle lens",
+        "identity_scope": "video",
+        "identity_quote": "wide-angle lens",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e3",
+        "object": "e7",
+        "predicate": "contains",
+        "quote": "having the battery handle, having the wide-angle lens that come with the creator combo of the\nPocket 3",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "2",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "1"
+      },
+      "sample_id": "Q005",
+      "judgment": "issue",
+      "note": "原文说套装随附广角镜，应该是packaged_with；contains将包装随附混为硬件/功能组成。"
+    },
+    {
+      "relation_key": "fb882d2f1ea716f2754d87c0a5c3c12273fb3536c5051536f94634566fdb95b4",
+      "case_id": "R008",
+      "relation_index": 1,
+      "video_id": "34682b39-3ea9-4a63-a348-b2bdda92f6b9",
+      "chunk_id": "0687255d-ee1c-4fc6-9ee1-59480ad6db99",
+      "title": "[🎖️MAVLINK-프로그래밍]7.OFFBOARD vs. GUIDED 모드 차이 이해하기 ✅",
+      "url": "https://www.youtube.com/watch?v=BXQGb-istqE",
+      "start_seconds": 502.37,
+      "end_seconds": 561.37,
+      "source_text": "그래서 계속 1초에 20번 가도록 돌려야 돼요. 그렇게 해서 돌리면 되고.\n아드파일럿은 이거 한 번만 띡띡 보내면 끝.\n그렇습니다. 골차이가 프로그램에서는 가장 큰 차이다. 그렇게 나타내수겠습니다.\n그 다음에 bx4 오프보드 모드에서만 유효한 마브 코맨드.\n그래서 그러면 마브 코맨드를 다 오프보드에서 쓸 수 있냐. 그건 아니에요.\n마브 코맨드 중에서 오프보드에서 쓸 수 있는 코맨드가 따로 있습니다.\n오프보드에서 쓸 수 있는 코맨드는 세포인트 들어간 코맨드라고 보시면 돼요. 세포인트.\n그러니까 세포인트라는 게 설정가 앞이거든요.\n그러니까 위치 속도 제어. 위치 속도 자세. 위치 속도 자세.\n그 세 가지의 세포인트를 계속 조여 놓는 겁니다.",
+      "subject": {
+        "key": "e4",
+        "surface_text": "세포인트",
+        "entity_type": "technology",
+        "confidence": 0.8,
+        "canonical_name": "세포인트",
+        "identity_scope": "global",
+        "identity_quote": "세포인트라는 게 설정가 앞이거든요",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e5",
+        "surface_text": "위치 속도 제어",
+        "entity_type": "technology",
+        "confidence": 0.8,
+        "canonical_name": "위치 속도 제어",
+        "identity_scope": "global",
+        "identity_quote": "위치 속도 제어",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e4",
+        "object": "e5",
+        "predicate": "contains",
+        "quote": "위치 속도 제어. 위치 속도 자세",
+        "assertion": "asserted",
+        "confidence": 0.75,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "2",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "1"
+      },
+      "sample_id": "Q006",
+      "judgment": "review",
+      "note": "韩语转写세포인트及重复的位置/速度/姿态短语边界不清，无法可靠判定作为独立技术实体的组成关系。"
+    },
+    {
+      "relation_key": "fbc93ae2154aaa9bde8c745e3ccb4439d577a88a3a0cea219af580efbd042fe7",
+      "case_id": "R008",
+      "relation_index": 2,
+      "video_id": "34682b39-3ea9-4a63-a348-b2bdda92f6b9",
+      "chunk_id": "0687255d-ee1c-4fc6-9ee1-59480ad6db99",
+      "title": "[🎖️MAVLINK-프로그래밍]7.OFFBOARD vs. GUIDED 모드 차이 이해하기 ✅",
+      "url": "https://www.youtube.com/watch?v=BXQGb-istqE",
+      "start_seconds": 502.37,
+      "end_seconds": 561.37,
+      "source_text": "그래서 계속 1초에 20번 가도록 돌려야 돼요. 그렇게 해서 돌리면 되고.\n아드파일럿은 이거 한 번만 띡띡 보내면 끝.\n그렇습니다. 골차이가 프로그램에서는 가장 큰 차이다. 그렇게 나타내수겠습니다.\n그 다음에 bx4 오프보드 모드에서만 유효한 마브 코맨드.\n그래서 그러면 마브 코맨드를 다 오프보드에서 쓸 수 있냐. 그건 아니에요.\n마브 코맨드 중에서 오프보드에서 쓸 수 있는 코맨드가 따로 있습니다.\n오프보드에서 쓸 수 있는 코맨드는 세포인트 들어간 코맨드라고 보시면 돼요. 세포인트.\n그러니까 세포인트라는 게 설정가 앞이거든요.\n그러니까 위치 속도 제어. 위치 속도 자세. 위치 속도 자세.\n그 세 가지의 세포인트를 계속 조여 놓는 겁니다.",
+      "subject": {
+        "key": "e4",
+        "surface_text": "세포인트",
+        "entity_type": "technology",
+        "confidence": 0.8,
+        "canonical_name": "세포인트",
+        "identity_scope": "global",
+        "identity_quote": "세포인트라는 게 설정가 앞이거든요",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e6",
+        "surface_text": "위치 속도 자세",
+        "entity_type": "technology",
+        "confidence": 0.8,
+        "canonical_name": "위치 속도 자세",
+        "identity_scope": "global",
+        "identity_quote": "위치 속도 자세",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e4",
+        "object": "e6",
+        "predicate": "contains",
+        "quote": "위치 속도 자세. 위치 속도 자세",
+        "assertion": "asserted",
+        "confidence": 0.75,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "3",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "2"
+      },
+      "sample_id": "Q007",
+      "judgment": "review",
+      "note": "同段韩语转写含重复纠正，位置/速度/姿态组合的概念边界与包含语义存在歧义。"
+    },
+    {
+      "relation_key": "375aed5c4d8c56bd27fcd56fddd5cf36e7282d9e6c709d14b87be8661fd0fb4c",
+      "case_id": "R009",
+      "relation_index": 2,
+      "video_id": "21e05236-b933-4a85-be19-8177826abb50",
+      "chunk_id": "23bc3d94-f260-4bd8-be5f-694542fb7078",
+      "title": "Betaflight PID Tuning Masterclass w/ PIDToolbox Inventor Brian White",
+      "url": "https://www.youtube.com/watch?v=FsJNHI2HWlg",
+      "start_seconds": 2865.12,
+      "end_seconds": 2909.44,
+      "source_text": "over to full deflection? And the answer, is tuning at low throttle going to carry over to tuning at\nhigh throttle? And the answer is yes. Yeah. Okay. Now, why is that? Uh, you know what? Here's the\nthing. You've tuned thousands of drones using this technique. I'm actually just willing to take you\nat your word and we'll see at the end of the video whether this pans out. Fair enough. Okay. Now,\ntell me why. Go ahead. Tell me why. But I'm probably going to edit it out of the video. Yeah,\nno problem. Well, before we go and do the wobble test, uh I know that Betaflight has a lot of ways\nthat it like screws with the PIDs. It's got things like iTerm relax and feed forward and DMAX and\nand P attenuation and do we want to simplify that at all so we get like clean results? Yeah. Well,",
+      "subject": {
+        "key": "e1",
+        "surface_text": "Betaflight",
+        "entity_type": "software",
+        "confidence": 0.95,
+        "canonical_name": "Betaflight",
+        "identity_scope": "global",
+        "identity_quote": "Betaflight has a lot of ways\nthat it like screws with the PIDs",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e7",
+        "surface_text": "feed forward",
+        "entity_type": "technology",
+        "confidence": 0.85,
+        "canonical_name": "feed forward",
+        "identity_scope": "global",
+        "identity_quote": "It's got things like iTerm relax and feed forward and DMAX and\nand P attenuation",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e7",
+        "predicate": "contains",
+        "quote": "It's got things like iTerm relax and feed forward and DMAX and\nand P attenuation",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "2",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "2"
+      },
+      "sample_id": "Q008",
+      "judgment": "supported",
+      "note": "Betaflight后列举其功能，包括feed forward。"
+    },
+    {
+      "relation_key": "f2e101d2d73dcf117df85e420df9e55290eca0aa77228f0bd7fb4d0005a01f17",
+      "case_id": "R010",
+      "relation_index": 2,
+      "video_id": "856c0303-3298-45a0-809f-6500d908dcc5",
+      "chunk_id": "2e68644a-b51e-4c97-a4d3-faa2be226b7a",
+      "title": "战场的风吹到上海，大学生手搓光纤FPV",
+      "url": "https://www.youtube.com/watch?v=yi0x3AZsn2k",
+      "start_seconds": 0.266,
+      "end_seconds": 58.8,
+      "source_text": "俄乌战场的风终于吹到了上海\n太刺激了!\n这些大学生书包里装的都是些啥啊！\n不是书本、零食、PAD和电脑\n而是可以在千米之外\n取敌将首级的光纤FPV无人机\n这里是上海东方绿舟国防教育区\n正在举办的是\n2026第二届全国青少年智能无人系统应用大赛\n在赛事项目之一的光纤遥控飞行挑战赛的现场\n能看到来自全国各大高校的学子们\n在书包上挂着他们自己DIY的光纤FPV\n这个品类的无人机诞生时间并不长\n但已在俄乌战场上被大规模使用\n几乎成为了炮弹、机枪、反坦克导弹的替代者\n它们采用人在回路中的实时控制\n依靠光纤传输信号\n图传清晰且免疫电子干扰\n实战打击距离约5-15千米\n堪称21世纪的血滴子！\n也是当前军工科技的热门研发方向\n这些由中国大学生手搓的FPV",
+      "subject": {
+        "key": "e1",
+        "surface_text": "光纤FPV无人机",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "光纤FPV无人机",
+        "identity_scope": "global",
+        "identity_quote": "光纤FPV无人机",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "打击距离": "约5-15千米"
+        }
+      },
+      "object": {
+        "key": "e9",
+        "surface_text": "图传清晰且免疫电子干扰",
+        "entity_type": "technology",
+        "confidence": 0.85,
+        "canonical_name": "图传清晰且免疫电子干扰",
+        "identity_scope": "global",
+        "identity_quote": "图传清晰且免疫电子干扰",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e9",
+        "predicate": "supports",
+        "quote": "图传清晰且免疫电子干扰",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "2",
+        "basis": "capability",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "capability",
+        "index": "2"
+      },
+      "sample_id": "Q009",
+      "judgment": "supported",
+      "note": "无人机特点连续说明“图传清晰且免疫电子干扰”，可作为其支持的功能。"
+    },
+    {
+      "relation_key": "363ed516a756c6a00c7818b19caf8eebd16f448d02141f3ea9d492aa55730fb7",
+      "case_id": "R010",
+      "relation_index": 3,
+      "video_id": "856c0303-3298-45a0-809f-6500d908dcc5",
+      "chunk_id": "2e68644a-b51e-4c97-a4d3-faa2be226b7a",
+      "title": "战场的风吹到上海，大学生手搓光纤FPV",
+      "url": "https://www.youtube.com/watch?v=yi0x3AZsn2k",
+      "start_seconds": 0.266,
+      "end_seconds": 58.8,
+      "source_text": "俄乌战场的风终于吹到了上海\n太刺激了!\n这些大学生书包里装的都是些啥啊！\n不是书本、零食、PAD和电脑\n而是可以在千米之外\n取敌将首级的光纤FPV无人机\n这里是上海东方绿舟国防教育区\n正在举办的是\n2026第二届全国青少年智能无人系统应用大赛\n在赛事项目之一的光纤遥控飞行挑战赛的现场\n能看到来自全国各大高校的学子们\n在书包上挂着他们自己DIY的光纤FPV\n这个品类的无人机诞生时间并不长\n但已在俄乌战场上被大规模使用\n几乎成为了炮弹、机枪、反坦克导弹的替代者\n它们采用人在回路中的实时控制\n依靠光纤传输信号\n图传清晰且免疫电子干扰\n实战打击距离约5-15千米\n堪称21世纪的血滴子！\n也是当前军工科技的热门研发方向\n这些由中国大学生手搓的FPV",
+      "subject": {
+        "key": "e1",
+        "surface_text": "光纤FPV无人机",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "光纤FPV无人机",
+        "identity_scope": "global",
+        "identity_quote": "光纤FPV无人机",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "打击距离": "约5-15千米"
+        }
+      },
+      "object": {
+        "key": "e6",
+        "surface_text": "俄乌战场",
+        "entity_type": "region",
+        "confidence": 0.85,
+        "canonical_name": "俄乌战场",
+        "identity_scope": "global",
+        "identity_quote": "俄乌战场",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e6",
+        "predicate": "used_in",
+        "quote": "已在俄乌战场上被大规模使用",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "3",
+        "basis": "deployment",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "deployment",
+        "index": "3"
+      },
+      "sample_id": "Q010",
+      "judgment": "supported",
+      "note": "该品类无人机已在俄乌战场大规模使用，来源明确支持使用地区。"
+    },
+    {
+      "relation_key": "d3bfa773d4653975f6b89d194ccc87a7e3385a79c923a04407a07ad43c9c1532",
+      "case_id": "R010",
+      "relation_index": 4,
+      "video_id": "856c0303-3298-45a0-809f-6500d908dcc5",
+      "chunk_id": "2e68644a-b51e-4c97-a4d3-faa2be226b7a",
+      "title": "战场的风吹到上海，大学生手搓光纤FPV",
+      "url": "https://www.youtube.com/watch?v=yi0x3AZsn2k",
+      "start_seconds": 0.266,
+      "end_seconds": 58.8,
+      "source_text": "俄乌战场的风终于吹到了上海\n太刺激了!\n这些大学生书包里装的都是些啥啊！\n不是书本、零食、PAD和电脑\n而是可以在千米之外\n取敌将首级的光纤FPV无人机\n这里是上海东方绿舟国防教育区\n正在举办的是\n2026第二届全国青少年智能无人系统应用大赛\n在赛事项目之一的光纤遥控飞行挑战赛的现场\n能看到来自全国各大高校的学子们\n在书包上挂着他们自己DIY的光纤FPV\n这个品类的无人机诞生时间并不长\n但已在俄乌战场上被大规模使用\n几乎成为了炮弹、机枪、反坦克导弹的替代者\n它们采用人在回路中的实时控制\n依靠光纤传输信号\n图传清晰且免疫电子干扰\n实战打击距离约5-15千米\n堪称21世纪的血滴子！\n也是当前军工科技的热门研发方向\n这些由中国大学生手搓的FPV",
+      "subject": {
+        "key": "e1",
+        "surface_text": "光纤FPV无人机",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "光纤FPV无人机",
+        "identity_scope": "global",
+        "identity_quote": "光纤FPV无人机",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "打击距离": "约5-15千米"
+        }
+      },
+      "object": {
+        "key": "e12",
+        "surface_text": "光纤",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "光纤",
+        "identity_scope": "global",
+        "identity_quote": "依靠光纤传输信号",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e12",
+        "predicate": "contains",
+        "quote": "依靠光纤传输信号",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "9",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "4"
+      },
+      "sample_id": "Q011",
+      "judgment": "review",
+      "note": "原文明确依靠光纤传输，能确定使用光纤；是否要表达设备内部包含该光纤而非外部链路存在歧义。"
+    },
+    {
+      "relation_key": "6f4676aee801c590301a8cb155d0fd077eab48da51747fd84d9596bdec3034cb",
+      "case_id": "R012",
+      "relation_index": 1,
+      "video_id": "e24da21b-f83e-42bc-80bd-328a898be1aa",
+      "chunk_id": "0211ac3d-9ea5-4eaa-a88e-1cd0c381060e",
+      "title": "Coherent and non-coherent GPS spoofing in a live demo",
+      "url": "https://www.youtube.com/watch?v=Ws76xfJc1Pg",
+      "start_seconds": 233.92,
+      "end_seconds": 277.84,
+      "source_text": "The receiver will be slow to respond. It needs a few minutes to adjust…\nOk. I think it's clear. Why should you consider various attack scenarios?\nFirst, it is false that a coherent attack is complicated and expensive.\nSecond, a coherent attack does not require a lot of power. It can be conducted with any\nSDR from a distance of tens of kilometers. And finally, a time server under a coherent\nattack will not show errors or even warnings. You will just have an incorrect time.\nStay safe and subscribe to our channel to find our latest research.",
+      "subject": {
+        "key": "e1",
+        "surface_text": "coherent attack",
+        "entity_type": "technology",
+        "confidence": 0.9,
+        "canonical_name": "coherent attack",
+        "identity_scope": "global",
+        "identity_quote": "a coherent attack does not require a lot of power",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e3",
+        "surface_text": "time server",
+        "entity_type": "component",
+        "confidence": 0.85,
+        "canonical_name": "time server",
+        "identity_scope": "global",
+        "identity_quote": "a time server under a coherent\nattack will not show errors",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e3",
+        "predicate": "applied_to",
+        "quote": "a time server under a coherent\nattack will not show errors or even warnings",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "1",
+        "basis": "application",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "application",
+        "index": "1"
+      },
+      "sample_id": "Q012",
+      "judgment": "supported",
+      "note": "time server under a coherent attack明确攻击应用对象。"
+    },
+    {
+      "relation_key": "f20c7352ddf895544523d58907b28c02a2506bde1ad9211a41c309e64354586d",
+      "case_id": "R014",
+      "relation_index": 2,
+      "video_id": "db05c059-cd1a-4652-8cd0-70d9eb4646fd",
+      "chunk_id": "846a7fb3-9905-4b90-a633-1b6f66b5a898",
+      "title": "五角大楼押注“硅谷蜂群”？无人机重新定义战争！Anduril + Shield AI：如何用代码击穿国家防御？",
+      "url": "https://www.youtube.com/watch?v=bgu6X1R8ekM",
+      "start_seconds": 547.366,
+      "end_seconds": 605.333,
+      "source_text": "甚至可以在没有GPS和通信的情况下继续行动\n它可以通过机载传感器理解周围环境\n自主规划飞行路线\n并在复杂地形中完成任务\n换句话说：没信号不再是什么大事了\n无人机不再只是“被遥控的机器”\n而是变成了一种能够自主决策的系统\n这件事的意义，其实非常大\n因为一旦无人机能够自主飞行和作战\n很多传统防御体系就会面临挑战\n电子干扰不再是万能武器\n通信屏蔽也不一定能够阻止攻击\n无人系统可以在复杂环境中继续执行任务\n更惊人的是，这一天并不遥远\n伴随着未来X-BAT的登场\n长程自主作战时代将彻底降临\nX-BAT本身的硬件参数堪称同级翘楚\n能够让它满足独自作战的所需条件：\n首先是机身设计\n采用“曲柄风筝”无尾飞翼布局\n天生自带优秀隐身属性\n而可折叠机翼的设计",
+      "subject": {
+        "key": "e6",
+        "surface_text": "X-BAT",
+        "entity_type": "product",
+        "confidence": 0.9,
+        "canonical_name": "X-BAT",
+        "identity_scope": "global",
+        "identity_quote": "伴随着未来X-BAT的登场",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "机翼": "可折叠"
+        }
+      },
+      "object": {
+        "key": "e8",
+        "surface_text": "可折叠机翼",
+        "entity_type": "component",
+        "confidence": 0.8,
+        "canonical_name": "可折叠机翼",
+        "identity_scope": "video",
+        "identity_quote": "而可折叠机翼的设计",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e6",
+        "object": "e8",
+        "predicate": "contains",
+        "quote": "而可折叠机翼的设计",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "3",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "2"
+      },
+      "sample_id": "Q013",
+      "judgment": "issue",
+      "note": "前文明确未来X-BAT及将到来，结构叙述属于未来设计；当前边未保留计划/设计适用范围。"
+    },
+    {
+      "relation_key": "facb23279866bcbab933b8474a1de6e7181b147b86c1ee6a6b0340c2fbd30c8b",
+      "case_id": "R014",
+      "relation_index": 3,
+      "video_id": "db05c059-cd1a-4652-8cd0-70d9eb4646fd",
+      "chunk_id": "846a7fb3-9905-4b90-a633-1b6f66b5a898",
+      "title": "五角大楼押注“硅谷蜂群”？无人机重新定义战争！Anduril + Shield AI：如何用代码击穿国家防御？",
+      "url": "https://www.youtube.com/watch?v=bgu6X1R8ekM",
+      "start_seconds": 547.366,
+      "end_seconds": 605.333,
+      "source_text": "甚至可以在没有GPS和通信的情况下继续行动\n它可以通过机载传感器理解周围环境\n自主规划飞行路线\n并在复杂地形中完成任务\n换句话说：没信号不再是什么大事了\n无人机不再只是“被遥控的机器”\n而是变成了一种能够自主决策的系统\n这件事的意义，其实非常大\n因为一旦无人机能够自主飞行和作战\n很多传统防御体系就会面临挑战\n电子干扰不再是万能武器\n通信屏蔽也不一定能够阻止攻击\n无人系统可以在复杂环境中继续执行任务\n更惊人的是，这一天并不遥远\n伴随着未来X-BAT的登场\n长程自主作战时代将彻底降临\nX-BAT本身的硬件参数堪称同级翘楚\n能够让它满足独自作战的所需条件：\n首先是机身设计\n采用“曲柄风筝”无尾飞翼布局\n天生自带优秀隐身属性\n而可折叠机翼的设计",
+      "subject": {
+        "key": "e6",
+        "surface_text": "X-BAT",
+        "entity_type": "product",
+        "confidence": 0.9,
+        "canonical_name": "X-BAT",
+        "identity_scope": "global",
+        "identity_quote": "伴随着未来X-BAT的登场",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "机翼": "可折叠"
+        }
+      },
+      "object": {
+        "key": "e9",
+        "surface_text": "隐身属性",
+        "entity_type": "technology",
+        "confidence": 0.8,
+        "canonical_name": "隐身属性",
+        "identity_scope": "global",
+        "identity_quote": "天生自带优秀隐身属性",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e6",
+        "object": "e9",
+        "predicate": "supports",
+        "quote": "天生自带优秀隐身属性",
+        "assertion": "asserted",
+        "confidence": 0.8,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "4",
+        "basis": "capability",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "capability",
+        "index": "3"
+      },
+      "sample_id": "Q014",
+      "judgment": "issue",
+      "note": "未来X-BAT的设计能力被直接记为actual隐身功能，未保留设计/计划范围。"
+    },
+    {
+      "relation_key": "1a6a9a134dee61d2878e7d60d32ea8f7117268b7b2f6253f8fb80fa1ea1baa37",
+      "case_id": "R014",
+      "relation_index": 5,
+      "video_id": "db05c059-cd1a-4652-8cd0-70d9eb4646fd",
+      "chunk_id": "846a7fb3-9905-4b90-a633-1b6f66b5a898",
+      "title": "五角大楼押注“硅谷蜂群”？无人机重新定义战争！Anduril + Shield AI：如何用代码击穿国家防御？",
+      "url": "https://www.youtube.com/watch?v=bgu6X1R8ekM",
+      "start_seconds": 547.366,
+      "end_seconds": 605.333,
+      "source_text": "甚至可以在没有GPS和通信的情况下继续行动\n它可以通过机载传感器理解周围环境\n自主规划飞行路线\n并在复杂地形中完成任务\n换句话说：没信号不再是什么大事了\n无人机不再只是“被遥控的机器”\n而是变成了一种能够自主决策的系统\n这件事的意义，其实非常大\n因为一旦无人机能够自主飞行和作战\n很多传统防御体系就会面临挑战\n电子干扰不再是万能武器\n通信屏蔽也不一定能够阻止攻击\n无人系统可以在复杂环境中继续执行任务\n更惊人的是，这一天并不遥远\n伴随着未来X-BAT的登场\n长程自主作战时代将彻底降临\nX-BAT本身的硬件参数堪称同级翘楚\n能够让它满足独自作战的所需条件：\n首先是机身设计\n采用“曲柄风筝”无尾飞翼布局\n天生自带优秀隐身属性\n而可折叠机翼的设计",
+      "subject": {
+        "key": "e1",
+        "surface_text": "无人机",
+        "entity_type": "product",
+        "confidence": 0.9,
+        "canonical_name": "无人机",
+        "identity_scope": "video",
+        "identity_quote": "无人机",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e11",
+        "surface_text": "自主决策",
+        "entity_type": "technology",
+        "confidence": 0.9,
+        "canonical_name": "自主决策",
+        "identity_scope": "global",
+        "identity_quote": "而是变成了一种能够自主决策的系统",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e11",
+        "predicate": "supports",
+        "quote": "而是变成了一种能够自主决策的系统",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {
+          "modality": "capability"
+        }
+      },
+      "support": {
+        "source_index": "6",
+        "basis": "capability",
+        "modality": "capability",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "capability",
+        "index": "5"
+      },
+      "sample_id": "Q015",
+      "judgment": "supported",
+      "note": "原文明示无人机能够自主决策，capability范围已保留。"
+    },
+    {
+      "relation_key": "096b7767871432367396415801fdc8bb03f4bff2d228274d3ceb859178accf25",
+      "case_id": "R015",
+      "relation_index": 4,
+      "video_id": "33c363b7-a7ed-469b-9569-ea4ea6c804b2",
+      "chunk_id": "357bc096-8759-4446-b651-0c95be3679f5",
+      "title": "大疆 vs 影翎，全景無人機飛行眼鏡拆解測評-Teardown & Review: DJI vs. Antigravity 360-Drone FPV Goggles",
+      "url": "https://www.youtube.com/watch?v=tTtGRM8udpE",
+      "start_seconds": 315.633,
+      "end_seconds": 374.433,
+      "source_text": "亮度上限低了一截\n畫面顯得平\n那麼幾乎相同的套裝價格\n畫面差距這麼大\n原因是什麼\n我們拆開來研究研究\n我們先來拆大疆 N3\n第一步\n取下面部軟墊\n可以看到面部蓋板與\n主結構之間是十字螺絲固定\n拆除螺絲之後\n取下面部蓋板\n內部光學模組就露出來了\n在拆光學模組之前\n需要先拆前面板\n前面板\n是卡扣結構\n用撬片沿邊緣撬開就好\n面板上的按鈕\n是通過 FPC 軟排與主板相連的\n連接器用熱熔膠加固了\n用超聲波刀切除熱熔膠\n取下連接器\n前面板就可以完整取下來\n前面板拆除之後\n可以看到左右兩側對稱\n分佈著兩個內置的定向天線\n此外還有兩條黑色\n饋線連接到外置天線\n四路天線構成分級接收陣列\n用於圖傳信號接收\n還有一根紅色饋線是 GFSK 天線\n連接到底部的貼片天線\n這部分",
+      "subject": {
+        "key": "e1",
+        "surface_text": "大疆 N3",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "DJI N3",
+        "identity_scope": "global",
+        "identity_quote": "我們先來拆大疆 N3",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "brand": "大疆",
+          "model": "N3"
+        }
+      },
+      "object": {
+        "key": "e6",
+        "surface_text": "光學模組",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "光學模組",
+        "identity_scope": "video",
+        "identity_quote": "內部光學模組就露出來了",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e6",
+        "predicate": "contains",
+        "quote": "取下面部蓋板\n內部光學模組就露出來了",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "4",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "4"
+      },
+      "sample_id": "Q016",
+      "judgment": "supported",
+      "note": "先拆大疆N3，取下面部盖板后露出内部光学模组，主体归属连续明确。"
+    },
+    {
+      "relation_key": "17f615f9835c991bd31ac33fb96840af2d12277b8ba277d84affaa3d1076a7fa",
+      "case_id": "R015",
+      "relation_index": 11,
+      "video_id": "33c363b7-a7ed-469b-9569-ea4ea6c804b2",
+      "chunk_id": "357bc096-8759-4446-b651-0c95be3679f5",
+      "title": "大疆 vs 影翎，全景無人機飛行眼鏡拆解測評-Teardown & Review: DJI vs. Antigravity 360-Drone FPV Goggles",
+      "url": "https://www.youtube.com/watch?v=tTtGRM8udpE",
+      "start_seconds": 315.633,
+      "end_seconds": 374.433,
+      "source_text": "亮度上限低了一截\n畫面顯得平\n那麼幾乎相同的套裝價格\n畫面差距這麼大\n原因是什麼\n我們拆開來研究研究\n我們先來拆大疆 N3\n第一步\n取下面部軟墊\n可以看到面部蓋板與\n主結構之間是十字螺絲固定\n拆除螺絲之後\n取下面部蓋板\n內部光學模組就露出來了\n在拆光學模組之前\n需要先拆前面板\n前面板\n是卡扣結構\n用撬片沿邊緣撬開就好\n面板上的按鈕\n是通過 FPC 軟排與主板相連的\n連接器用熱熔膠加固了\n用超聲波刀切除熱熔膠\n取下連接器\n前面板就可以完整取下來\n前面板拆除之後\n可以看到左右兩側對稱\n分佈著兩個內置的定向天線\n此外還有兩條黑色\n饋線連接到外置天線\n四路天線構成分級接收陣列\n用於圖傳信號接收\n還有一根紅色饋線是 GFSK 天線\n連接到底部的貼片天線\n這部分",
+      "subject": {
+        "key": "e15",
+        "surface_text": "黑色\n饋線",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "黑色饋線",
+        "identity_scope": "video",
+        "identity_quote": "兩條黑色\n饋線連接到外置天線",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "颜色": "黑色"
+        }
+      },
+      "object": {
+        "key": "e16",
+        "surface_text": "外置天線",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "外置天線",
+        "identity_scope": "video",
+        "identity_quote": "連接到外置天線",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e15",
+        "object": "e16",
+        "predicate": "connected_to",
+        "quote": "此外還有兩條黑色\n饋線連接到外置天線",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "13",
+        "basis": "connection",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "connection",
+        "index": "11"
+      },
+      "sample_id": "Q017",
+      "judgment": "supported",
+      "note": "两条黑色馈线连接外置天线，端点和连接关系均明确。"
+    },
+    {
+      "relation_key": "b897f6637669ba0b2a71a8f2d07132b53b3f819412e8e42c7dc5b35d5eef26a6",
+      "case_id": "R015",
+      "relation_index": 16,
+      "video_id": "33c363b7-a7ed-469b-9569-ea4ea6c804b2",
+      "chunk_id": "357bc096-8759-4446-b651-0c95be3679f5",
+      "title": "大疆 vs 影翎，全景無人機飛行眼鏡拆解測評-Teardown & Review: DJI vs. Antigravity 360-Drone FPV Goggles",
+      "url": "https://www.youtube.com/watch?v=tTtGRM8udpE",
+      "start_seconds": 315.633,
+      "end_seconds": 374.433,
+      "source_text": "亮度上限低了一截\n畫面顯得平\n那麼幾乎相同的套裝價格\n畫面差距這麼大\n原因是什麼\n我們拆開來研究研究\n我們先來拆大疆 N3\n第一步\n取下面部軟墊\n可以看到面部蓋板與\n主結構之間是十字螺絲固定\n拆除螺絲之後\n取下面部蓋板\n內部光學模組就露出來了\n在拆光學模組之前\n需要先拆前面板\n前面板\n是卡扣結構\n用撬片沿邊緣撬開就好\n面板上的按鈕\n是通過 FPC 軟排與主板相連的\n連接器用熱熔膠加固了\n用超聲波刀切除熱熔膠\n取下連接器\n前面板就可以完整取下來\n前面板拆除之後\n可以看到左右兩側對稱\n分佈著兩個內置的定向天線\n此外還有兩條黑色\n饋線連接到外置天線\n四路天線構成分級接收陣列\n用於圖傳信號接收\n還有一根紅色饋線是 GFSK 天線\n連接到底部的貼片天線\n這部分",
+      "subject": {
+        "key": "e1",
+        "surface_text": "大疆 N3",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "DJI N3",
+        "identity_scope": "global",
+        "identity_quote": "我們先來拆大疆 N3",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "brand": "大疆",
+          "model": "N3"
+        }
+      },
+      "object": {
+        "key": "e23",
+        "surface_text": "大疆",
+        "entity_type": "organization",
+        "confidence": 0.9,
+        "canonical_name": "DJI",
+        "identity_scope": "global",
+        "identity_quote": "我們先來拆大疆 N3",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e23",
+        "predicate": "offered_by",
+        "quote": "我們先來拆大疆 N3",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "21",
+        "basis": "ownership",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "ownership",
+        "index": "16"
+      },
+      "sample_id": "Q018",
+      "judgment": "supported",
+      "note": "“大疆 N3”在同一短语中明确品牌归属，不作制造者推断。"
+    },
+    {
+      "relation_key": "2b8b20e530c4895f2a25358abe685826fc431dc7204c22448a77f0950f51944a",
+      "case_id": "R016",
+      "relation_index": 1,
+      "video_id": "0f594c1b-3c22-4785-bbb2-22c24ed1a254",
+      "chunk_id": "52c1ae1d-45bf-4bca-9519-de184ffd1847",
+      "title": "(Hekzakopter Yapımı 11,5) Mavlink RGB Led Control V2 (Apm & Pixhawk) ve tüm ayarlar",
+      "url": "https://www.youtube.com/watch?v=E3pXrEQyUHE",
+      "start_seconds": 1100.64,
+      "end_seconds": 1158.48,
+      "source_text": "As we remember from the beginning of the video, the first two cables from data input, are F1 and F2.\nIt goes to front arms.\nWe’ll connect them the leds which are located on front arms.( red motors).\nHere, the important thing is that front and back arms are mobile so the cables should be properly assembled.\nThe front leds are done.\nNow we have only back leds.\nnow, all connection are done. Let’s give the electricity to system and look how it works.\nFirst, let’s remember the leds.\nwe have two led on front, which are F1 and F2.",
+      "subject": {
+        "key": "e2",
+        "surface_text": "F2",
+        "entity_type": "component",
+        "confidence": 0.8,
+        "canonical_name": "F2 LED",
+        "identity_scope": "video",
+        "identity_quote": "we have two led on front, which are F1 and F2.",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "position": "front"
+        }
+      },
+      "object": {
+        "key": "e3",
+        "surface_text": "front arms",
+        "entity_type": "component",
+        "confidence": 0.85,
+        "canonical_name": "front arms",
+        "identity_scope": "video",
+        "identity_quote": "front and back arms are mobile",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "position": "front",
+          "feature": "mobile"
+        }
+      },
+      "relation": {
+        "subject": "e2",
+        "object": "e3",
+        "predicate": "installed_on",
+        "quote": "It goes to front arms.",
+        "assertion": "asserted",
+        "confidence": 0.8,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "1",
+        "basis": "installation",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "installation",
+        "index": "1"
+      },
+      "sample_id": "Q019",
+      "judgment": "supported",
+      "note": "F1/F2为前侧LED，原文明示LED位于front arms，安装位置成立。"
+    },
+    {
+      "relation_key": "c57cb4fca47ade712517afe5ecab803a0edbaad107c95eff526427dc75ef3c5b",
+      "case_id": "R018",
+      "relation_index": 11,
+      "video_id": "a4a99194-fffe-4771-bcd0-cd98fbf43609",
+      "chunk_id": "368e0eda-ef97-43cd-9e47-38677eb7e768",
+      "title": "DJI Matrice 400 行業無人機開箱｜防水又耐寒、電線級避障、超長一小時續航",
+      "url": "https://www.youtube.com/watch?v=-T1nD2GxvfI",
+      "start_seconds": 184.451,
+      "end_seconds": 244.01,
+      "source_text": "还可以安装大楼清洗用的水枪\n或是高亮度的照明灯\n甚至你今天有自己开发的设备\n也能够透过下方的 SDK 埠\n开发配件\n进行整个系统整合\n怀爸个人觉得\nMatrice 400 这次\n升级的大重点\n也是避障系统\n大家平常飞行 Mavic 4 Pro 啊\n或是 Air 3S\n等等消费型机种的时候\n都是使用视觉镜头做全向避障的\n在大部分的情况下都没什么问题\n但是视觉镜头避障的硬伤\n就是如果遇到细小的树枝或是电线\n都是完全没办法侦测的\n所以这次 DJI\n在 Matrice 400 的上方\n搭载了一整套\n非常夸张的避障系统\n从旋转扫描的 LiDAR\n它是个可以做到360度的水平扫描\n每秒钟可以产生高达\n52万个测距点的系统\n还有6向升级的毫米波雷达\n加上原有的双目视觉系统\n首次直接宣称\n支持电线等级的避障\n在做电力巡检啊\n或是到处都是\n电线的复杂环境下飞行\n一样完全没有问题\n所以它对空间\n周围的感知能力\n跟一般的消费级无人机\n已经是完全不同的等级了",
+      "subject": {
+        "key": "e1",
+        "surface_text": "Matrice 400",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "DJI Matrice 400",
+        "identity_scope": "global",
+        "identity_quote": "Matrice 400 这次",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e20",
+        "surface_text": "系统整合",
+        "entity_type": "method",
+        "confidence": 0.8,
+        "canonical_name": "系统整合",
+        "identity_scope": "global",
+        "identity_quote": "进行整个系统整合",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e20",
+        "predicate": "supports",
+        "quote": "也能够透过下方的 SDK 埠\n开发配件\n进行整个系统整合",
+        "assertion": "asserted",
+        "confidence": 0.8,
+        "qualifiers": {
+          "modality": "capability"
+        }
+      },
+      "support": {
+        "source_index": "17",
+        "basis": "capability",
+        "modality": "capability",
+        "scope_quote": "也能够透过下方的 SDK 埠开发配件进行整个系统整合",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "capability",
+        "index": "11"
+      },
+      "sample_id": "Q020",
+      "judgment": "supported",
+      "note": "开发自有设备可通过SDK端口整合，来源明确支持Matrice 400的系统整合能力。"
+    },
+    {
+      "relation_key": "5def881bbd1120ede22dd551479c2f50391a2628d616c8c0b75446def27b821a",
+      "case_id": "R018",
+      "relation_index": 12,
+      "video_id": "a4a99194-fffe-4771-bcd0-cd98fbf43609",
+      "chunk_id": "368e0eda-ef97-43cd-9e47-38677eb7e768",
+      "title": "DJI Matrice 400 行業無人機開箱｜防水又耐寒、電線級避障、超長一小時續航",
+      "url": "https://www.youtube.com/watch?v=-T1nD2GxvfI",
+      "start_seconds": 184.451,
+      "end_seconds": 244.01,
+      "source_text": "还可以安装大楼清洗用的水枪\n或是高亮度的照明灯\n甚至你今天有自己开发的设备\n也能够透过下方的 SDK 埠\n开发配件\n进行整个系统整合\n怀爸个人觉得\nMatrice 400 这次\n升级的大重点\n也是避障系统\n大家平常飞行 Mavic 4 Pro 啊\n或是 Air 3S\n等等消费型机种的时候\n都是使用视觉镜头做全向避障的\n在大部分的情况下都没什么问题\n但是视觉镜头避障的硬伤\n就是如果遇到细小的树枝或是电线\n都是完全没办法侦测的\n所以这次 DJI\n在 Matrice 400 的上方\n搭载了一整套\n非常夸张的避障系统\n从旋转扫描的 LiDAR\n它是个可以做到360度的水平扫描\n每秒钟可以产生高达\n52万个测距点的系统\n还有6向升级的毫米波雷达\n加上原有的双目视觉系统\n首次直接宣称\n支持电线等级的避障\n在做电力巡检啊\n或是到处都是\n电线的复杂环境下飞行\n一样完全没有问题\n所以它对空间\n周围的感知能力\n跟一般的消费级无人机\n已经是完全不同的等级了",
+      "subject": {
+        "key": "e21",
+        "surface_text": "消费型机种",
+        "entity_type": "product_family",
+        "confidence": 0.85,
+        "canonical_name": "消费型机种",
+        "identity_scope": "global",
+        "identity_quote": "等等消费型机种",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e9",
+        "surface_text": "视觉镜头",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "视觉镜头",
+        "identity_scope": "global",
+        "identity_quote": "使用视觉镜头做全向避障",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e21",
+        "object": "e9",
+        "predicate": "uses",
+        "quote": "等等消费型机种的时候\n都是使用视觉镜头做全向避障的",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "18",
+        "basis": "use",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "use",
+        "index": "12"
+      },
+      "sample_id": "Q021",
+      "judgment": "issue",
+      "note": "消费型机种是泛指类别，不是具名产品系列，却标为product_family。"
+    },
+    {
+      "relation_key": "ff7c682f48e1f9be7385585be053ea414124382b597e5f523b5624185e6e7b5e",
+      "case_id": "R019",
+      "relation_index": 2,
+      "video_id": "b2dc1371-11e6-4cd4-ab69-f8b0596fdb5c",
+      "chunk_id": "e6c1ad2a-5da6-414f-b220-340602c15438",
+      "title": "DJI Neo The Ultimate Beginner Tutorial",
+      "url": "https://www.youtube.com/watch?v=fadmIklmAqE",
+      "start_seconds": 959.86,
+      "end_seconds": 1000.4,
+      "source_text": "sticks have the same functionality as the app's control pads. You can adjust the camera angle\nusing the wheel on the back left. You can start and stop a recording with the rear right button.\nTo start the drone, press both sticks diagonally downwards and inwards or diagonally downwards and\noutwards. The motors will now start and you can take off. To switch the motors off again, press\nthe left stick down a little longer after landing. You should also remember that you usually control\nthe drone manually with the remote control, so you always have to start a recording manually.\nApart from that, the remote control offers you a few important additional features\nthat are not available without it. With the remote control, the Neo can not only fly much",
+      "subject": {
+        "key": "e2",
+        "surface_text": "remote control",
+        "entity_type": "product",
+        "confidence": 0.9,
+        "canonical_name": "remote control",
+        "identity_scope": "video",
+        "identity_quote": "remote control",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e1",
+        "surface_text": "Neo",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "DJI Neo",
+        "identity_scope": "global",
+        "identity_quote": "DJI Neo",
+        "identity_source": "title",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e2",
+        "object": "e1",
+        "predicate": "compatible_with",
+        "quote": "With the remote control, the Neo can not only fly much",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {
+          "modality": "capability"
+        }
+      },
+      "support": {
+        "source_index": "3",
+        "basis": "compatibility",
+        "modality": "capability",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "compatibility",
+        "index": "2"
+      },
+      "sample_id": "Q022",
+      "judgment": "supported",
+      "note": "正文描述用此遥控器操控Neo，来源支持可配用关系。"
+    },
+    {
+      "relation_key": "ddbbdcc8305edafe95488c2e9dc3ed6b9544f17af352dd115e9a2622643bd852",
+      "case_id": "R020",
+      "relation_index": 3,
+      "video_id": "d96fb455-d499-425b-b2f8-85085cb4b4e4",
+      "chunk_id": "040b6ddb-7040-42bb-a6e7-9f28af71e812",
+      "title": "DJI NEO 4k Drone | The Complete Beginner’s Guide & How To Fly",
+      "url": "https://www.youtube.com/watch?v=_3SRHxiY4RQ",
+      "start_seconds": 276.8,
+      "end_seconds": 312.4,
+      "source_text": "Hidden beneath the cradle is a cable to connect to your phone,\nand the Neo comes with a USB-C to USB-C for Androids and a USB-C to Lightning for iPhones.\nOn the top there are a couple of controls which help with photo and video capture.\nThe dial to the left is to pivot the gimbal up\nor down and the gimbal has a fantastic range of movement.\nIt can move down 90° to film below you or up 60° to film the sky.\nOn the right is the record or photo button,\nwhich will start or stop filming or capture a photo, depending on which mode you're in.\nBack to the front of the controller, in the top right corner is a switch-camera-mode button,\nso you can switch between video and photos, and in the top right corner is the function button",
+      "subject": {
+        "key": "e12",
+        "surface_text": "controller",
+        "entity_type": "product",
+        "confidence": 0.85,
+        "canonical_name": "controller",
+        "identity_scope": "video",
+        "identity_quote": "Back to the front of the controller",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e7",
+        "surface_text": "dial to the left",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "dial to the left",
+        "identity_scope": "video",
+        "identity_quote": "The dial to the left is to pivot the gimbal up\nor down",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "location": "left"
+        }
+      },
+      "relation": {
+        "subject": "e12",
+        "object": "e7",
+        "predicate": "contains",
+        "quote": "The dial to the left is to pivot the gimbal up\nor down",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "4",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "3"
+      },
+      "sample_id": "Q023",
+      "judgment": "supported",
+      "note": "连续介绍controller顶部控件，左侧拨轮属于该遥控器。"
+    },
+    {
+      "relation_key": "252647d1869287f4ed494dc27ec41dcefb273bc9f4dc84e9f735b205a8e29e65",
+      "case_id": "R021",
+      "relation_index": 0,
+      "video_id": "324ef8fa-7c8b-4558-9b35-30c90409fa4e",
+      "chunk_id": "c7d5225a-0770-47b1-836c-494b81061134",
+      "title": "DJI - Introducing Spark",
+      "url": "https://www.youtube.com/watch?v=74Cm1p3fr0g",
+      "start_seconds": 12.17,
+      "end_seconds": 71.77,
+      "source_text": "Meet\nSpark.\nSmall,\ncolorful,\nsmart.\nA powerful flying camera that you can take anywhere.\nIt's so clever it activates by recognizing you.\nJust launch it from the palm of your hand.\nIt even returns when you call it.\nAnd land like this, easy.\nCan't get everyone in the shot?\nNo problem.\nWatch as it hovers precisely in place,\nalways at your command.\nControl it with your hands,\nremote controller,\nmobile device,\nor DJI Goggles.\nUsing GPS, Spark knows where it is,\neven if you don't.\nIt will even sense obstacles to avoid things in front of it,\nand come home safely.\nThink you got smooth moves?\nSpark's footage is smoother.\nIt takes the shake out of your shot,\nso you look like a pro.",
+      "subject": {
+        "key": "e1",
+        "surface_text": "Spark",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "DJI Spark",
+        "identity_scope": "global",
+        "identity_quote": "Meet\nSpark.",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "description": "powerful flying camera"
+        }
+      },
+      "object": {
+        "key": "e2",
+        "surface_text": "remote controller",
+        "entity_type": "product",
+        "confidence": 0.9,
+        "canonical_name": "remote controller",
+        "identity_scope": "video",
+        "identity_quote": "remote controller",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e2",
+        "predicate": "controls",
+        "quote": "Control it with your hands,\nremote controller,\nmobile device,\nor DJI Goggles.",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "0",
+        "basis": "control",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "control",
+        "index": "0"
+      },
+      "sample_id": "Q024",
+      "judgment": "issue",
+      "note": "Control it with remote controller表示遥控器控制Spark，当前主客体反向。"
+    },
+    {
+      "relation_key": "a3058dbe8d9e2e63c456476c08e4ff7ea392e71cedbb246f71aaaa3c5351470d",
+      "case_id": "R021",
+      "relation_index": 1,
+      "video_id": "324ef8fa-7c8b-4558-9b35-30c90409fa4e",
+      "chunk_id": "c7d5225a-0770-47b1-836c-494b81061134",
+      "title": "DJI - Introducing Spark",
+      "url": "https://www.youtube.com/watch?v=74Cm1p3fr0g",
+      "start_seconds": 12.17,
+      "end_seconds": 71.77,
+      "source_text": "Meet\nSpark.\nSmall,\ncolorful,\nsmart.\nA powerful flying camera that you can take anywhere.\nIt's so clever it activates by recognizing you.\nJust launch it from the palm of your hand.\nIt even returns when you call it.\nAnd land like this, easy.\nCan't get everyone in the shot?\nNo problem.\nWatch as it hovers precisely in place,\nalways at your command.\nControl it with your hands,\nremote controller,\nmobile device,\nor DJI Goggles.\nUsing GPS, Spark knows where it is,\neven if you don't.\nIt will even sense obstacles to avoid things in front of it,\nand come home safely.\nThink you got smooth moves?\nSpark's footage is smoother.\nIt takes the shake out of your shot,\nso you look like a pro.",
+      "subject": {
+        "key": "e1",
+        "surface_text": "Spark",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "DJI Spark",
+        "identity_scope": "global",
+        "identity_quote": "Meet\nSpark.",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "description": "powerful flying camera"
+        }
+      },
+      "object": {
+        "key": "e3",
+        "surface_text": "mobile device",
+        "entity_type": "product",
+        "confidence": 0.85,
+        "canonical_name": "mobile device",
+        "identity_scope": "video",
+        "identity_quote": "mobile device",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e3",
+        "predicate": "controls",
+        "quote": "Control it with your hands,\nremote controller,\nmobile device,\nor DJI Goggles.",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "1",
+        "basis": "control",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "control",
+        "index": "1"
+      },
+      "sample_id": "Q025",
+      "judgment": "issue",
+      "note": "用mobile device控制Spark，当前边却称Spark控制mobile device，方向错误。"
+    },
+    {
+      "relation_key": "825c9af389abc47e42213af442eaf38dc7139a8912db285aa02f25df9b6860c4",
+      "case_id": "R023",
+      "relation_index": 1,
+      "video_id": "7f0f7ef4-16a3-4053-9c29-dddbfb3ad90b",
+      "chunk_id": "2c9dd3be-59ec-4879-b83f-82e23ba8eed9",
+      "title": "Portrait Mode Is a Hardware Problem",
+      "url": "https://www.youtube.com/watch?v=HFXaN00Ml3k",
+      "start_seconds": 0.14,
+      "end_seconds": 28.145,
+      "source_text": "Watch the camera mount, not the menu.\nDJI’s RS 4 Mini changes the actual hardware setup\nfor vertical filming.\nYou move the quick-release plate onto the vertical arm.\nThe camera is physically mounted in portrait\norientation, rather than throwing away the sides of a\nlandscape frame.\nIt is a manual switch, but that is the point.\nSometimes the cleanest software solution is a piece of\nhardware that lets you shoot the shape you meant to\nshoot.",
+      "subject": {
+        "key": "e1",
+        "surface_text": "DJI’s RS 4 Mini",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "DJI RS 4 Mini",
+        "identity_scope": "global",
+        "identity_quote": "DJI’s RS 4 Mini",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "brand": "DJI",
+          "model": "RS 4 Mini"
+        }
+      },
+      "object": {
+        "key": "e3",
+        "surface_text": "vertical arm",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "vertical arm",
+        "identity_scope": "video",
+        "identity_quote": "You move the quick-release plate onto the vertical arm.",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e3",
+        "predicate": "contains",
+        "quote": "You move the quick-release plate onto the vertical arm.",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "1",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "1"
+      },
+      "sample_id": "Q026",
+      "judgment": "supported",
+      "note": "RS 4 Mini硬件竖拍设置中将快拆板移到竖臂，竖臂归属连续明确。"
+    },
+    {
+      "relation_key": "bc520b5628dd4d1591d7b52188c4bc254f2c83426c03acc58209a8f8b993792a",
+      "case_id": "R024",
+      "relation_index": 2,
+      "video_id": "5b1bc08f-455f-42a3-9fa6-892391c5940f",
+      "chunk_id": "0022cad4-286b-45e6-9cff-7aa04afa1c68",
+      "title": "Introduction to Drone Architecture and Flight Control Development | build, Mavlink & msg",
+      "url": "https://www.youtube.com/watch?v=iopaz2cyaYQ",
+      "start_seconds": 58.63,
+      "end_seconds": 118.33,
+      "source_text": "一般我们就可以通过QGC\n就我们QGC不是有一个就是固件的\n就是一个设置介面吗\n我们通过插把\n然后就可以进行固件的一个刷写\n刷写\n你可以选择就是在网上下载\n也可以通过就是我们自定义\n而自定义需要加载的就是一个\n点PSS文件\n就是它的后阵名就是\n点PSS\n点APG\n点编文件\n或者\nIHX文件\n而这有这些文件之后\n它才能把\n就我们刚才编译生成点PS\n然后可以通过QGC把它进行固件的刷写\n当然你也可以\n如果说有就是有这个PSS编译环境的话\n你可以通过这个MAKE\nPSSFMUV5的default\n然后upload\n然后把这个固件刷写进去\n然后再往下的话\n就在它这个文件在下面",
+      "subject": {
+        "key": "e7",
+        "surface_text": "upload",
+        "entity_type": "method",
+        "confidence": 0.75,
+        "canonical_name": "upload",
+        "identity_scope": "global",
+        "identity_quote": "然后upload",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e2",
+        "surface_text": "固件",
+        "entity_type": "software",
+        "confidence": 0.9,
+        "canonical_name": "固件",
+        "identity_scope": "global",
+        "identity_quote": "进行固件的一个刷写",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e7",
+        "object": "e2",
+        "predicate": "applied_to",
+        "quote": "然后upload\n然后把这个固件刷写进去",
+        "assertion": "asserted",
+        "confidence": 0.75,
+        "qualifiers": {
+          "modality": "instruction"
+        }
+      },
+      "support": {
+        "source_index": "4",
+        "basis": "application",
+        "modality": "instruction",
+        "scope_quote": "然后upload\n然后把这个固件刷写进去",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "application",
+        "index": "2"
+      },
+      "sample_id": "Q027",
+      "judgment": "supported",
+      "note": "MAKE命令后upload将固件刷写进去，命名操作应用于固件，instruction范围保留。"
+    },
+    {
+      "relation_key": "00d5bbc1d03063237a6fef4cb6604d21228a01a050792cbff8e836d1ee5ab629",
+      "case_id": "R025",
+      "relation_index": 3,
+      "video_id": "d96fb455-d499-425b-b2f8-85085cb4b4e4",
+      "chunk_id": "f936e9b7-daba-4104-af1b-9fe0dd7f48e8",
+      "title": "DJI NEO 4k Drone | The Complete Beginner’s Guide & How To Fly",
+      "url": "https://www.youtube.com/watch?v=_3SRHxiY4RQ",
+      "start_seconds": 201.28,
+      "end_seconds": 238.72,
+      "source_text": "the standard short press then long press to turn the drone on,\nfollowed by the propellers activating and LEDs appearing on the panel nearest the camera.\nAnd you can navigate through the modes by pressing the button,\nwith a voice calling out which mode you've selected.\nTaking the protected cover off of the camera,\nyou have a lens on a single axis gimbal which moves up and down,\nso the Neo relies on digital stabilization too but does a great job as you'll see later.\nThe camera films footage up to 4k resolution at 30 frames per second and takes 12 megapixel photos\nthanks to its 14mm f2.8 lens which has a minimum focusing distance of 60cm and 1/2in sensor.\nNext up is the Neo's remote control the RC-N3 model, which is pretty similar to its predecessors",
+      "subject": {
+        "key": "e1",
+        "surface_text": "Neo",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "DJI Neo",
+        "identity_scope": "global",
+        "identity_quote": "the Neo relies on digital stabilization",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e5",
+        "surface_text": "button",
+        "entity_type": "component",
+        "confidence": 0.85,
+        "canonical_name": "Neo mode button",
+        "identity_scope": "video",
+        "identity_quote": "pressing the button",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e5",
+        "predicate": "contains",
+        "quote": "navigate through the modes by pressing the button",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "3",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "3"
+      },
+      "sample_id": "Q028",
+      "judgment": "supported",
+      "note": "按Neo的机身按钮导航模式，属于Neo的模式按钮。"
+    },
+    {
+      "relation_key": "d03c12eab7d8108ca052d55c83b0f9f3eb8db8884bfd7167c10dc26d001f1e20",
+      "case_id": "R027",
+      "relation_index": 0,
+      "video_id": "f909631c-59f4-4319-8270-560bb532e978",
+      "chunk_id": "79f0b6c0-5248-4947-9841-517e5c73d450",
+      "title": "DJI Dock 4: Battery Swap in 25 Seconds Changes Everything",
+      "url": "https://www.youtube.com/watch?v=xj1x1ZUGapY",
+      "start_seconds": 244.24,
+      "end_seconds": 295.12,
+      "source_text": "by handing missions back and forth. That is a much bigger deal than simply\ntalking about charging speed. What matters is that the aircraft no longer has to wait\nfor the same battery to recharge before it can go back out again.\nBattery swapping is the headline feature, but Dock 4 also has to\nsurvive the environment it is installed in. Unlike a normal DJI drone, this thing does\nnot get packed into a case after the flight. It stays outside. And I mean really outside.\nNot in your garage, not somewhere protected. It is supposed to sit there and just work.\nAccording to DJI, Dock 4 is designed to operate from minus 40 to plus 50 degrees Celsius,\nfrom freezing winter conditions to serious summer heat.\nIn cold conditions, the system can preheat the batteries, while air conditioning keeps",
+      "subject": {
+        "key": "e1",
+        "surface_text": "Dock 4",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "DJI Dock 4",
+        "identity_scope": "global",
+        "identity_quote": "Dock 4",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "operating_temperature_range": "minus 40 to plus 50 degrees Celsius"
+        }
+      },
+      "object": {
+        "key": "e3",
+        "surface_text": "Battery swapping",
+        "entity_type": "technology",
+        "confidence": 0.9,
+        "canonical_name": "Battery swapping",
+        "identity_scope": "global",
+        "identity_quote": "Battery swapping is the headline feature",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e3",
+        "predicate": "supports",
+        "quote": "Battery swapping is the headline feature, but Dock 4 also has to\nsurvive the environment it is installed in.",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "0",
+        "basis": "capability",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "capability",
+        "index": "0"
+      },
+      "sample_id": "Q029",
+      "judgment": "supported",
+      "note": "Battery swapping被明确称为Dock 4的主要功能。"
+    },
+    {
+      "relation_key": "9f378064b70e13b0313d537ddf74a28fc5c8665c8d733b33ebacd1da86d3eba5",
+      "case_id": "R028",
+      "relation_index": 10,
+      "video_id": "d9dd6e8e-1e94-45d8-83c7-e4a2c2acfbd5",
+      "chunk_id": "93959a50-317c-45c2-af32-ff8399ae5d3b",
+      "title": "DJI Pocket 4P vs Pocket 3: The Truth Before You Buy",
+      "url": "https://www.youtube.com/watch?v=tC3o_TiB4qg",
+      "start_seconds": 42.24,
+      "end_seconds": 89.84,
+      "source_text": "doing a giveaway in this video. So, I'm not giving away a Pocket 4 P or 3 cuz I can't afford that\nwith my little channel here, but I will be giving away accessories for Pocket 4P and Pocket 3. So,\nmake sure you watch the video till the end so you don't miss that. I'm going to be talking about the\ngiveaway a little bit later in the video. So, I'm going to start off with the similarities\nbetween both of these Pocket cameras so you guys can get an idea of what they have in common.\nSo, both have a threeaxis gimbal, which gives you buttery smooth footage. They both have\na 1 in sensor, a 2-in OLED touchcreen. They can record in horizontal or vertical. They both have\na variety of shooting modes, low light, panorama, time-lapse, slow motion. You could take photos,",
+      "subject": {
+        "key": "e7",
+        "surface_text": "shooting modes",
+        "entity_type": "technology",
+        "confidence": 0.8,
+        "canonical_name": "shooting modes",
+        "identity_scope": "video",
+        "identity_quote": "shooting modes",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e10",
+        "surface_text": "time-lapse",
+        "entity_type": "technology",
+        "confidence": 0.8,
+        "canonical_name": "time-lapse",
+        "identity_scope": "video",
+        "identity_quote": "time-lapse",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e7",
+        "object": "e10",
+        "predicate": "contains",
+        "quote": "shooting modes, low light, panorama, time-lapse, slow motion",
+        "assertion": "asserted",
+        "confidence": 0.8,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "12",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "10"
+      },
+      "sample_id": "Q030",
+      "judgment": "supported",
+      "note": "shooting modes后明确枚举time-lapse，可表达功能类别的具体成员。"
+    },
+    {
+      "relation_key": "f1ec836bd588e05146076321a910221f0247088882e5a7aa32bf562a90852dc1",
+      "case_id": "R028",
+      "relation_index": 11,
+      "video_id": "d9dd6e8e-1e94-45d8-83c7-e4a2c2acfbd5",
+      "chunk_id": "93959a50-317c-45c2-af32-ff8399ae5d3b",
+      "title": "DJI Pocket 4P vs Pocket 3: The Truth Before You Buy",
+      "url": "https://www.youtube.com/watch?v=tC3o_TiB4qg",
+      "start_seconds": 42.24,
+      "end_seconds": 89.84,
+      "source_text": "doing a giveaway in this video. So, I'm not giving away a Pocket 4 P or 3 cuz I can't afford that\nwith my little channel here, but I will be giving away accessories for Pocket 4P and Pocket 3. So,\nmake sure you watch the video till the end so you don't miss that. I'm going to be talking about the\ngiveaway a little bit later in the video. So, I'm going to start off with the similarities\nbetween both of these Pocket cameras so you guys can get an idea of what they have in common.\nSo, both have a threeaxis gimbal, which gives you buttery smooth footage. They both have\na 1 in sensor, a 2-in OLED touchcreen. They can record in horizontal or vertical. They both have\na variety of shooting modes, low light, panorama, time-lapse, slow motion. You could take photos,",
+      "subject": {
+        "key": "e7",
+        "surface_text": "shooting modes",
+        "entity_type": "technology",
+        "confidence": 0.8,
+        "canonical_name": "shooting modes",
+        "identity_scope": "video",
+        "identity_quote": "shooting modes",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e11",
+        "surface_text": "slow motion",
+        "entity_type": "technology",
+        "confidence": 0.8,
+        "canonical_name": "slow motion",
+        "identity_scope": "video",
+        "identity_quote": "slow motion",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e7",
+        "object": "e11",
+        "predicate": "contains",
+        "quote": "shooting modes, low light, panorama, time-lapse, slow motion",
+        "assertion": "asserted",
+        "confidence": 0.8,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "13",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "11"
+      },
+      "sample_id": "Q031",
+      "judgment": "supported",
+      "note": "模式枚举包含slow motion，来源与方向支持。"
+    },
+    {
+      "relation_key": "3646d7cc39e533e373d3313bb78df338111cbe3b995a92df000266166bb090a8",
+      "case_id": "R033",
+      "relation_index": 2,
+      "video_id": "3b02a015-5fc9-4521-99e7-140163e1c34b",
+      "chunk_id": "0eacab47-ce06-41f0-82e0-8bdf7a7a6a04",
+      "title": "你喜欢手工DIY的乐趣吗？无人机摔坏了，打印一个配件装上！另外再给小飞机装个GPS。",
+      "url": "https://www.youtube.com/watch?v=CCAOi-Mox2U",
+      "start_seconds": 179.466,
+      "end_seconds": 238.833,
+      "source_text": "看吧\n剪掉\n那边打印机\n正在打印这个\n这个上面的GPS啊\n那个也是我自己做的\n这个原厂的套机\n它上面是不带GPS的\n尤其是像这种小飞机啊\n基本上很难带得动\n但是我就要带\n摔断的就是这个东西\n换上这个 好\n用醋酸胶带粘一下\n拧紧螺丝就OK了\n好了吧看吧\n稍后再\n还是再弄上这个扎带\n这是心理安慰\n这样就修好了这个飞机\n又可以继续飞行了\n装GPS的打印件也打好了\n这就是软性材料的好处\n看它弹力非常大",
+      "subject": {
+        "key": "e5",
+        "surface_text": "打印件",
+        "entity_type": "component",
+        "confidence": 0.85,
+        "canonical_name": "GPS打印件",
+        "identity_scope": "video",
+        "identity_quote": "装GPS的打印件也打好了",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "material": "软性材料"
+        }
+      },
+      "object": {
+        "key": "e3",
+        "surface_text": "GPS",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "GPS",
+        "identity_scope": "global",
+        "identity_quote": "这个上面的GPS啊",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e5",
+        "object": "e3",
+        "predicate": "contains",
+        "quote": "装GPS的打印件也打好了",
+        "assertion": "asserted",
+        "confidence": 0.8,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "2",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "2"
+      },
+      "sample_id": "Q032",
+      "judgment": "issue",
+      "note": "装GPS的打印件说明安装用途，不等于打印件内部包含GPS；将用途误作组成。"
+    },
+    {
+      "relation_key": "e7cd87f514e31927bf060c9be9fe478688965388340991024d471ffa49643cd8",
+      "case_id": "R033",
+      "relation_index": 3,
+      "video_id": "3b02a015-5fc9-4521-99e7-140163e1c34b",
+      "chunk_id": "0eacab47-ce06-41f0-82e0-8bdf7a7a6a04",
+      "title": "你喜欢手工DIY的乐趣吗？无人机摔坏了，打印一个配件装上！另外再给小飞机装个GPS。",
+      "url": "https://www.youtube.com/watch?v=CCAOi-Mox2U",
+      "start_seconds": 179.466,
+      "end_seconds": 238.833,
+      "source_text": "看吧\n剪掉\n那边打印机\n正在打印这个\n这个上面的GPS啊\n那个也是我自己做的\n这个原厂的套机\n它上面是不带GPS的\n尤其是像这种小飞机啊\n基本上很难带得动\n但是我就要带\n摔断的就是这个东西\n换上这个 好\n用醋酸胶带粘一下\n拧紧螺丝就OK了\n好了吧看吧\n稍后再\n还是再弄上这个扎带\n这是心理安慰\n这样就修好了这个飞机\n又可以继续飞行了\n装GPS的打印件也打好了\n这就是软性材料的好处\n看它弹力非常大",
+      "subject": {
+        "key": "e6",
+        "surface_text": "醋酸胶带",
+        "entity_type": "component",
+        "confidence": 0.8,
+        "canonical_name": "醋酸胶带",
+        "identity_scope": "global",
+        "identity_quote": "用醋酸胶带粘一下",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e1",
+        "surface_text": "小飞机",
+        "entity_type": "product",
+        "confidence": 0.85,
+        "canonical_name": "小飞机",
+        "identity_scope": "video",
+        "identity_quote": "尤其是像这种小飞机啊",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e6",
+        "object": "e1",
+        "predicate": "installed_on",
+        "quote": "用醋酸胶带粘一下",
+        "assertion": "asserted",
+        "confidence": 0.75,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "3",
+        "basis": "installation",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "installation",
+        "index": "3"
+      },
+      "sample_id": "Q033",
+      "judgment": "supported",
+      "note": "修复小飞机换配件后用醋酸胶带粘贴，支持胶带在该飞机上的安装/附着。"
+    },
+    {
+      "relation_key": "8fc6d165562af153ab42784934e240076a71f86d077c15a7d000e3c8a4c6504d",
+      "case_id": "R034",
+      "relation_index": 7,
+      "video_id": "53b069c9-435c-40d4-82d2-0dfce7dbf545",
+      "chunk_id": "bb21cb0d-d625-47c7-9f0b-2744bb6409c2",
+      "title": "美軍認低威？｜自殺式無人機革命｜拆解伊朗「見證者」廉價殺手｜美軍 Lucas 逆向工程反擊｜從精銳武器到產能博弈｜【W檔案】",
+      "url": "https://www.youtube.com/watch?v=4yWiJK4K6MQ",
+      "start_seconds": 702.09,
+      "end_seconds": 759.37,
+      "source_text": "令到Lucas具备讯号过滤的能力\n即使对手释放了强力的噪音干扰\nLucas依然可以从杂讯里面\n精确提取到卫星通讯的讯号\n或者直接锁定干扰源进行反杀\n第二就是边缘运算\nEdge AI目标识别\nLucas内部的晶片不是普通晶片\n而是一粒专门最佳化过的AI处理器\n不需要连线云端\n自己就有强大的边缘运算能力\n透过预先载入的数百万张军事目标图的相簿\nLucas在苦衷的几秒内\n可以在红外线的影像当中识别出\n到底这辆是充满弹药的油罐车\n还是一辆空的(Decoy)利诱车",
+      "subject": {
+        "key": "e1",
+        "surface_text": "Lucas",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "Lucas",
+        "identity_scope": "global",
+        "identity_quote": "Lucas",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e9",
+        "surface_text": "红外线的影像",
+        "entity_type": "data",
+        "confidence": 0.85,
+        "canonical_name": "红外线影像",
+        "identity_scope": "global",
+        "identity_quote": "红外线的影像",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e9",
+        "predicate": "uses",
+        "quote": "可以在红外线的影像当中识别出",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "7",
+        "basis": "data_use",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "data_use",
+        "index": "7"
+      },
+      "sample_id": "Q034",
+      "judgment": "supported",
+      "note": "Lucas通过红外影像识别目标，影像标为data，使用数据关系成立。"
+    },
+    {
+      "relation_key": "29f6d77a03fc2a256529427a1fc8cb48b5b7f4d98ab3b721b6258b9d56ae8ac5",
+      "case_id": "R038",
+      "relation_index": 7,
+      "video_id": "b2dc1371-11e6-4cd4-ab69-f8b0596fdb5c",
+      "chunk_id": "7114bfd8-4219-473d-bc8a-1f1746575c7f",
+      "title": "DJI Neo The Ultimate Beginner Tutorial",
+      "url": "https://www.youtube.com/watch?v=fadmIklmAqE",
+      "start_seconds": 1000.4,
+      "end_seconds": 1042.32,
+      "source_text": "further away. It can also fly faster. You can switch between the flight modes Normal Cine and\nSport with the remote control. In sport mode, the drone flies a little faster, but a little\nless stable than in normal flight mode and in cine mode, the exact opposite is the case. The\nNeo flies a little slower, but more stable for more stable and therefore more cinematic shots.\nThe remote control also has a pause and return to home button. If you press this button once\nbriefly, the Neo interrupts the current manoeuvre and stops immediately. If you press the button\nfor longer, the Neo automatically flies back to the registered home point, which is particularly\nuseful if you lose sight of the drone. The intelligent flight modes also differ",
+      "subject": {
+        "key": "e1",
+        "surface_text": "Neo",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "DJI Neo",
+        "identity_scope": "global",
+        "identity_quote": "The\nNeo flies a little slower",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e9",
+        "surface_text": "sport mode",
+        "entity_type": "technology",
+        "confidence": 0.85,
+        "canonical_name": "Sport mode",
+        "identity_scope": "global",
+        "identity_quote": "In sport mode, the drone flies a little faster, but a little\nless stable than in normal flight mode",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "flight_characteristics": "flies a little faster, but a little less stable than in normal flight mode"
+        }
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e9",
+        "predicate": "supports",
+        "quote": "In sport mode, the drone flies a little faster, but a little\nless stable than in normal flight mode",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "8",
+        "basis": "capability",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "capability",
+        "index": "7"
+      },
+      "sample_id": "Q035",
+      "judgment": "supported",
+      "note": "Neo的遥控器可切换Sport模式，后文描述该模式性能。"
+    },
+    {
+      "relation_key": "16ae54d23ff96c5275ae60c99f1c616177b866a0a67ad99cd344dc5f7fcb3435",
+      "case_id": "R041",
+      "relation_index": 8,
+      "video_id": "d96fb455-d499-425b-b2f8-85085cb4b4e4",
+      "chunk_id": "1d881ace-e260-4c44-85ab-07cd8962e06c",
+      "title": "DJI NEO 4k Drone | The Complete Beginner’s Guide & How To Fly",
+      "url": "https://www.youtube.com/watch?v=_3SRHxiY4RQ",
+      "start_seconds": 836.96,
+      "end_seconds": 876.2,
+      "source_text": "Most drone flyers will be familiar with this method as it's the same as most other drones.\nTo get flying with the remote control, turn on the drone and controller by\nshort pressing and long pressing the power button until the LEDs appear.\nMake sure the gimbal protector is removed from the Neo camera.\nYou'll also need the DJI fly app here.\nIt's available from the app store for Apple users, though not on the Play Store for Android,\nbut you can easily download it via the DJI website and it works just the same as any other app.\nOn the remote control, screw in the joysticks,\npull the cradle up, and get one end of the USBC cable out of its storage location.\nPut your phone in the cradle and then plug the USB-C cable into your phone.\nTap connection guide, find and tap the Neo,",
+      "subject": {
+        "key": "e12",
+        "surface_text": "USBC cable",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "USB-C cable",
+        "identity_scope": "video",
+        "identity_quote": "get one end of the USBC cable out of its storage location",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e13",
+        "surface_text": "phone",
+        "entity_type": "product",
+        "confidence": 0.85,
+        "canonical_name": "phone",
+        "identity_scope": "video",
+        "identity_quote": "Put your phone in the cradle",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e12",
+        "object": "e13",
+        "predicate": "connected_to",
+        "quote": "plug the USB-C cable into your phone",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {
+          "modality": "instruction"
+        }
+      },
+      "support": {
+        "source_index": "10",
+        "basis": "connection",
+        "modality": "instruction",
+        "scope_quote": "plug the USB-C cable into your phone",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "connection",
+        "index": "8"
+      },
+      "sample_id": "Q036",
+      "judgment": "supported",
+      "note": "plug USB-C cable into phone，端点、连接和instruction范围都明确。"
+    },
+    {
+      "relation_key": "0827d13c73a3efdf14d15a9de0575ab2a4f695a2f04ff3968151f2187979a91e",
+      "case_id": "R041",
+      "relation_index": 9,
+      "video_id": "d96fb455-d499-425b-b2f8-85085cb4b4e4",
+      "chunk_id": "1d881ace-e260-4c44-85ab-07cd8962e06c",
+      "title": "DJI NEO 4k Drone | The Complete Beginner’s Guide & How To Fly",
+      "url": "https://www.youtube.com/watch?v=_3SRHxiY4RQ",
+      "start_seconds": 836.96,
+      "end_seconds": 876.2,
+      "source_text": "Most drone flyers will be familiar with this method as it's the same as most other drones.\nTo get flying with the remote control, turn on the drone and controller by\nshort pressing and long pressing the power button until the LEDs appear.\nMake sure the gimbal protector is removed from the Neo camera.\nYou'll also need the DJI fly app here.\nIt's available from the app store for Apple users, though not on the Play Store for Android,\nbut you can easily download it via the DJI website and it works just the same as any other app.\nOn the remote control, screw in the joysticks,\npull the cradle up, and get one end of the USBC cable out of its storage location.\nPut your phone in the cradle and then plug the USB-C cable into your phone.\nTap connection guide, find and tap the Neo,",
+      "subject": {
+        "key": "e13",
+        "surface_text": "phone",
+        "entity_type": "product",
+        "confidence": 0.85,
+        "canonical_name": "phone",
+        "identity_scope": "video",
+        "identity_quote": "Put your phone in the cradle",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e11",
+        "surface_text": "cradle",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "cradle",
+        "identity_scope": "video",
+        "identity_quote": "pull the cradle up",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e13",
+        "object": "e11",
+        "predicate": "installed_on",
+        "quote": "Put your phone in the cradle",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {
+          "modality": "instruction"
+        }
+      },
+      "support": {
+        "source_index": "11",
+        "basis": "installation",
+        "modality": "instruction",
+        "scope_quote": "Put your phone in the cradle",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "installation",
+        "index": "9"
+      },
+      "sample_id": "Q037",
+      "judgment": "supported",
+      "note": "Put your phone in the cradle明确将手机放入夹座，instruction范围保留。"
+    },
+    {
+      "relation_key": "bdb137cda5da4e99e5d9c770cefcfbef6fbdad19228da7c503dcdd3650672007",
+      "case_id": "R042",
+      "relation_index": 0,
+      "video_id": "8235d0f4-fe17-4375-a573-f700ef4c6ba1",
+      "chunk_id": "6b29800c-43a7-4a43-9e95-0c34afc5f6f7",
+      "title": "DJI - Mavic Air - Introducing the Mavic Air",
+      "url": "https://www.youtube.com/watch?v=uF-WXHwzURs",
+      "start_seconds": 1.272,
+      "end_seconds": 54.73,
+      "source_text": "When people say the sky’s the limit,\nwe ask, why stop there?\nThis is the relentless spirit and passion of DJI.\nAnd from that,\nwe have created another glimpse at the future of possible.\nThis is the Mavic Air,\nthe newest addition to the DJI family,\nand another great leap forward for the industry.\nThe Mavic Air takes cues from all of DJI’s landmark drones of the past\nand yields something unique and new in the process.\nFrom the sleek chassis\nto the incredible technology inside it,\nit’s a work of art that produces\nworks of art.\nIt is incredibly compact so you can take it everywhere.\nIt’s exceptionally light,\nmaking it nimble in the air without sacrificing stability.\nThe Mavic Air's powerful camera is housed inside a compact,\n3-axis gimbal system\nand is the only drone of its size to have one.",
+      "subject": {
+        "key": "e2",
+        "surface_text": "Mavic Air",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "Mavic Air",
+        "identity_scope": "global",
+        "identity_quote": "This is the Mavic Air,",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "compact": "incredibly compact",
+          "light": "exceptionally light"
+        }
+      },
+      "object": {
+        "key": "e4",
+        "surface_text": "powerful camera",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "Mavic Air powerful camera",
+        "identity_scope": "video",
+        "identity_quote": "The Mavic Air's powerful camera",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e2",
+        "object": "e4",
+        "predicate": "contains",
+        "quote": "The Mavic Air's powerful camera is housed inside a compact,\n3-axis gimbal system",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "1",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "0"
+      },
+      "sample_id": "Q038",
+      "judgment": "supported",
+      "note": "Mavic Air的camera位于其gimbal系统内，直接或经云台属于飞机组成。"
+    },
+    {
+      "relation_key": "fc6e106d7f95c77d820c98851c01a89e1a3fa60936eed42009de359bf66db05a",
+      "case_id": "R045",
+      "relation_index": 4,
+      "video_id": "0049816b-0edc-4603-a174-742a6e239d24",
+      "chunk_id": "2c2ce6b6-501c-4793-b645-0c79a9852dfd",
+      "title": "This DJI Drone Has an Emergency Parachute",
+      "url": "https://www.youtube.com/watch?v=IXPh_KXJ_ug",
+      "start_seconds": 0.1,
+      "end_seconds": 30.285,
+      "source_text": "If the drone cannot keep flying, this is\nthe backup plan.\nA parachute.\nDJI's AP100 is built for the Matrice\n400.\nIt has its own power and redundant\ncontrol links, rather than just trusting\nthe aircraft's main system.\nDeployment can be manual or automatic\nwhen the configured conditions are met.\nThe goal is a slower descent, not\nanother clever flying maneuver.\nNo parachute makes every crash harmless.\nBut engineering an exit plan for an\naircraft?\nVery sensible.\nVery cool.",
+      "subject": {
+        "key": "e2",
+        "surface_text": "AP100",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "DJI AP100",
+        "identity_scope": "global",
+        "identity_quote": "DJI's AP100",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e8",
+        "surface_text": "manual",
+        "entity_type": "method",
+        "confidence": 0.85,
+        "canonical_name": "manual deployment",
+        "identity_scope": "global",
+        "identity_quote": "Deployment can be manual",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e2",
+        "object": "e8",
+        "predicate": "supports",
+        "quote": "Deployment can be manual or automatic\nwhen the configured conditions are met.",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {
+          "modality": "capability"
+        }
+      },
+      "support": {
+        "source_index": "5",
+        "basis": "capability",
+        "modality": "capability",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "capability",
+        "index": "4"
+      },
+      "sample_id": "Q039",
+      "judgment": "supported",
+      "note": "AP100部署可手动或自动，capability及引文中的配置条件保留。"
+    },
+    {
+      "relation_key": "94f98f7f9eafb738d33553c5da7f87dbdb807af23254115ffb6282756f91d7b9",
+      "case_id": "R048",
+      "relation_index": 1,
+      "video_id": "f0684d8d-bcdf-47a2-81fd-565b344c4579",
+      "chunk_id": "9ff3d0ce-9f40-4f34-ab71-cf51eddd6094",
+      "title": "DJI Gave One Drone Three Perspectives",
+      "url": "https://www.youtube.com/watch?v=fLTVCRTjm-8",
+      "start_seconds": 0.12,
+      "end_seconds": 35.065,
+      "source_text": "Three cameras on one drone. DJI’s Mavic three Pro is not just stacking lenses for the photograph.\nIts main Hasselblad camera gives you a twenty four millimeter equivalent wide view. Room for the whole scene.\nA seventy millimeter equivalent camera gives a tighter perspective. You can change the framing without simply cropping the wide image.\nThen a separate tele camera reaches one hundred sixty six millimeters equivalent. Three actual cameras, three focal lengths.\nThe fun question is not which number is biggest. It is which perspective makes the shot worth watching.",
+      "subject": {
+        "key": "e1",
+        "surface_text": "DJI’s Mavic three Pro",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "DJI Mavic 3 Pro",
+        "identity_scope": "global",
+        "identity_quote": "DJI’s Mavic three Pro",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "brand": "DJI"
+        }
+      },
+      "object": {
+        "key": "e3",
+        "surface_text": "seventy millimeter equivalent camera",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "seventy millimeter equivalent camera",
+        "identity_scope": "video",
+        "identity_quote": "seventy millimeter equivalent camera",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "equivalent_focal_length": "seventy millimeter"
+        }
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e3",
+        "predicate": "contains",
+        "quote": "A seventy millimeter equivalent camera gives a tighter perspective.",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "1",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "1"
+      },
+      "sample_id": "Q040",
+      "judgment": "supported",
+      "note": "Mavic 3 Pro三相机连续介绍，70mm等效相机是其中一个独立硬件。"
+    },
+    {
+      "relation_key": "46c392b0a87579a67a31ed741dfbcdeb1961d98a3a576ae8c570b58d364b0fe8",
+      "case_id": "R052",
+      "relation_index": 2,
+      "video_id": "6c985b4a-6880-4959-88b6-09fd34048133",
+      "chunk_id": "caa04811-7367-4421-94b5-53dc843c9942",
+      "title": "DJI Mini 3 Teardown: 30% Less Functionality for 30% Less Price!",
+      "url": "https://www.youtube.com/watch?v=vH9oBBvo0bE",
+      "start_seconds": 82.62,
+      "end_seconds": 129.3,
+      "source_text": "lightweight solution to micro-vibrations, something we'll be seeing more of.\nWith the camera cable away, a single screw is all that’s left securing the\nheatsink revealing the lower sensor assembly connector, the motor control board connector,\nRF antennas leading to the tips of the motor arms,\nand a single screw that wouldn’t budge without a bit of emotional support from the battery pack.\nThe mainboard is free allowing us a closer look at the meat and potatoes of the Mini 3.\nThis shiny fella here is a Synaptics 5G, WiFi, Bluetooth, and FM receiver IC. That sits alongside\n256MB of Toshiba flash memory, 256MB of DDR3L, and an 32-bit ARM Cortex M7 clocked at 600 MHz.\nOn the reverse side we have a 32-bit ARM Cortex M4 and another 256MB of DDR3L.",
+      "subject": {
+        "key": "e1",
+        "surface_text": "Mini 3",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "DJI Mini 3",
+        "identity_scope": "global",
+        "identity_quote": "the meat and potatoes of the Mini 3",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e4",
+        "surface_text": "motor control board connector",
+        "entity_type": "component",
+        "confidence": 0.85,
+        "canonical_name": "motor control board connector",
+        "identity_scope": "video",
+        "identity_quote": "the motor control board connector",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e4",
+        "predicate": "contains",
+        "quote": "the motor control board connector",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "2",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "2"
+      },
+      "sample_id": "Q041",
+      "judgment": "supported",
+      "note": "拆解Mini 3时露出motor control board connector，设备归属明确。"
+    },
+    {
+      "relation_key": "fc2ac66e00263ba66b3337e3ed952f61f54a06a55a379250ba50b97478e6c56c",
+      "case_id": "R052",
+      "relation_index": 3,
+      "video_id": "6c985b4a-6880-4959-88b6-09fd34048133",
+      "chunk_id": "caa04811-7367-4421-94b5-53dc843c9942",
+      "title": "DJI Mini 3 Teardown: 30% Less Functionality for 30% Less Price!",
+      "url": "https://www.youtube.com/watch?v=vH9oBBvo0bE",
+      "start_seconds": 82.62,
+      "end_seconds": 129.3,
+      "source_text": "lightweight solution to micro-vibrations, something we'll be seeing more of.\nWith the camera cable away, a single screw is all that’s left securing the\nheatsink revealing the lower sensor assembly connector, the motor control board connector,\nRF antennas leading to the tips of the motor arms,\nand a single screw that wouldn’t budge without a bit of emotional support from the battery pack.\nThe mainboard is free allowing us a closer look at the meat and potatoes of the Mini 3.\nThis shiny fella here is a Synaptics 5G, WiFi, Bluetooth, and FM receiver IC. That sits alongside\n256MB of Toshiba flash memory, 256MB of DDR3L, and an 32-bit ARM Cortex M7 clocked at 600 MHz.\nOn the reverse side we have a 32-bit ARM Cortex M4 and another 256MB of DDR3L.",
+      "subject": {
+        "key": "e1",
+        "surface_text": "Mini 3",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "DJI Mini 3",
+        "identity_scope": "global",
+        "identity_quote": "the meat and potatoes of the Mini 3",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e5",
+        "surface_text": "RF antennas",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "RF antennas",
+        "identity_scope": "video",
+        "identity_quote": "RF antennas leading to the tips of the motor arms",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e5",
+        "predicate": "contains",
+        "quote": "RF antennas leading to the tips of the motor arms",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "3",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "3"
+      },
+      "sample_id": "Q042",
+      "judgment": "supported",
+      "note": "Mini 3拆解露出通向机臂末端的RF天线，组成成立。"
+    },
+    {
+      "relation_key": "b05c869401f75ea714ba697100912a34d1306e17c5c65e6b150560e8878670a5",
+      "case_id": "R052",
+      "relation_index": 10,
+      "video_id": "6c985b4a-6880-4959-88b6-09fd34048133",
+      "chunk_id": "caa04811-7367-4421-94b5-53dc843c9942",
+      "title": "DJI Mini 3 Teardown: 30% Less Functionality for 30% Less Price!",
+      "url": "https://www.youtube.com/watch?v=vH9oBBvo0bE",
+      "start_seconds": 82.62,
+      "end_seconds": 129.3,
+      "source_text": "lightweight solution to micro-vibrations, something we'll be seeing more of.\nWith the camera cable away, a single screw is all that’s left securing the\nheatsink revealing the lower sensor assembly connector, the motor control board connector,\nRF antennas leading to the tips of the motor arms,\nand a single screw that wouldn’t budge without a bit of emotional support from the battery pack.\nThe mainboard is free allowing us a closer look at the meat and potatoes of the Mini 3.\nThis shiny fella here is a Synaptics 5G, WiFi, Bluetooth, and FM receiver IC. That sits alongside\n256MB of Toshiba flash memory, 256MB of DDR3L, and an 32-bit ARM Cortex M7 clocked at 600 MHz.\nOn the reverse side we have a 32-bit ARM Cortex M4 and another 256MB of DDR3L.",
+      "subject": {
+        "key": "e8",
+        "surface_text": "mainboard",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "mainboard",
+        "identity_scope": "video",
+        "identity_quote": "The mainboard is free",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e13",
+        "surface_text": "32-bit ARM Cortex M4",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "32-bit ARM Cortex M4",
+        "identity_scope": "global",
+        "identity_quote": "a 32-bit ARM Cortex M4",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "architecture": "32-bit ARM Cortex M4"
+        }
+      },
+      "relation": {
+        "subject": "e8",
+        "object": "e13",
+        "predicate": "contains",
+        "quote": "On the reverse side we have a 32-bit ARM Cortex M4",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "11",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "10"
+      },
+      "sample_id": "Q043",
+      "judgment": "supported",
+      "note": "介绍主板正面后说明reverse side有Cortex M4，主板包含该芯片。"
+    },
+    {
+      "relation_key": "11904cd1697ea04506c522e497992de7088b3a2d9a44888991b1420926551fa4",
+      "case_id": "R054",
+      "relation_index": 0,
+      "video_id": "d5429e97-d120-4fed-b7a5-0f81031747dd",
+      "chunk_id": "a16c2155-ff5a-4b0a-9400-7ea97eb26324",
+      "title": "5个技巧，让大疆Pocket 4P拍出绝美夜景！",
+      "url": "https://www.youtube.com/watch?v=jxXzlf-i3yA",
+      "start_seconds": 59.566,
+      "end_seconds": 113.233,
+      "source_text": "原本的色彩和纹理就能保留下来\n第三ISO锁定在400-1600\n暗光下ISO如果太高\n容易出现明显的噪点\n把上限控制在1,600以内\n就能让画面保持纯净通透\n第四、色彩模式选择D-LOG\n它能最大程度保留\n亮部与暗部的细节\n不管后期你是随手套一个胶片滤镜\n还是做简单调色\n层次感立刻就会凸显出来\n第五给镜头装上1/4黑柔\n这是让画面秒变电影感的小神器\n把它装在镜头前\n原本刺眼的光线瞬间变得柔和\n看看这是装和不装的区别\n是不是还挺明显的\n以上就是大疆 Pocket 4P\n拍摄夜景的完整参数\n如果觉得这个视频对你有帮助\n别忘了点赞转发关注\n我们下期再见",
+      "subject": {
+        "key": "e1",
+        "surface_text": "大疆 Pocket 4P",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "DJI Pocket 4P",
+        "identity_scope": "global",
+        "identity_quote": "大疆 Pocket 4P",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e2",
+        "surface_text": "ISO",
+        "entity_type": "technology",
+        "confidence": 0.9,
+        "canonical_name": "ISO",
+        "identity_scope": "global",
+        "identity_quote": "ISO锁定在400-1600",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "锁定范围": "400-1600",
+          "上限": "1,600以内"
+        }
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e2",
+        "predicate": "supports",
+        "quote": "第三ISO锁定在400-1600",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {
+          "场景": "暗光",
+          "modality": "instruction"
+        }
+      },
+      "support": {
+        "source_index": "0",
+        "basis": "capability",
+        "modality": "instruction",
+        "scope_quote": "第三ISO锁定在400-1600",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "capability",
+        "index": "0"
+      },
+      "sample_id": "Q044",
+      "judgment": "issue",
+      "note": "ISO是参数名称/设置项，不是独立技术实体；原文只是调ISO数值。"
+    },
+    {
+      "relation_key": "f08cc7db4357014e25c68e515db23b274b4932c1c1dae4db572e9bcba16ef30d",
+      "case_id": "R055",
+      "relation_index": 2,
+      "video_id": "6d44ff62-e704-4bc8-813d-4c4e3e130462",
+      "chunk_id": "9fff47bf-b9c6-498a-8df7-93b27614e250",
+      "title": "How Drone Thermal Cameras Work: What the Colors Really Mean",
+      "url": "https://www.youtube.com/watch?v=KlmKZTWIC5o",
+      "start_seconds": 99.81,
+      "end_seconds": 145.396,
+      "source_text": "A surface can therefore change color\non screen without its actual temperature\nchanging by the amount you imagine.\nThen there is the surface itself,\nbecause the camera can receive reflected\ninfrared radiation as well as emitted\nradiation.\nEmissivity describes how effectively a surface\nemits compared with an ideal reference\nat the same temperature.\nA reflective surface can send radiation\nfrom its surroundings toward the camera\nand complicate the interpretation.\nOur two paths show emitted and\nreflected energy arriving together at the\nlens.\nThey do not represent measured quantities\nor a real inspection result.\nThat is why material, viewing angle\nand measurement settings belong in the\nexplanation of an apparent hot spot.\nDistance adds another problem: the feature",
+      "subject": {
+        "key": "e4",
+        "surface_text": "reflected\ninfrared radiation",
+        "entity_type": "technology",
+        "confidence": 0.85,
+        "canonical_name": "reflected infrared radiation",
+        "identity_scope": "global",
+        "identity_quote": "the camera can receive reflected\ninfrared radiation",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e2",
+        "surface_text": "lens",
+        "entity_type": "component",
+        "confidence": 0.9,
+        "canonical_name": "lens",
+        "identity_scope": "video",
+        "identity_quote": "arriving together at the\nlens",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e4",
+        "object": "e2",
+        "predicate": "connected_to",
+        "quote": "reflected energy arriving together at the\nlens",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "2",
+        "basis": "connection",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "connection",
+        "index": "2"
+      },
+      "sample_id": "Q045",
+      "judgment": "issue",
+      "note": "反射红外辐射被标为technology，能量到达镜头也不等同于设备之间connected_to连接。"
+    },
+    {
+      "relation_key": "52a4b99d4da39dd6bb3c98dcd50d58ff651dc618c6adcd68ddc8a94d3026d23f",
+      "case_id": "R057",
+      "relation_index": 0,
+      "video_id": "bc58f2f4-abdd-4138-90f9-2508e723dbfc",
+      "chunk_id": "35df42e8-224e-4259-a097-18307fa7df43",
+      "title": "DJI Mini 4k Drone | The Complete Beginner’s Guide & How To Fly",
+      "url": "https://www.youtube.com/watch?v=KD5O1Mx68XQ",
+      "start_seconds": 126.56,
+      "end_seconds": 172.44,
+      "source_text": "the drone and I've got the standard RC -N1c controller here, and it connects to\nyour phone so you can see what the drone sees but I'll come on to how all that works later.\nAlso included is a screwdriver for changing the propeller blades, four spare blades,\na USB-A to USB-C charging cable, a USB-C to USB-C cable a micro-USB to the USB-C cable,\nDJI stickers, a QR code card for the DJI store, safety guidelines,\na quick start guide, safety guidelines for Japan and drone information notices.\nGoing back to the remote control the control sticks are neatly\nhidden in the base and can be screwed in.\nAt the top there is a pullout phone holder which is on a spring for different size devices\nand beneath that lives another cable, this time a Lightning to USB-C cable.",
+      "subject": {
+        "key": "e2",
+        "surface_text": "RC -N1c controller",
+        "entity_type": "product",
+        "confidence": 0.9,
+        "canonical_name": "DJI RC-N1C",
+        "identity_scope": "global",
+        "identity_quote": "standard RC -N1c controller",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e3",
+        "surface_text": "phone",
+        "entity_type": "product",
+        "confidence": 0.8,
+        "canonical_name": "phone",
+        "identity_scope": "video",
+        "identity_quote": "connects to\nyour phone",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e2",
+        "object": "e3",
+        "predicate": "connected_to",
+        "quote": "it connects to\nyour phone",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "0",
+        "basis": "connection",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "connection",
+        "index": "0"
+      },
+      "sample_id": "Q046",
+      "judgment": "supported",
+      "note": "RC-N1c controller connects to phone明确两个端点与连接关系。"
+    },
+    {
+      "relation_key": "54bfb6879e35bd72a64566546800aced1e744f000af2675a3e8efd5b09d8d2f4",
+      "case_id": "R058",
+      "relation_index": 0,
+      "video_id": "04cca57a-4d80-4603-86cb-643a3c1886fb",
+      "chunk_id": "a55e3044-6ed6-451d-80a8-264ec3cf6f32",
+      "title": "Introduction to Drone Architecture and Flight Control Development | MAVLink",
+      "url": "https://www.youtube.com/watch?v=5PFenv5dWSY",
+      "start_seconds": 236.366,
+      "end_seconds": 295.066,
+      "source_text": "代表不同的意思就是下面具体的数据\n然后具体的数据就包括x\nyi z v x v y v z\na x a y a z和以及\n标志位还有压角和压角角速率\n这12位就可以组成这个tab mask的一个\n雅马的一个组合\n然后一般情况下0代表是启用\n然后1代表是禁用\n这就是他84号消息\n就是我们可以通过这条消息可以\n让机载电脑给无人机发送一些\n控制指令\n控制的一些接口就包括位置控制\n速度控制\n加速度控制和航向角控制\n然后在32这条消息下面我们可以通过\n就是读取无人机的一些本地下的一些\n消息比如说当前的一个\nx y z的一个位置",
+      "subject": {
+        "key": "e1",
+        "surface_text": "84号消息",
+        "entity_type": "protocol",
+        "confidence": 0.9,
+        "canonical_name": "MAVLink 84号消息",
+        "identity_scope": "global",
+        "identity_quote": "这就是他84号消息",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "message_id": "84"
+        }
+      },
+      "object": {
+        "key": "e5",
+        "surface_text": "位置控制",
+        "entity_type": "technology",
+        "confidence": 0.85,
+        "canonical_name": "位置控制",
+        "identity_scope": "global",
+        "identity_quote": "控制的一些接口就包括位置控制",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e1",
+        "object": "e5",
+        "predicate": "supports",
+        "quote": "控制的一些接口就包括位置控制",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "1",
+        "basis": "capability",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "capability",
+        "index": "0"
+      },
+      "sample_id": "Q047",
+      "judgment": "supported",
+      "note": "84号消息发送控制指令，接口枚举位置控制，支持功能成立。"
+    },
+    {
+      "relation_key": "553db5b30b9b03d2e3c43e171e344929598972c831c1491fa35a69b168b8ee0c",
+      "case_id": "S002",
+      "relation_index": 0,
+      "video_id": "421be679-dbf3-49d3-b434-0eb8708adfed",
+      "chunk_id": "3e8eb10a-acd3-47e6-8d37-017e63ff9bd3",
+      "title": "Entrepreneurs from DJI: 16 Startup Stories | 大疆系创业者",
+      "url": "https://www.youtube.com/watch?v=t0vMYS4cnwc",
+      "start_seconds": 117.2,
+      "end_seconds": 175.9,
+      "source_text": "再装上摄像头、雷达或者机械臂，开发自己的机器人。\n现在，松灵还有PiPER机械臂、双臂操作平台，以及遥操作和数据采集设备。\n库犸则面向家庭庭院。LUBA主要覆盖复杂地形和坡地。\nYUKA覆盖另一批草坪维护需求，如今又增加了SPINO泳池机器人。\n按照公司2026年的介绍，库犸已经服务30多个国家的超过75万家庭。\n松灵与库犸，一个服务机器人开发者，一个直接销售家庭机器人。\n第五家，丰疆智能。\n吴迪曾在大疆关联企业智翔科技担任首席科学家。\n丰疆的早期成立也有大疆参与投资，和普通员工的离职创业有所不同。\n它主要把自动驾驶和机器人技术，应用在农业及户外作业上。\n比如给拖拉机安装自动转向系统，让机器沿着规划路线作业。\n推出割草机器人维护草坪，用划线机器人给运动场划线。\n2025年，丰疆营收约7.4亿元，\n已经形成农业自动驾驶、园林机器人等多条业务线。\n第六家，睿魔智能。\n它的品牌叫OBSBOT，主要做能自动跟拍的摄像机。",
+      "subject": {
+        "key": "e12",
+        "surface_text": "吴迪",
+        "entity_type": "person",
+        "confidence": 0.9,
+        "canonical_name": "吴迪",
+        "identity_scope": "global",
+        "identity_quote": "吴迪曾在大疆关联企业智翔科技担任首席科学家",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e14",
+        "surface_text": "智翔科技",
+        "entity_type": "organization",
+        "confidence": 0.9,
+        "canonical_name": "智翔科技",
+        "identity_scope": "global",
+        "identity_quote": "大疆关联企业智翔科技",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e12",
+        "object": "e14",
+        "predicate": "affiliated_with",
+        "quote": "吴迪曾在大疆关联企业智翔科技担任首席科学家",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {
+          "time": "past",
+          "scope": "吴迪曾在大疆关联企业智翔科技担任首席科学家"
+        }
+      },
+      "support": {
+        "source_index": "6",
+        "basis": "affiliation",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "affiliation",
+        "index": "0"
+      },
+      "sample_id": "Q048",
+      "judgment": "supported",
+      "note": "原文明示曾任智翔科技首席科学家，past时间及完整范围已保留。"
+    },
+    {
+      "relation_key": "ccdc5e792ac7b1157d36e65877e0273177e9ddbd33b7283b411be48e316ca597",
+      "case_id": "S004",
+      "relation_index": 0,
+      "video_id": "421be679-dbf3-49d3-b434-0eb8708adfed",
+      "chunk_id": "5208dcbf-8420-4c65-b4b0-3a6155f308f1",
+      "title": "Entrepreneurs from DJI: 16 Startup Stories | 大疆系创业者",
+      "url": "https://www.youtube.com/watch?v=t0vMYS4cnwc",
+      "start_seconds": 350.267,
+      "end_seconds": 408.1,
+      "source_text": "代表产品是Hypertron-T01全地形重载轮足平台，\n主要面向电力巡检等工业场景。\n公司还开发电机和控制设备，2026年已经披露面向电网客户的批量交付进度。\n第十三家，汝原科技。\n创始人王铭钰，曾任大疆研发副总裁，负责过相机和精灵系列相关产品。\n离开以后，他创办汝原，进入吹风机市场。\n它的Zuvi Halo采用光与气流结合的干发方式。\n后来，公司又与欧莱雅合作开发AirLight Pro，把产品带入专业美发场景。\n这家公司目前已经有自有品牌产品，也有与国际美妆集团合作开发的产品。\n第十四家，一晤未来。\n刘翊涵、白睿等创始成员有大疆工作背景，创业后选择了电动牙刷。\n公司的品牌叫EVOWERA，代表产品是planck系列，\n已经推出O1、O2 Lite等型号。\n它把自研电机和控制技术用在刷牙上，\n围绕刷头运动、力度控制和使用反馈做产品。\n现在已经从早期研发，走到了产品销售和生产体系建设阶段。\n第十五家，物种起源。",
+      "subject": {
+        "key": "e7",
+        "surface_text": "王铭钰",
+        "entity_type": "person",
+        "confidence": 0.95,
+        "canonical_name": "王铭钰",
+        "identity_scope": "global",
+        "identity_quote": "创始人王铭钰",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "职务": "创始人"
+        }
+      },
+      "object": {
+        "key": "e6",
+        "surface_text": "汝原科技",
+        "entity_type": "organization",
+        "confidence": 0.95,
+        "canonical_name": "汝原科技",
+        "identity_scope": "global",
+        "identity_quote": "第十三家，汝原科技。",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e7",
+        "object": "e6",
+        "predicate": "affiliated_with",
+        "quote": "离开以后，他创办汝原",
+        "assertion": "asserted",
+        "confidence": 0.95,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "4",
+        "basis": "affiliation",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "affiliation",
+        "index": "0"
+      },
+      "sample_id": "Q049",
+      "judgment": "supported",
+      "note": "创始人王铭钰离职后创办汝原，任职/隶属关系成立。"
+    },
+    {
+      "relation_key": "b37cef4f76f300e875f7e5f0b3ac6addc8338bbf0e7727d456fc97ed15518a68",
+      "case_id": "S004",
+      "relation_index": 2,
+      "video_id": "421be679-dbf3-49d3-b434-0eb8708adfed",
+      "chunk_id": "5208dcbf-8420-4c65-b4b0-3a6155f308f1",
+      "title": "Entrepreneurs from DJI: 16 Startup Stories | 大疆系创业者",
+      "url": "https://www.youtube.com/watch?v=t0vMYS4cnwc",
+      "start_seconds": 350.267,
+      "end_seconds": 408.1,
+      "source_text": "代表产品是Hypertron-T01全地形重载轮足平台，\n主要面向电力巡检等工业场景。\n公司还开发电机和控制设备，2026年已经披露面向电网客户的批量交付进度。\n第十三家，汝原科技。\n创始人王铭钰，曾任大疆研发副总裁，负责过相机和精灵系列相关产品。\n离开以后，他创办汝原，进入吹风机市场。\n它的Zuvi Halo采用光与气流结合的干发方式。\n后来，公司又与欧莱雅合作开发AirLight Pro，把产品带入专业美发场景。\n这家公司目前已经有自有品牌产品，也有与国际美妆集团合作开发的产品。\n第十四家，一晤未来。\n刘翊涵、白睿等创始成员有大疆工作背景，创业后选择了电动牙刷。\n公司的品牌叫EVOWERA，代表产品是planck系列，\n已经推出O1、O2 Lite等型号。\n它把自研电机和控制技术用在刷牙上，\n围绕刷头运动、力度控制和使用反馈做产品。\n现在已经从早期研发，走到了产品销售和生产体系建设阶段。\n第十五家，物种起源。",
+      "subject": {
+        "key": "e13",
+        "surface_text": "Zuvi Halo",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "Zuvi Halo",
+        "identity_scope": "global",
+        "identity_quote": "它的Zuvi Halo采用光与气流结合的干发方式",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e14",
+        "surface_text": "光与气流结合的干发方式",
+        "entity_type": "technology",
+        "confidence": 0.9,
+        "canonical_name": "光与气流结合的干发方式",
+        "identity_scope": "global",
+        "identity_quote": "采用光与气流结合的干发方式",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e13",
+        "object": "e14",
+        "predicate": "uses",
+        "quote": "它的Zuvi Halo采用光与气流结合的干发方式",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "9",
+        "basis": "use",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "use",
+        "index": "2"
+      },
+      "sample_id": "Q050",
+      "judgment": "supported",
+      "note": "Zuvi Halo明确采用光与气流结合的干发方式。"
+    },
+    {
+      "relation_key": "4fa1de2cc11c9e22453dee57d2c797586c63d0b314775914a7a357aa485463ab",
+      "case_id": "S004",
+      "relation_index": 5,
+      "video_id": "421be679-dbf3-49d3-b434-0eb8708adfed",
+      "chunk_id": "5208dcbf-8420-4c65-b4b0-3a6155f308f1",
+      "title": "Entrepreneurs from DJI: 16 Startup Stories | 大疆系创业者",
+      "url": "https://www.youtube.com/watch?v=t0vMYS4cnwc",
+      "start_seconds": 350.267,
+      "end_seconds": 408.1,
+      "source_text": "代表产品是Hypertron-T01全地形重载轮足平台，\n主要面向电力巡检等工业场景。\n公司还开发电机和控制设备，2026年已经披露面向电网客户的批量交付进度。\n第十三家，汝原科技。\n创始人王铭钰，曾任大疆研发副总裁，负责过相机和精灵系列相关产品。\n离开以后，他创办汝原，进入吹风机市场。\n它的Zuvi Halo采用光与气流结合的干发方式。\n后来，公司又与欧莱雅合作开发AirLight Pro，把产品带入专业美发场景。\n这家公司目前已经有自有品牌产品，也有与国际美妆集团合作开发的产品。\n第十四家，一晤未来。\n刘翊涵、白睿等创始成员有大疆工作背景，创业后选择了电动牙刷。\n公司的品牌叫EVOWERA，代表产品是planck系列，\n已经推出O1、O2 Lite等型号。\n它把自研电机和控制技术用在刷牙上，\n围绕刷头运动、力度控制和使用反馈做产品。\n现在已经从早期研发，走到了产品销售和生产体系建设阶段。\n第十五家，物种起源。",
+      "subject": {
+        "key": "e24",
+        "surface_text": "planck系列",
+        "entity_type": "product_family",
+        "confidence": 0.95,
+        "canonical_name": "planck系列",
+        "identity_scope": "global",
+        "identity_quote": "代表产品是planck系列",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e23",
+        "surface_text": "EVOWERA",
+        "entity_type": "organization",
+        "confidence": 0.9,
+        "canonical_name": "EVOWERA",
+        "identity_scope": "global",
+        "identity_quote": "公司的品牌叫EVOWERA",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "类型": "品牌"
+        }
+      },
+      "relation": {
+        "subject": "e24",
+        "object": "e23",
+        "predicate": "offered_by",
+        "quote": "代表产品是planck系列",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "19",
+        "basis": "ownership",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "ownership",
+        "index": "5"
+      },
+      "sample_id": "Q051",
+      "judgment": "supported",
+      "note": "公司品牌EVOWERA的代表产品为planck系列，品牌归属明确。"
+    },
+    {
+      "relation_key": "d599af39804f8217edf6b42650676ea39d4f57b8c65d4477a06b60c8146cc976",
+      "case_id": "S004",
+      "relation_index": 7,
+      "video_id": "421be679-dbf3-49d3-b434-0eb8708adfed",
+      "chunk_id": "5208dcbf-8420-4c65-b4b0-3a6155f308f1",
+      "title": "Entrepreneurs from DJI: 16 Startup Stories | 大疆系创业者",
+      "url": "https://www.youtube.com/watch?v=t0vMYS4cnwc",
+      "start_seconds": 350.267,
+      "end_seconds": 408.1,
+      "source_text": "代表产品是Hypertron-T01全地形重载轮足平台，\n主要面向电力巡检等工业场景。\n公司还开发电机和控制设备，2026年已经披露面向电网客户的批量交付进度。\n第十三家，汝原科技。\n创始人王铭钰，曾任大疆研发副总裁，负责过相机和精灵系列相关产品。\n离开以后，他创办汝原，进入吹风机市场。\n它的Zuvi Halo采用光与气流结合的干发方式。\n后来，公司又与欧莱雅合作开发AirLight Pro，把产品带入专业美发场景。\n这家公司目前已经有自有品牌产品，也有与国际美妆集团合作开发的产品。\n第十四家，一晤未来。\n刘翊涵、白睿等创始成员有大疆工作背景，创业后选择了电动牙刷。\n公司的品牌叫EVOWERA，代表产品是planck系列，\n已经推出O1、O2 Lite等型号。\n它把自研电机和控制技术用在刷牙上，\n围绕刷头运动、力度控制和使用反馈做产品。\n现在已经从早期研发，走到了产品销售和生产体系建设阶段。\n第十五家，物种起源。",
+      "subject": {
+        "key": "e24",
+        "surface_text": "planck系列",
+        "entity_type": "product_family",
+        "confidence": 0.95,
+        "canonical_name": "planck系列",
+        "identity_scope": "global",
+        "identity_quote": "代表产品是planck系列",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e26",
+        "surface_text": "O2 Lite",
+        "entity_type": "product",
+        "confidence": 0.9,
+        "canonical_name": "O2 Lite",
+        "identity_scope": "video",
+        "identity_quote": "已经推出O1、O2 Lite等型号",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "型号": "O2 Lite"
+        }
+      },
+      "relation": {
+        "subject": "e24",
+        "object": "e26",
+        "predicate": "has_model",
+        "quote": "已经推出O1、O2 Lite等型号",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "21",
+        "basis": "model_lineup",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "model_lineup",
+        "index": "7"
+      },
+      "sample_id": "Q052",
+      "judgment": "supported",
+      "note": "紧接planck系列说明已推出O1和O2 Lite，系列到型号成立。"
+    },
+    {
+      "relation_key": "c5c224b1762c1e1ce778e6836e612aef05d600a2f3f083235c9c25b974e7abed",
+      "case_id": "S004",
+      "relation_index": 13,
+      "video_id": "421be679-dbf3-49d3-b434-0eb8708adfed",
+      "chunk_id": "5208dcbf-8420-4c65-b4b0-3a6155f308f1",
+      "title": "Entrepreneurs from DJI: 16 Startup Stories | 大疆系创业者",
+      "url": "https://www.youtube.com/watch?v=t0vMYS4cnwc",
+      "start_seconds": 350.267,
+      "end_seconds": 408.1,
+      "source_text": "代表产品是Hypertron-T01全地形重载轮足平台，\n主要面向电力巡检等工业场景。\n公司还开发电机和控制设备，2026年已经披露面向电网客户的批量交付进度。\n第十三家，汝原科技。\n创始人王铭钰，曾任大疆研发副总裁，负责过相机和精灵系列相关产品。\n离开以后，他创办汝原，进入吹风机市场。\n它的Zuvi Halo采用光与气流结合的干发方式。\n后来，公司又与欧莱雅合作开发AirLight Pro，把产品带入专业美发场景。\n这家公司目前已经有自有品牌产品，也有与国际美妆集团合作开发的产品。\n第十四家，一晤未来。\n刘翊涵、白睿等创始成员有大疆工作背景，创业后选择了电动牙刷。\n公司的品牌叫EVOWERA，代表产品是planck系列，\n已经推出O1、O2 Lite等型号。\n它把自研电机和控制技术用在刷牙上，\n围绕刷头运动、力度控制和使用反馈做产品。\n现在已经从早期研发，走到了产品销售和生产体系建设阶段。\n第十五家，物种起源。",
+      "subject": {
+        "key": "e13",
+        "surface_text": "Zuvi Halo",
+        "entity_type": "product",
+        "confidence": 0.95,
+        "canonical_name": "Zuvi Halo",
+        "identity_scope": "global",
+        "identity_quote": "它的Zuvi Halo采用光与气流结合的干发方式",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e6",
+        "surface_text": "汝原科技",
+        "entity_type": "organization",
+        "confidence": 0.95,
+        "canonical_name": "汝原科技",
+        "identity_scope": "global",
+        "identity_quote": "第十三家，汝原科技。",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e13",
+        "object": "e6",
+        "predicate": "offered_by",
+        "quote": "它的Zuvi Halo采用光与气流结合的干发方式",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "29",
+        "basis": "ownership",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "ownership",
+        "index": "13"
+      },
+      "sample_id": "Q053",
+      "judgment": "supported",
+      "note": "汝原产品介绍中的“它的Zuvi Halo”明确公司归属。"
+    },
+    {
+      "relation_key": "e33a9576522144379dc7941f11aa32c4787c6b1d11bb3a66975112e7f42f245e",
+      "case_id": "S004",
+      "relation_index": 16,
+      "video_id": "421be679-dbf3-49d3-b434-0eb8708adfed",
+      "chunk_id": "5208dcbf-8420-4c65-b4b0-3a6155f308f1",
+      "title": "Entrepreneurs from DJI: 16 Startup Stories | 大疆系创业者",
+      "url": "https://www.youtube.com/watch?v=t0vMYS4cnwc",
+      "start_seconds": 350.267,
+      "end_seconds": 408.1,
+      "source_text": "代表产品是Hypertron-T01全地形重载轮足平台，\n主要面向电力巡检等工业场景。\n公司还开发电机和控制设备，2026年已经披露面向电网客户的批量交付进度。\n第十三家，汝原科技。\n创始人王铭钰，曾任大疆研发副总裁，负责过相机和精灵系列相关产品。\n离开以后，他创办汝原，进入吹风机市场。\n它的Zuvi Halo采用光与气流结合的干发方式。\n后来，公司又与欧莱雅合作开发AirLight Pro，把产品带入专业美发场景。\n这家公司目前已经有自有品牌产品，也有与国际美妆集团合作开发的产品。\n第十四家，一晤未来。\n刘翊涵、白睿等创始成员有大疆工作背景，创业后选择了电动牙刷。\n公司的品牌叫EVOWERA，代表产品是planck系列，\n已经推出O1、O2 Lite等型号。\n它把自研电机和控制技术用在刷牙上，\n围绕刷头运动、力度控制和使用反馈做产品。\n现在已经从早期研发，走到了产品销售和生产体系建设阶段。\n第十五家，物种起源。",
+      "subject": {
+        "key": "e7",
+        "surface_text": "王铭钰",
+        "entity_type": "person",
+        "confidence": 0.95,
+        "canonical_name": "王铭钰",
+        "identity_scope": "global",
+        "identity_quote": "创始人王铭钰",
+        "identity_source": "current_chunk",
+        "attributes": {
+          "职务": "创始人"
+        }
+      },
+      "object": {
+        "key": "e35",
+        "surface_text": "汝原",
+        "entity_type": "organization",
+        "confidence": 0.9,
+        "canonical_name": "汝原",
+        "identity_scope": "global",
+        "identity_quote": "离开以后，他创办汝原",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e7",
+        "object": "e35",
+        "predicate": "affiliated_with",
+        "quote": "离开以后，他创办汝原",
+        "assertion": "asserted",
+        "confidence": 0.9,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "32",
+        "basis": "affiliation",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "affiliation",
+        "index": "16"
+      },
+      "sample_id": "Q054",
+      "judgment": "supported",
+      "note": "“他创办汝原”支持创始人与该公司的隶属；与Q049存在公司名称变体冗余，但事实关系本身受支持。"
+    },
+    {
+      "relation_key": "1cce154440a21ff193deacd87eb207b91433512d836524907ff77d3b4882e7d0",
+      "case_id": "S019",
+      "relation_index": 2,
+      "video_id": "d96fb455-d499-425b-b2f8-85085cb4b4e4",
+      "chunk_id": "d3c78ec7-2f42-4351-bb3b-dffd6125bdcf",
+      "title": "DJI NEO 4k Drone | The Complete Beginner’s Guide & How To Fly",
+      "url": "https://www.youtube.com/watch?v=_3SRHxiY4RQ",
+      "start_seconds": 639.56,
+      "end_seconds": 677.76,
+      "source_text": "The first is manual control which, when selected, has a manual takeoff button.\nThis will launch the drone from your hand or the ground, and will provide\ntwo virtual joysticks on the screen, simulating the physical joysticks of a handheld controller.\nHere you can maneuver the drone around, use both at the same time,\ncontrolling it within the maximum flight distances.\nIt's a nice method for if you still want something tangible\nto press and control instead of just relying on the drone's AI abilities.\nOn the manual control page you can also switch between photos and videos,\nuse the big red button to capture, and there's also a microphone button because using the app\nalso allows audio recording from the phone or an external microphone plugged into the phone.",
+      "subject": {
+        "key": "e6",
+        "surface_text": "app",
+        "entity_type": "software",
+        "confidence": 0.85,
+        "canonical_name": "app",
+        "identity_scope": "video",
+        "identity_quote": "using the app\nalso allows audio recording",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e7",
+        "surface_text": "microphone button",
+        "entity_type": "component",
+        "confidence": 0.8,
+        "canonical_name": "microphone button",
+        "identity_scope": "video",
+        "identity_quote": "there's also a microphone button",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e6",
+        "object": "e7",
+        "predicate": "contains",
+        "quote": "there's also a microphone button",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "6",
+        "basis": "composition",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "composition",
+        "index": "2"
+      },
+      "sample_id": "Q055",
+      "judgment": "issue",
+      "note": "app中的麦克风按钮是界面控件，却标为硬件component。"
+    },
+    {
+      "relation_key": "e5a0b262349f175eaef4cb2c2986a10f4bae285e7b6e77df1088673069553986",
+      "case_id": "S075",
+      "relation_index": 0,
+      "video_id": "2a65a6b0-7684-46bc-a677-429416ffc229",
+      "chunk_id": "9c73e4b5-ef35-48f5-a93c-854746ae8673",
+      "title": "Drone Hacking Explained: How Criminals Hijack UAVs Mid-Flight and What It Means for Security",
+      "url": "https://www.youtube.com/watch?v=fpBWwSsIc7M",
+      "start_seconds": 206.8,
+      "end_seconds": 266.16,
+      "source_text": "prevent spoofing Secure apps Uh only use official trusted apps to control drones No shady third\nparty stuff And geofencing Some drones let you set safe zones if they leave the zone alarm bells\ngo off And if you're running a critical facility like an airport or a hospital you can invest in\nanti- drone technology things like radar jammers drone detection systems and electromagnetic pulse\ntools which side note sounds absolutely epic like setting up a real life Star Wars defense\ngrid Take that hacker drones So who's getting hit the hardest right now Big targets include\nuh logistics companies like Amazon UPS FedEx using drones for deliveries agriculture farmers\nusing drones to monitor crops and law enforcement and military surveillance and tactical drones are",
+      "subject": {
+        "key": "e2",
+        "surface_text": "drones",
+        "entity_type": "product",
+        "confidence": 0.9,
+        "canonical_name": "drones",
+        "identity_scope": "video",
+        "identity_quote": "drones",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e3",
+        "surface_text": "geofencing",
+        "entity_type": "technology",
+        "confidence": 0.9,
+        "canonical_name": "geofencing",
+        "identity_scope": "global",
+        "identity_quote": "And geofencing Some drones let you set safe zones",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e2",
+        "object": "e3",
+        "predicate": "supports",
+        "quote": "Some drones let you set safe zones",
+        "assertion": "asserted",
+        "confidence": 0.8,
+        "qualifiers": {
+          "modality": "capability"
+        }
+      },
+      "support": {
+        "source_index": "1",
+        "basis": "capability",
+        "modality": "capability",
+        "scope_quote": "Some drones let you set safe zones",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "capability",
+        "index": "0"
+      },
+      "sample_id": "Q056",
+      "judgment": "supported",
+      "note": "Some drones let you set safe zones明确部分无人机的geofencing能力；来源中的Some保留在引文。"
+    },
+    {
+      "relation_key": "74cc0b420f5137598d546d4499aafd074cfcc53998d6450a49dfb85d4cca3835",
+      "case_id": "S075",
+      "relation_index": 6,
+      "video_id": "2a65a6b0-7684-46bc-a677-429416ffc229",
+      "chunk_id": "9c73e4b5-ef35-48f5-a93c-854746ae8673",
+      "title": "Drone Hacking Explained: How Criminals Hijack UAVs Mid-Flight and What It Means for Security",
+      "url": "https://www.youtube.com/watch?v=fpBWwSsIc7M",
+      "start_seconds": 206.8,
+      "end_seconds": 266.16,
+      "source_text": "prevent spoofing Secure apps Uh only use official trusted apps to control drones No shady third\nparty stuff And geofencing Some drones let you set safe zones if they leave the zone alarm bells\ngo off And if you're running a critical facility like an airport or a hospital you can invest in\nanti- drone technology things like radar jammers drone detection systems and electromagnetic pulse\ntools which side note sounds absolutely epic like setting up a real life Star Wars defense\ngrid Take that hacker drones So who's getting hit the hardest right now Big targets include\nuh logistics companies like Amazon UPS FedEx using drones for deliveries agriculture farmers\nusing drones to monitor crops and law enforcement and military surveillance and tactical drones are",
+      "subject": {
+        "key": "e12",
+        "surface_text": "UPS",
+        "entity_type": "organization",
+        "confidence": 0.95,
+        "canonical_name": "UPS",
+        "identity_scope": "global",
+        "identity_quote": "Amazon UPS FedEx",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e2",
+        "surface_text": "drones",
+        "entity_type": "product",
+        "confidence": 0.9,
+        "canonical_name": "drones",
+        "identity_scope": "video",
+        "identity_quote": "drones",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e12",
+        "object": "e2",
+        "predicate": "uses",
+        "quote": "logistics companies like Amazon UPS FedEx using drones for deliveries",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "7",
+        "basis": "use",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "use",
+        "index": "6"
+      },
+      "sample_id": "Q057",
+      "judgment": "supported",
+      "note": "UPS位于明确using drones for deliveries的公司列表。"
+    },
+    {
+      "relation_key": "9f1521d1a50734cb0fc9e740c6973fb9a97c4fad2ef930f25d6e6de252f2639d",
+      "case_id": "S075",
+      "relation_index": 7,
+      "video_id": "2a65a6b0-7684-46bc-a677-429416ffc229",
+      "chunk_id": "9c73e4b5-ef35-48f5-a93c-854746ae8673",
+      "title": "Drone Hacking Explained: How Criminals Hijack UAVs Mid-Flight and What It Means for Security",
+      "url": "https://www.youtube.com/watch?v=fpBWwSsIc7M",
+      "start_seconds": 206.8,
+      "end_seconds": 266.16,
+      "source_text": "prevent spoofing Secure apps Uh only use official trusted apps to control drones No shady third\nparty stuff And geofencing Some drones let you set safe zones if they leave the zone alarm bells\ngo off And if you're running a critical facility like an airport or a hospital you can invest in\nanti- drone technology things like radar jammers drone detection systems and electromagnetic pulse\ntools which side note sounds absolutely epic like setting up a real life Star Wars defense\ngrid Take that hacker drones So who's getting hit the hardest right now Big targets include\nuh logistics companies like Amazon UPS FedEx using drones for deliveries agriculture farmers\nusing drones to monitor crops and law enforcement and military surveillance and tactical drones are",
+      "subject": {
+        "key": "e13",
+        "surface_text": "FedEx",
+        "entity_type": "organization",
+        "confidence": 0.95,
+        "canonical_name": "FedEx",
+        "identity_scope": "global",
+        "identity_quote": "Amazon UPS FedEx",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e2",
+        "surface_text": "drones",
+        "entity_type": "product",
+        "confidence": 0.9,
+        "canonical_name": "drones",
+        "identity_scope": "video",
+        "identity_quote": "drones",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e13",
+        "object": "e2",
+        "predicate": "uses",
+        "quote": "logistics companies like Amazon UPS FedEx using drones for deliveries",
+        "assertion": "asserted",
+        "confidence": 0.85,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "8",
+        "basis": "use",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "use",
+        "index": "7"
+      },
+      "sample_id": "Q058",
+      "judgment": "supported",
+      "note": "FedEx位于明确using drones for deliveries的公司列表。"
+    },
+    {
+      "relation_key": "f6de31a4ed05d4e47b81b4039189e3f410c802d8eb33a82fed737486a62abb9e",
+      "case_id": "S075",
+      "relation_index": 8,
+      "video_id": "2a65a6b0-7684-46bc-a677-429416ffc229",
+      "chunk_id": "9c73e4b5-ef35-48f5-a93c-854746ae8673",
+      "title": "Drone Hacking Explained: How Criminals Hijack UAVs Mid-Flight and What It Means for Security",
+      "url": "https://www.youtube.com/watch?v=fpBWwSsIc7M",
+      "start_seconds": 206.8,
+      "end_seconds": 266.16,
+      "source_text": "prevent spoofing Secure apps Uh only use official trusted apps to control drones No shady third\nparty stuff And geofencing Some drones let you set safe zones if they leave the zone alarm bells\ngo off And if you're running a critical facility like an airport or a hospital you can invest in\nanti- drone technology things like radar jammers drone detection systems and electromagnetic pulse\ntools which side note sounds absolutely epic like setting up a real life Star Wars defense\ngrid Take that hacker drones So who's getting hit the hardest right now Big targets include\nuh logistics companies like Amazon UPS FedEx using drones for deliveries agriculture farmers\nusing drones to monitor crops and law enforcement and military surveillance and tactical drones are",
+      "subject": {
+        "key": "e15",
+        "surface_text": "farmers",
+        "entity_type": "organization",
+        "confidence": 0.7,
+        "canonical_name": "farmers",
+        "identity_scope": "global",
+        "identity_quote": "agriculture farmers\nusing drones",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e2",
+        "surface_text": "drones",
+        "entity_type": "product",
+        "confidence": 0.9,
+        "canonical_name": "drones",
+        "identity_scope": "video",
+        "identity_quote": "drones",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e15",
+        "object": "e2",
+        "predicate": "uses",
+        "quote": "agriculture farmers\nusing drones to monitor crops",
+        "assertion": "asserted",
+        "confidence": 0.8,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "9",
+        "basis": "use",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "use",
+        "index": "8"
+      },
+      "sample_id": "Q059",
+      "judgment": "issue",
+      "note": "farmers为泛称农业从业者，不能当作明确organization机构。"
+    },
+    {
+      "relation_key": "ac3858e05991a8b3ea714b3fe98fd154d41eb9267bbbb9b9bf76a279514cf513",
+      "case_id": "S075",
+      "relation_index": 9,
+      "video_id": "2a65a6b0-7684-46bc-a677-429416ffc229",
+      "chunk_id": "9c73e4b5-ef35-48f5-a93c-854746ae8673",
+      "title": "Drone Hacking Explained: How Criminals Hijack UAVs Mid-Flight and What It Means for Security",
+      "url": "https://www.youtube.com/watch?v=fpBWwSsIc7M",
+      "start_seconds": 206.8,
+      "end_seconds": 266.16,
+      "source_text": "prevent spoofing Secure apps Uh only use official trusted apps to control drones No shady third\nparty stuff And geofencing Some drones let you set safe zones if they leave the zone alarm bells\ngo off And if you're running a critical facility like an airport or a hospital you can invest in\nanti- drone technology things like radar jammers drone detection systems and electromagnetic pulse\ntools which side note sounds absolutely epic like setting up a real life Star Wars defense\ngrid Take that hacker drones So who's getting hit the hardest right now Big targets include\nuh logistics companies like Amazon UPS FedEx using drones for deliveries agriculture farmers\nusing drones to monitor crops and law enforcement and military surveillance and tactical drones are",
+      "subject": {
+        "key": "e16",
+        "surface_text": "law enforcement",
+        "entity_type": "organization",
+        "confidence": 0.8,
+        "canonical_name": "law enforcement",
+        "identity_scope": "global",
+        "identity_quote": "law enforcement and military surveillance",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "object": {
+        "key": "e18",
+        "surface_text": "surveillance and tactical drones",
+        "entity_type": "product",
+        "confidence": 0.8,
+        "canonical_name": "surveillance and tactical drones",
+        "identity_scope": "global",
+        "identity_quote": "military surveillance and tactical drones",
+        "identity_source": "current_chunk",
+        "attributes": {}
+      },
+      "relation": {
+        "subject": "e16",
+        "object": "e18",
+        "predicate": "uses",
+        "quote": "law enforcement and military surveillance and tactical drones are",
+        "assertion": "asserted",
+        "confidence": 0.75,
+        "qualifiers": {}
+      },
+      "support": {
+        "source_index": "10",
+        "basis": "use",
+        "modality": "actual",
+        "scope_quote": "",
+        "direction_rule": "",
+        "projection": "",
+        "model_basis": "use",
+        "index": "9"
+      },
+      "sample_id": "Q060",
+      "judgment": "review",
+      "note": "末句law enforcement and military surveillance and tactical drones are截断，执法机构与特定无人机的使用归属不能可靠区分。"
+    }
+  ],
+  "release_metrics": {
+    "target_gate": false,
+    "source_review_complete": true,
+    "source_review_counts": {
+      "supported": 43,
+      "issue": 13,
+      "review": 4
+    },
+    "output_gate": false,
+    "release_gate": false
+  }
+}

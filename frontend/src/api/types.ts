@@ -644,6 +644,7 @@ export type VideoGraphEvidence = {
   start_seconds: number | null; end_seconds: number | null;
   assertion: 'asserted' | 'uncertain' | 'negated'; confidence: number;
   caption_source: string | null; extractor_version: string;
+  qualifiers?: Record<string, string>;
 };
 
 export type VideoGraphStatus = {

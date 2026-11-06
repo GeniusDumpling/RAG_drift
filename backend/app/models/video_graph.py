@@ -71,7 +71,10 @@ class VideoGraphState(Base, TimestampMixin):
 
 class VideoGraphAlias(Base, UuidPrimaryKeyMixin):
     __tablename__ = "video_graph_aliases"
-    __table_args__ = (UniqueConstraint("entity_type", "normalized_alias"),)
+    __table_args__ = (
+        UniqueConstraint("entity_type", "normalized_alias", "scope_key", "entity_id",
+                         name="uq_video_graph_alias_scope_entity"),
+    )
 
     entity_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("entities.id", ondelete="CASCADE"), nullable=False
@@ -79,6 +82,9 @@ class VideoGraphAlias(Base, UuidPrimaryKeyMixin):
     entity_type: Mapped[str] = mapped_column(String(80), nullable=False)
     surface_text: Mapped[str] = mapped_column(String(255), nullable=False)
     normalized_alias: Mapped[str] = mapped_column(String(255), nullable=False)
+    scope_key: Mapped[str] = mapped_column(
+        String(80), default="", server_default="", nullable=False
+    )
 
 
 class VideoGraphRelation(Base, UuidPrimaryKeyMixin, TimestampMixin):

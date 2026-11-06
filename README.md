@@ -338,9 +338,11 @@ curl -fsS -X POST http://localhost:8000/answer \
 docker compose -f docker-compose.deploy.yml up -d --build app
 ```
 
-## 视频知识图谱（第一版）
+## 视频知识图谱
 
-视频知识图谱第一版提供历史视频构图、增量轮询、字幕证据定位和前端浏览代码，入口位于 `tools/video-knowledge-graph/`。迁移、模型配置、使用命令及 GraphRAG 接口说明见 [视频知识图谱说明](tools/video-knowledge-graph/README.md)。
+当前实体金标准集包含中英文各10段、101条实体记录；采用原文加实体表的简化格式。标注、测试命令及保留文件见[实体评测入口](docs/entity-gold-evaluation.md)，最近两轮结果见[评测记录](docs/entity-gold-r3-fresh-2026-11-05.md)。旧版关系金标准配套的106条实体集继续保留，关系评测当前配置见[关系评测说明](docs/relation-gold-evaluation.md)。
+
+视频知识图谱提供历史视频构图、增量轮询、字幕证据定位和前端浏览代码，入口位于 `tools/video-knowledge-graph/`。当前代码默认使用 v2：将提及与实体身份分离，独立审核关系语义，并通过包含规则指纹的版本和固定清单回补存量。修复设计、固定样本验收和操作见 [v2 说明](docs/video-graph-v2.md)；基础命令及 GraphRAG 接口见 [视频知识图谱说明](tools/video-knowledge-graph/README.md)。存量数据是否已更新应查看实际有效版本，不能只看默认配置。
 
 2026-10-23 已正式部署白色背景的 AntV G6 图谱工作台，仅保留交互视图，支持拖拽、悬停邻居与连线高亮、入链/出链与字幕证据面板。图谱与供应链、AI 问答共用左侧导航，移除图谱顶部标题、说明及系统顶栏，图谱区域铺满导航右侧的可用空间；从左侧“视频知识图谱”进入，或访问 `http://localhost:8000/?view=VideoGraph`，镜像和回退说明见 [当前部署记录](docs/graph-ui-navigation-2026-10-23.md)。
 
@@ -355,11 +357,15 @@ docker compose -f docker-compose.deploy.yml up -d --build app
 ```bash
 # 只读盘点，不调用抽取模型
 .venv/bin/python tools/video-knowledge-graph/build_graph.py inventory --limit 20
-# 排队并最多处理一个视频；相关视频的各个切片分别调用模型
-.venv/bin/python tools/video-knowledge-graph/build_graph.py run --limit 1
+# 最多选择一个视频，完成抽取、发布、图谱/证据回读和检索验证
+.venv/bin/python tools/video-knowledge-graph/build_graph.py pipeline --limit 1 \
+  --manifest data/video_graph_runs/video-build.plan.json \
+  --report data/video_graph_runs/video-build.report.json
 ```
 
 构图需 `LLM_API_KEY`。`--limit` 仅限制处理数量，`run` 仍会扫描并排队整个范围；限定视频使用 `--content-id VIDEO_UUID`。实体和关系来自已保存的字幕证据，无字幕时仅生成摘要实体提及；图谱接口为 `/video-graph/*`。失败、部分完成、检查点恢复与增量轮询见工具说明。
+
+推荐的`pipeline`会先固定最多limit条范围，再构建和逐项验证，范围外视频不会排队。当前优化版抽取与Neo4j/PostgreSQL入库、证据及检索已接成完整管线；配置、恢复与运行验证见[闭环管线说明](docs/video-graph-build-pipeline-2026-11-05.md)。
 
 ## 开发验证
 

@@ -16,6 +16,7 @@ from app.services.video_graph import (
 )
 from app.services.video_graph_semantics import (
     ENTITY_TYPE_DEFINITIONS,
+    PREDICATE_DEFINITIONS,
     RELATION_TYPE_RULES,
     EntitySemanticError,
     RelationSemanticError,
@@ -55,6 +56,7 @@ def chunk(body, kind="transcript_segment"):
 class TestVideoGraphSemantics(unittest.TestCase):
     def test_definitions_cover_schema_types_and_relations(self):
         self.assertEqual(set(ENTITY_TYPE_DEFINITIONS), set(get_args(EntityType)))
+        self.assertEqual(set(PREDICATE_DEFINITIONS), set(get_args(Predicate)))
         self.assertEqual(set(RELATION_TYPE_RULES), set(get_args(Predicate)))
 
     def test_country_and_region_mentions_are_accepted_without_mutation(self):
@@ -194,14 +196,16 @@ class TestVideoGraphSemantics(unittest.TestCase):
             validate_extraction(chunk(body, "video_summary"), extraction([("Ukraine", "product")]))
 
     def test_extraction_prompt_explains_types_roles_and_abstention(self):
+        current = chunk("Ukraine")
         material = VideoMaterial(
-            uuid.uuid4(), "youtube:test", "test", "https://youtu.be/test", "", "manual", "en", ()
+            uuid.uuid4(), "youtube:test", "test", "https://youtu.be/test", "", "manual", "en",
+            (current,)
         )
         extractor = LLMVideoExtractor(Settings(_env_file=None, LLM_API_KEY="test-key"))
         with patch.object(
             extractor, "_request", return_value={"entities": [], "relations": []}
         ) as request:
-            extractor.extract(material, chunk("Ukraine"), "")
+            extractor.extract(material, current, "")
         system = request.call_args.args[0]
         for rule in ("country", "region", "used_in", "located_in", "无法判断", "乌克兰政府"):
             self.assertIn(rule, system)

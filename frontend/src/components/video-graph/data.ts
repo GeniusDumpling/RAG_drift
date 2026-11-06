@@ -1,6 +1,17 @@
 import type { VideoGraphData, VideoGraphEdge } from '../../api/types';
 import { DESKTOP_GRAPH_LIMITS } from './limits';
 
+/** Count visible relations, including parallel/reversed edges and each self-loop once. */
+export function nodeRelationCounts(edges: VideoGraphEdge[]) {
+  const counts = new Map<string, number>();
+  for (const edge of edges) {
+    if (edge.kind !== 'relation') continue;
+    counts.set(edge.source, (counts.get(edge.source) ?? 0) + 1);
+    if (edge.target !== edge.source) counts.set(edge.target, (counts.get(edge.target) ?? 0) + 1);
+  }
+  return counts;
+}
+
 /** Precompute parallel curves once instead of scanning all edges during every hover redraw. */
 export function parallelEdgeStyles(edges: VideoGraphEdge[]) {
   const groups = new Map<string, VideoGraphEdge[]>();

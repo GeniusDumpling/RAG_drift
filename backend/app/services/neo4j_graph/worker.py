@@ -14,6 +14,7 @@ from app.schemas.video_graph import ChunkExtraction, VideoAssessment
 from app.services.neo4j_graph.store import GraphStore, decode
 from app.services.video_graph import (
     LeaseLostError,
+    LLMVideoExtractor,
     VideoExtractor,
     chunk_fingerprint,
     load_material,
@@ -22,10 +23,12 @@ from app.services.video_graph import (
     validate_extraction,
 )
 from app.services.video_graph_diagnostics import describe_graph_error, graph_error_summary
+from app.services.video_graph_identity import is_quality_version, neighbor_context
 
 
 def enqueue_videos(
-    engine, store, *, extractor_version, content_ids=None, retry_failed=False, retry_partial=False
+    engine, store, *, extractor_version, content_ids=None, retry_failed=False, retry_partial=False,
+    expected_fingerprints=None, expected_active_ids=None,
 ):
     counts = dict(scanned=0, queued=0, unchanged=0, withdrawn=0, no_evidence=0)
     with Session(engine) as session:
@@ -37,10 +40,15 @@ def enqueue_videos(
             material = load_material(session, content_id)
             if material is None:
                 continue
+            if (expected_fingerprints is not None
+                and material.fingerprint != expected_fingerprints[content_id]):
+                raise ValueError("回补材料在排队前已变化，请重新生成清单")
             counts["scanned"] += 1
             if not material.extraction_chunks:
                 counts["no_evidence"] += 1
-            counts[store.enqueue(material, extractor_version, retry_failed, retry_partial)] += 1
+            expected = expected_active_ids[content_id] if expected_active_ids is not None else ...
+            counts[store.enqueue(material, extractor_version, retry_failed, retry_partial,
+                                 expected_active_id=expected)] += 1
     # PostgreSQL cannot cascade into Neo4j. Reconcile deletions within this scan's scope.
     known = store.read(
         "MATCH (v:VGVideo) WHERE NOT coalesce(v.deleted,false) "
@@ -81,6 +89,11 @@ def process_next(
             raise ValueError("worker 抽取版本与任务版本不一致，请使用 scan 对齐配置")
         if material is None:
             raise LeaseLostError("源视频已删除")
+        if isinstance(extractor, LLMVideoExtractor):
+            extractor.heartbeat = lambda: store.checkpoint(build_id, content_id, token, output)
+            from app.services.video_graph_request_checkpoint import RequestCheckpoint
+
+            extractor.request_checkpoint = RequestCheckpoint(output, extractor, extractor.heartbeat)
         if "assessment" not in output:
             stage = "assessment"
             assessment = (
@@ -89,6 +102,8 @@ def process_next(
                 else VideoAssessment(relevant=False, reason="没有可用的字幕或摘要切片")
             )
             output["assessment"] = assessment.model_dump()
+            if isinstance(extractor, LLMVideoExtractor):
+                extractor.request_checkpoint.clear()
             stage = "checkpoint"
             store.checkpoint(build_id, content_id, token, output)
         output["chunks"] = dict(output.get("chunks", {}))
@@ -100,6 +115,8 @@ def process_next(
 
         def skip_chunk(exc: ValueError) -> None:
             assert current_chunk is not None
+            if isinstance(extractor, LLMVideoExtractor):
+                extractor.request_checkpoint.clear()
             key = str(current_chunk.id)
             previous_error = output["chunk_errors"].get(key, {})
             detail = describe_graph_error(
@@ -126,7 +143,8 @@ def process_next(
                 if key in output["chunks"]:
                     try:
                         validate_extraction(
-                            chunk, ChunkExtraction.model_validate(output["chunks"][key])
+                            chunk, ChunkExtraction.model_validate(output["chunks"][key]),
+                            material=material, require_review=is_quality_version(expected_version),
                         )
                     except ValueError:
                         del output["chunks"][key]
@@ -135,9 +153,9 @@ def process_next(
                         continue
                 current_chunk, chunk_index = chunk, index + 1
                 extraction = None
-                neighbors = "\n".join(
-                    c.text[:500] for c in chunks[max(0, index - 1) : index + 2] if c.id != chunk.id
-                )
+                neighbors = neighbor_context(material, chunk)
+                if isinstance(extractor, LLMVideoExtractor):
+                    extractor.request_checkpoint.namespace = key
                 stage = "extraction"
                 try:
                     extraction = extractor.extract(material, chunk, neighbors)
@@ -146,11 +164,16 @@ def process_next(
                     continue
                 stage = "validation"
                 try:
-                    extracted = validate_extraction(chunk, extraction)
+                    extracted = validate_extraction(
+                        chunk, extraction, material=material,
+                        require_review=is_quality_version(expected_version),
+                    )
                 except ValueError as exc:
                     skip_chunk(exc)
                     continue
                 output["chunks"][key] = extracted.model_dump()
+                if isinstance(extractor, LLMVideoExtractor):
+                    extractor.request_checkpoint.clear()
                 output["chunk_errors"].pop(key, None)
                 update_coverage(output, material)
                 stage = "checkpoint"
@@ -170,6 +193,7 @@ def process_next(
             "assessment": output["assessment"],
             "chunks": len(output["chunks"]),
             "coverage": output["coverage"],
+            "quality": output.get("quality"),
             "chunk_errors": output["chunk_errors"],
             "projection_activated": output.get("projection_activated", False),
             **(
@@ -188,6 +212,13 @@ def process_next(
             "status": "lease_lost",
         }
     except Exception as exc:
+        if (isinstance(exc, ValueError) and isinstance(extractor, LLMVideoExtractor)
+            and extractor.request_checkpoint is not None):
+            extractor.request_checkpoint.clear()
+            try:
+                store.checkpoint(build_id, content_id, token, output)
+            except LeaseLostError:
+                pass
         detail = describe_graph_error(
             exc,
             stage=stage,
@@ -207,3 +238,7 @@ def process_next(
             "error": type(exc).__name__,
             "error_detail": detail,
         }
+    finally:
+        if isinstance(extractor, LLMVideoExtractor):
+            extractor.heartbeat = None
+            extractor.request_checkpoint = None

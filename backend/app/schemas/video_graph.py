@@ -14,6 +14,11 @@ EntityType = Literal[
     "fault",
     "country",
     "region",
+    "person",
+    "event",
+    "data",
+    "document",
+    "product_family",
 ]
 Predicate = Literal[
     "uses",
@@ -24,6 +29,19 @@ Predicate = Literal[
     "mitigates",
     "used_in",
     "located_in",
+    "manufactured_by",
+    "developed_by",
+    "installed_on",
+    "distributed_via",
+    "organizes",
+    "affiliated_with",
+    "supports",
+    "connected_to",
+    "controls",
+    "packaged_with",
+    "offered_by",
+    "has_model",
+    "equipped_with",
 ]
 Assertion = Literal["asserted", "uncertain", "negated"]
 ShortText = Annotated[str, Field(min_length=1, max_length=255)]
@@ -35,6 +53,11 @@ class ExtractedEntity(BaseModel):
     surface_text: ShortText
     entity_type: EntityType
     confidence: float = Field(default=0.7, ge=0, le=1, allow_inf_nan=False)
+    canonical_name: ShortText | None = None
+    identity_scope: Literal["global", "video"] | None = None
+    identity_quote: str | None = Field(default=None, max_length=6000)
+    identity_source: Literal["current_chunk", "neighbor_context", "title"] | None = None
+    attributes: dict[str, str] = Field(default_factory=dict, max_length=12)
 
 
 class ExtractedRelation(BaseModel):
@@ -48,10 +71,23 @@ class ExtractedRelation(BaseModel):
     qualifiers: dict[str, str] = Field(default_factory=dict, max_length=12)
 
 
+class QualityReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    policy: str
+    input_hash: str
+    result_hash: str
+    candidate_entities: int = Field(ge=0)
+    candidate_relations: int = Field(ge=0)
+    rejected: list[dict[str, str]] = Field(default_factory=list)
+    relation_support: list[dict[str, str]] = Field(default_factory=list)
+
+
 class ChunkExtraction(BaseModel):
     model_config = ConfigDict(extra="forbid")
     entities: list[ExtractedEntity] = Field(default_factory=list, max_length=60)
     relations: list[ExtractedRelation] = Field(default_factory=list, max_length=80)
+    schema_version: Literal[1, 2] = 1
+    review: QualityReview | None = None
 
 
 class VideoAssessment(BaseModel):
@@ -99,6 +135,7 @@ class GraphEvidenceRead(BaseModel):
     confidence: float
     caption_source: str | None
     extractor_version: str
+    qualifiers: dict[str, str] = Field(default_factory=dict)
 
 
 class GraphRetrieveRequest(BaseModel):

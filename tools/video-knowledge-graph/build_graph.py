@@ -7,6 +7,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
@@ -22,6 +23,9 @@ from app.services.video_graph import (  # noqa: E402
     process_next,
     withdraw_video,
 )
+from app.services.video_graph_backfill import apply_plan, create_plan, save_plan  # noqa: E402
+from app.services.video_graph_build_pipeline import run_pipeline  # noqa: E402
+from app.services.video_graph_identity import extraction_version  # noqa: E402
 from sqlalchemy import create_engine, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
@@ -33,7 +37,7 @@ def emit(value: object) -> None:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("inventory", "scan", "run", "watch"):
+    for name in ("inventory", "scan", "run", "watch", "plan-backfill", "backfill", "pipeline"):
         command = commands.add_parser(name)
         command.add_argument(
             "--content-id", type=uuid.UUID, action="append", help="只处理指定视频，可重复"
@@ -55,6 +59,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         )
         if name == "watch":
             command.add_argument("--interval", type=int, default=120, help="轮询间隔秒数，默认 120")
+        if name in {"plan-backfill", "backfill", "pipeline"}:
+            command.add_argument(
+                "--manifest",
+                type=Path,
+                required=True,
+                help="固定回补范围、材料指纹和目标版本的 JSON 清单",
+            )
+        if name == "pipeline":
+            command.add_argument("--report", type=Path, required=True, help="完整管线的验证报告")
+        if name in {"backfill", "pipeline"}:
+            command.add_argument(
+                "--batch-size",
+                type=int,
+                default=5,
+                help="每次最多排队的视频数；--limit 限制本次总数",
+            )
     for name in ("withdraw", "restore"):
         command = commands.add_parser(name)
         command.add_argument("--content-id", type=uuid.UUID, required=True)
@@ -63,6 +83,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--limit 必须大于 0")
     if getattr(args, "interval", 5) < 5:
         parser.error("--interval 必须至少为 5 秒")
+    if getattr(args, "batch_size", 1) < 1:
+        parser.error("--batch-size 必须大于 0")
+    if args.command == "backfill" and args.content_id:
+        parser.error("backfill 的范围来自清单；请在 plan-backfill 时指定 --content-id")
     return args
 
 
@@ -118,12 +142,13 @@ def main(argv: list[str] | None = None) -> int:
         if (
             settings.video_graph_backend == "neo4j"
             and args.command != "inventory"
-            and not getattr(args, "dry_run", False)
+            and (not getattr(args, "dry_run", False) or args.command == "pipeline")
         ):
             from app.services.neo4j_graph.store import GraphStore
 
             store = GraphStore(settings)
-            store.initialize()
+            if args.command != "plan-backfill" and not getattr(args, "dry_run", False):
+                store.initialize()
             store.ensure_ready()
         if args.command in {"withdraw", "restore"}:
             with Session(engine) as session, session.begin():
@@ -135,18 +160,76 @@ def main(argv: list[str] | None = None) -> int:
                     withdraw_video(session, args.content_id, restore=args.command == "restore")
             emit({"status": args.command, "content_item_id": str(args.content_id)})
             return 0
-        if args.command == "inventory" or args.dry_run:
+        if args.command == "inventory" or (args.dry_run and args.command != "pipeline"):
             with Session(engine) as session:
                 emit(inventory(session, args))
             return 0
-        version = f"{args.extractor_version}:{settings.llm_model}"
-        if len(version) > 160:
-            raise ValueError("抽取版本和模型名称合计不能超过 160 个字符")
+        version = extraction_version(
+            args.extractor_version,
+            settings.llm_model,
+            settings.video_graph_reasoning_effort,
+            settings.video_graph_extraction_effort,
+        )
+        if args.command == "pipeline":
+            extractor = (
+                SimpleNamespace(version=version)
+                if args.dry_run
+                else LLMVideoExtractor(settings, version=args.extractor_version)
+            )
+            final_status = None
+            for event in run_pipeline(
+                engine,
+                extractor,
+                args.manifest,
+                args.report,
+                store=store,
+                content_ids=args.content_id,
+                limit=args.limit,
+                batch_size=args.batch_size,
+                retry_failed=args.retry_failed or args.retry_partial,
+                dry_run=args.dry_run,
+            ):
+                emit(event)
+                if event.get("stage") == "pipeline_summary":
+                    final_status = event.get("status")
+            return 0 if args.dry_run or final_status == "success" else 1
+        if args.command == "plan-backfill":
+            plan = create_plan(engine, version, store=store, content_ids=args.content_id)
+            save_plan(args.manifest, plan)
+            emit(
+                {
+                    "stage": "backfill_plan",
+                    "manifest": str(args.manifest),
+                    "target_version": version,
+                    "counts": plan["counts"],
+                    "estimated_model_calls": sum(i["estimated_model_calls"] for i in plan["items"]),
+                }
+            )
+            return 0
         extractor = (
             LLMVideoExtractor(settings, version=args.extractor_version)
-            if args.command in {"run", "watch"}
+            if args.command in {"run", "watch", "backfill"}
             else None
         )
+        if args.command == "backfill":
+            failed = False
+            for event in apply_plan(
+                engine,
+                extractor,
+                args.manifest,
+                store=store,
+                limit=args.limit,
+                batch_size=args.batch_size,
+                retry_failed=args.retry_failed or args.retry_partial,
+            ):
+                emit(event)
+                failed = failed or event.get("status") in {
+                    "failed",
+                    "partial_success",
+                    "lease_lost",
+                    "obsolete",
+                }
+            return 1 if failed else 0
         failed = False
         while True:
             if store:

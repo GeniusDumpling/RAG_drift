@@ -774,11 +774,16 @@ class TestVideoGraphPersistence(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("video_graph_migration", path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        scope_path = path.with_name("0010_video_graph_alias_scope.py")
+        scope_spec = importlib.util.spec_from_file_location("video_graph_alias_scope", scope_path)
+        scope_module = importlib.util.module_from_spec(scope_spec)
+        scope_spec.loader.exec_module(scope_module)
         with self.engine.begin() as connection:
             with Operations.context(MigrationContext.configure(connection)):
                 module.downgrade()
                 self.assertNotIn("video_graph_builds", inspect(connection).get_table_names())
                 module.upgrade()
+                scope_module.upgrade()
                 for name in (
                     "video_graph_builds",
                     "video_graph_states",
@@ -794,7 +799,58 @@ class TestVideoGraphPersistence(unittest.TestCase):
         self.queue()
         self.assertEqual(process_next(self.engine, StubExtractor())["status"], "success")
 
+    def test_v2_scoped_entities_attributes_and_retrieval(self):
+        from app.models.search import ContentEntityMention
+        from app.services.video_graph_identity import extraction_version
+
+        from backend.tests.test_neo4j_graph import quality_output
+
+        ids = [self.seed_video(), self.seed_video()]
+        with Session(self.engine) as session, session.begin():
+            for cid in ids:
+                chunk = session.scalar(
+                    select(ContentChunk).where(ContentChunk.content_item_id == cid)
+                )
+                chunk.display_text = "After setup, drone uses GPS. Its IP is 192.168.1.12."
+                chunk.embed_text = chunk.display_text
+
+        class QualityExtractor:
+            version = extraction_version("video-graph-v2", "fixture")
+
+            def assess(self, material):
+                return VideoAssessment(relevant=True, reason="fixture")
+
+            def extract(self, material, chunk, context):
+                output = quality_output(material, attributes={"ip_address": "192.168.1.12"},
+                                        modality="conditional", scope_quote=chunk.text)
+                return ChunkExtraction.model_validate(output["chunks"][str(chunk.id)])
+
+        extractor = QualityExtractor()
+        self.queue(version=extractor.version)
+        for _ in ids:
+            self.assertEqual(process_next(self.engine, extractor)["status"], "success")
+        with Session(self.engine) as session:
+            self.assertEqual(list_entities(session, q="drone")["total"], 2)
+            self.assertFalse(
+                retrieve_context(session, GraphRetrieveRequest(query="drone")).evidence
+            )
+            self.assertEqual(
+                len(retrieve_context(session, GraphRetrieveRequest(query="GPS")).evidence), 2
+            )
+            context = retrieve_context(session, GraphRetrieveRequest(query="GPS"))
+            self.assertIn("conditional", context.context)
+            self.assertIn("适用条件", context.context)
+            entry = context.evidence[0]
+            self.assertTrue(entry.qualifiers["scope"].startswith("After setup"))
+            saved = relation_evidence(session, entry.relation_id)["items"][0]
+            self.assertEqual(saved.qualifiers, entry.qualifiers)
+            mentions = session.scalars(select(ContentEntityMention)).all()
+            attributes = [m.metadata_json.get("attributes", {}) for m in mentions]
+            self.assertEqual(sum(a.get("ip_address") == "192.168.1.12" for a in attributes), 2)
+
     def test_api_scope_validation_and_retrieval(self):
+        from unittest.mock import patch
+
         from app.api.deps import get_session
         from app.main import create_app
         from fastapi.testclient import TestClient
@@ -814,8 +870,14 @@ class TestVideoGraphPersistence(unittest.TestCase):
 
         api = create_app()
         api.dependency_overrides[get_session] = override
-        with TestClient(api) as client:
-            graph = client.get("/video-graph/graph", params={"content_item_id": str(content_id)})
+        with (
+            patch("app.api.video_graph.get_settings",
+                  return_value=Settings(_env_file=None, VIDEO_GRAPH_BACKEND="postgres")),
+            TestClient(api) as client,
+        ):
+            graph = client.get("/video-graph/graph", params={
+                "content_item_id": str(content_id), "min_component_size": 0,
+            })
             self.assertEqual(graph.status_code, 200)
             relation = next(edge for edge in graph.json()["edges"] if edge["kind"] == "relation")
             evidence = client.get(

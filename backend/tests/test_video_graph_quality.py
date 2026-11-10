@@ -8,13 +8,8 @@ import httpx
 import pytest
 from app.core.config import Settings
 from app.schemas.video_graph import ChunkExtraction, ExtractedEntity
-from app.services.video_graph import (
-    LLMVideoExtractor,
-    VideoChunk,
-    VideoMaterial,
-    validate_extraction,
-)
-from app.services.video_graph_identity import (
+from app.services.video_graph.extraction import LLMVideoExtractor
+from app.services.video_graph.identity import (
     entity_identity,
     extraction_version,
     identity_name,
@@ -22,7 +17,9 @@ from app.services.video_graph_identity import (
     neighbor_context,
     policy_id,
 )
-from app.services.video_graph_quality import review_extraction
+from app.services.video_graph.material import VideoChunk, VideoMaterial
+from app.services.video_graph.review import review_extraction
+from app.services.video_graph.validation import validate_extraction
 
 pytestmark = pytest.mark.no_db
 
@@ -199,7 +196,7 @@ def test_unrelated_brand_mention_does_not_complete_a_short_model_name():
 
 
 def test_future_version_bumps_keep_quality_pipeline_and_unknown_tags_are_rejected():
-    from app.services.video_graph_identity import is_quality_version
+    from app.services.video_graph.identity import is_quality_version
 
     assert is_quality_version(extraction_version("video-graph-v3", "fixture"))
     assert is_quality_version(extraction_version("video-graph-v2-domain-fix", "fixture"))
@@ -346,7 +343,7 @@ def test_bad_confidence_format_gets_bounded_schema_feedback_before_review():
 
 
 def reviewed_pair(body, subject, subject_type, obj, object_type, candidate_predicate, **repair):
-    from app.services.video_graph_grounding import BASIS_BY_PREDICATE
+    from app.services.video_graph.grounding import BASIS_BY_PREDICATE
 
     predicate = repair.get("predicate", candidate_predicate)
     basis = {"uses": "use", "contains": "composition"}.get(
@@ -438,7 +435,8 @@ def test_extract_uses_separate_review_and_cannot_trust_forged_candidate_receipt(
     assert request.call_count == 4 and len(out.relations) == 1
     assert out.review.policy == policy_id()
     assert extractor.version == extraction_version("video-graph-v2", extractor.settings.llm_model)
-    assert extraction_version("video-graph-v1", "old-model") == "video-graph-v1:old-model"
+    with pytest.raises(ValueError, match="抽取版本"):
+        extraction_version("video-graph-v1", "old-model")
 
 
 def test_transient_timeout_retries_with_lease_heartbeat_and_low_reasoning():
@@ -457,9 +455,10 @@ def test_transient_timeout_retries_with_lease_heartbeat_and_low_reasoning():
     )
     with (
         patch(
-            "app.services.video_graph.httpx.post", side_effect=[httpx.ReadTimeout("test"), response]
+            "app.services.video_graph.extraction.httpx.post",
+            side_effect=[httpx.ReadTimeout("test"), response],
         ) as post,
-        patch("app.services.video_graph.time.sleep"),
+        patch("app.services.video_graph.extraction.time.sleep"),
         patch.object(extractor, "heartbeat") as heartbeat,
     ):
         assert extractor._request("system", {}, phase="review") == {}
@@ -475,7 +474,7 @@ def test_authentication_errors_are_not_retried_or_exposed():
         request=httpx.Request("POST", "https://test.invalid"),
         json={"secret": "never archive this"},
     )
-    with patch("app.services.video_graph.httpx.post", return_value=response) as post:
+    with patch("app.services.video_graph.extraction.httpx.post", return_value=response) as post:
         with pytest.raises(RuntimeError) as error:
             extractor._request("system", {})
     assert post.call_count == 1
@@ -483,7 +482,7 @@ def test_authentication_errors_are_not_retried_or_exposed():
 
 
 def test_source_punctuation_repair_preserves_exact_bytes_and_never_changes_words():
-    from app.services.video_graph_quality import source_span
+    from app.services.video_graph.review import source_span
 
     text = "Air 3S supports high‑quality video\nand omnidirectional obstacle sensing."
     assert source_span(text, "high-quality video and omnidirectional obstacle sensing") == (
@@ -499,7 +498,7 @@ def test_source_punctuation_repair_preserves_exact_bytes_and_never_changes_words
 
 
 def test_script_matching_restores_original_text_without_translation_or_ambiguity():
-    from app.services.video_graph_quality import source_span
+    from app.services.video_graph.review import source_span
 
     assert source_span("新相機模組支援錄影。", "相机模组") == "相機模組"
     assert source_span("新相機模組支援錄影。", "camera module") is None
@@ -606,7 +605,7 @@ def test_control_can_change_settings_without_literal_control_word():
 
 
 def test_bare_frequency_value_is_an_attribute_not_a_technical_entity():
-    from app.services.video_graph_identity import is_attribute_value
+    from app.services.video_graph.identity import is_attribute_value
 
     assert is_attribute_value("2.4")
     assert is_attribute_value("5.8 GHz")
@@ -663,7 +662,7 @@ def test_entity_review_cannot_publish_invented_mentions_even_if_model_accepts_th
 def test_invalid_pair_answer_does_not_erase_valid_pair_answers_or_entities():
     from unittest.mock import Mock
 
-    from app.services.video_graph_quality import request_verdicts
+    from app.services.video_graph.review import request_verdicts
 
     good = pipeline_responses()[2]["relations"][0]
     invalid = {"relations": [good, {"index": 1, "supported": True, "predicate": "invented"}]}
@@ -719,7 +718,7 @@ def test_relation_rejection_does_not_erase_a_source_supported_entity(supported):
 
 
 def test_pair_answers_cover_negatives_multiple_predicates_and_reject_mixed_decisions():
-    from app.services.video_graph_quality import valid_pair_groups
+    from app.services.video_graph.review import valid_pair_groups
 
     positive = pipeline_responses()[2]["relations"][0]
     second = {**positive, "predicate": "contains"}
@@ -751,7 +750,7 @@ def test_duplicate_entity_keys_get_bounded_correction_before_entity_review():
 
 
 def test_review_only_needs_one_relation_label_and_program_dispatches_source_checks():
-    from app.services.video_graph_quality import RelationVerdict
+    from app.services.video_graph.review import RelationVerdict
 
     assert "basis" not in RelationVerdict.model_fields
     out = reviewed_pair(
@@ -775,7 +774,7 @@ def test_review_only_needs_one_relation_label_and_program_dispatches_source_chec
 def test_pair_negative_is_pinned_across_unrelated_format_correction(supported):
     from unittest.mock import Mock
 
-    from app.services.video_graph_quality import request_verdicts
+    from app.services.video_graph.review import request_verdicts
 
     first = {"index": 0, "supported": False, "reason": "no relation"}
     malformed = {"index": 1, "supported": True, "predicate": "invented"}
@@ -818,7 +817,7 @@ def test_numeric_values_remain_source_validated_entity_attributes():
 
 
 def test_measurement_entities_are_rejected_without_rejecting_models_or_protocols():
-    from app.services.video_graph_identity import is_attribute_value
+    from app.services.video_graph.identity import is_attribute_value
 
     for value in ["250g", "48MP", "4K", "4K 60fps", "3840×2160", "2026年"]:
         assert is_attribute_value(value)
@@ -863,7 +862,7 @@ def test_brand_ownership_cannot_be_promoted_to_manufacture():
 
 
 def test_pair_questions_are_bounded_and_only_use_reviewed_source_entities():
-    from app.services.video_graph_quality import relation_pairs
+    from app.services.video_graph.review import relation_pairs
 
     entities = [entity(f"Device {i}", "product", key=str(i)) for i in range(22)]
     text = " ".join(e.surface_text for e in entities)
@@ -877,7 +876,7 @@ def test_pair_questions_are_bounded_and_only_use_reviewed_source_entities():
 def test_relation_batch_review_reindexes_proofs_and_deduplicates_across_batches():
     from unittest.mock import Mock
 
-    from app.services.video_graph_quality import review_relation_batches
+    from app.services.video_graph.review import review_relation_batches
 
     m = material()
     draft = candidates()
@@ -896,7 +895,7 @@ def test_relation_batch_review_reindexes_proofs_and_deduplicates_across_batches(
 def test_pair_classification_rejects_tampered_entity_receipt_before_model_call():
     from unittest.mock import Mock
 
-    from app.services.video_graph_quality import classify_relations
+    from app.services.video_graph.review import classify_relations
 
     m = material()
     verified = reviewed(m)
@@ -916,6 +915,8 @@ def test_explicit_negative_pair_has_no_relation_review_request():
     with patch.object(extractor, "_request", side_effect=responses) as req:
         out = extractor.extract(m, m.chunks[0], "")
     assert req.call_count == 3 and len(out.entities) == 2 and not out.relations
-    assert not any(call.args[0].startswith("\n独立对照完整current_chunk审核每条关系")
-                   for call in req.call_args_list)
+    assert not any(
+        call.args[0].startswith("\n独立对照完整current_chunk审核每条关系")
+        for call in req.call_args_list
+    )
     validate_extraction(m.chunks[0], out, material=m, require_review=True)

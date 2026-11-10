@@ -11,8 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "backend")]
 
 from app.schemas.video_graph import ChunkExtraction  # noqa: E402
-from app.services.video_graph_identity import stable_hash  # noqa: E402
-from app.services.video_graph_quality import (  # noqa: E402
+from app.services.video_graph.identity import stable_hash  # noqa: E402
+from app.services.video_graph.review import (  # noqa: E402
     EntityVerdict,
     result_hash,
     valid_review_items,
@@ -60,7 +60,10 @@ def proposal_review(row, cache, *, expected_text=None):
                 raise ValueError("候选审核缓存不属于当前片段")
             keys = {e["key"] for e in data["entities"]}
             return data["entities"], valid_review_items(
-                response.get("entities"), EntityVerdict, "key", keys,
+                response.get("entities"),
+                EntityVerdict,
+                "key",
+                keys,
             )
     return [], {}
 
@@ -101,8 +104,10 @@ def classify_errors(case, predicted, proposals=(), verdicts=None):
             )
             # Another gold component may already belong to this predicted owner,
             # with a different boundary. Shared words alone cannot disprove ownership.
-            if any(other["type"] == b["type"] and
-                   owner_models(other["name"], case["models"]) & second for other in gold):
+            if any(
+                other["type"] == b["type"] and owner_models(other["name"], case["models"]) & second
+                for other in gold
+            ):
                 continue
             if (
                 first
@@ -163,10 +168,17 @@ def analyze(dataset, evaluation, cache=None):
         if not row or row["status"] != "success":
             failed.append(case["id"])
             totals["fn"] += len(case["entities"])
-            errors.extend({"id": f"{case['id']}:g{index}:pNone", "case_id": case["id"],
-                           "gold": entity, "predicted": None, "category": "review",
-                           "note": "片段执行失败或待运行；FN计入原评分，不能直接归因于实体漏识别。"}
-                          for index, entity in enumerate(case["entities"]))
+            errors.extend(
+                {
+                    "id": f"{case['id']}:g{index}:pNone",
+                    "case_id": case["id"],
+                    "gold": entity,
+                    "predicted": None,
+                    "category": "review",
+                    "note": "片段执行失败或待运行；FN计入原评分，不能直接归因于实体漏识别。",
+                }
+                for index, entity in enumerate(case["entities"])
+            )
             continue
         output = ChunkExtraction.model_validate(row["output"])
         if not output.review or output.review.result_hash != result_hash(output):

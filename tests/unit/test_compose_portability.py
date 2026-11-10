@@ -44,6 +44,7 @@ def test_compose_environment_and_isolation(tmp_path: Path, proxy: str) -> None:
     )
     services = json.loads(result.stdout)["services"]
     jobs = services["jobs"]
+    assert "VIDEO_GRAPH_BACKEND" not in jobs["environment"]
     for name in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
         assert jobs["environment"][name] == proxy
     for name in (
@@ -61,8 +62,9 @@ def test_compose_environment_and_isolation(tmp_path: Path, proxy: str) -> None:
     assert services["app"]["environment"]["LLM_API_KEY"] == "test-only-key"
     assert services["app"]["environment"]["LLM_MODEL"] == "alternative-model"
     assert services["app"]["environment"]["LLM_PROVIDER"] == "openai-compatible"
-    assert not services["postgres"].get("ports")
-    assert not services["qdrant"].get("ports")
+    # Host collectors use loopback ports; graph storage remains independent of PostgreSQL.
+    assert all(p["host_ip"] == "127.0.0.1" for p in services["postgres"]["ports"])
+    assert all(p["host_ip"] == "127.0.0.1" for p in services["qdrant"]["ports"])
     assert services["app"]["ports"][0]["host_ip"] == "127.0.0.1"
     assert any(v["target"] == "/data/video" for v in jobs["volumes"])
     for brand, directory in [("dji", "DJI无人机文档"), ("parrot", "Parrot无人机文档")]:
@@ -105,4 +107,4 @@ def test_neo4j_overlay_ports_credentials_and_persistence(tmp_path: Path) -> None
     assert {volume["target"] for volume in graph["volumes"]} == {"/data", "/logs"}
     assert graph["environment"]["NEO4J_AUTH"] == "neo4j/graph-test-only"
     assert services["app"]["environment"]["NEO4J_URI"] == "bolt://neo4j:7687"
-    assert services["app"]["environment"]["VIDEO_GRAPH_BACKEND"] == "postgres"
+    assert "VIDEO_GRAPH_BACKEND" not in services["app"]["environment"]

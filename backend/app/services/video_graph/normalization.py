@@ -3,8 +3,8 @@
 import re
 
 from app.schemas.video_graph import ExtractedEntity
-from app.services.video_graph_identity import compact_name, is_generic, stable_hash
-from app.services.video_graph_terms import source_terms
+from app.services.video_graph.identity import compact_name, is_generic, stable_hash
+from app.services.video_graph.terms import source_terms
 
 _NUMBER = r"\d+(?:\.\d+)?(?:/\d+(?:\.\d+)?)?"
 _MEASURE = re.compile(
@@ -200,7 +200,7 @@ def _forms_equal_name(entity, owner):
 
 def normalize_entity_review(material, chunk, context, extraction):
     """Normalize approved entities before any relation is generated; retain literal aliases."""
-    from app.services.video_graph_quality import (
+    from app.services.video_graph.review import (
         result_hash,
         validate_identity_proof,
         validate_review,

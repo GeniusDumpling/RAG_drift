@@ -10,9 +10,16 @@ from unittest.mock import patch
 import pytest
 from app.core.config import Settings
 from app.schemas.video_graph import ChunkExtraction, GraphRetrieveRequest
-from app.services.neo4j_graph.queries import GraphQueries
-from app.services.neo4j_graph.store import GraphStore, decode, now_ms
-from app.services.video_graph import LeaseLostError, VideoChunk, VideoMaterial, chunk_fingerprint
+from app.services.video_graph.material import (
+    LeaseLostError,
+    VideoChunk,
+    VideoMaterial,
+    chunk_fingerprint,
+)
+from app.services.video_graph.queries import GraphQueries
+from app.services.video_graph.storage import GraphStore, decode, now_ms
+
+from backend.tests.video_graph_fixtures import reviewed_fixture
 
 pytestmark = pytest.mark.no_db
 
@@ -82,20 +89,20 @@ def extraction():
 def output(m):
     return dict(
         assessment=dict(relevant=True, reason="test"),
-        chunks={str(m.chunks[0].id): extraction().model_dump()},
+        chunks={str(m.chunks[0].id): reviewed_fixture(m, m.chunks[0], extraction()).model_dump()},
         chunk_fingerprints={str(m.chunks[0].id): chunk_fingerprint(m.chunks[0])},
     )
 
 
 def publish(store, m):
-    store.enqueue(m, "test-v1")
-    build, token = store.claim("test-v1", [m.id])
+    store.enqueue(m, "video-graph-v2:fixture")
+    build, token = store.claim("video-graph-v2:fixture", [m.id])
     assert store.activate(m, build["id"], token, output(m)) == "success"
     return build["id"]
 
 
 def quality_output(m, *, attributes=None, modality="actual", scope_quote=None):
-    from app.services.video_graph_quality import review_extraction
+    from app.services.video_graph.review import review_extraction
 
     data = extraction()
     data.entities[0].surface_text = "drone"
@@ -125,8 +132,15 @@ def quality_output(m, *, attributes=None, modality="actual", scope_quote=None):
             },
         ],
         "relations": [
-            {"index": 0, "supported": True, "quote": m.chunks[0].text, "reason": "explicit use",
-             "basis": "use", "modality": modality, "scope_quote": scope_quote}
+            {
+                "index": 0,
+                "supported": True,
+                "quote": m.chunks[0].text,
+                "reason": "explicit use",
+                "basis": "use",
+                "modality": modality,
+                "scope_quote": scope_quote,
+            }
         ],
     }
     data = review_extraction(lambda *_: response, m, m.chunks[0], "", data, "")
@@ -138,7 +152,7 @@ def quality_output(m, *, attributes=None, modality="actual", scope_quote=None):
 
 
 def test_v2_generic_scope_persistence_and_contextual_retrieval(store):
-    from app.services.video_graph_identity import extraction_version
+    from app.services.video_graph.identity import extraction_version
 
     version = extraction_version("video-graph-v2", "fixture")
     videos = [material("drone uses GPS.") for _ in range(2)]
@@ -159,7 +173,7 @@ def test_v2_generic_scope_persistence_and_contextual_retrieval(store):
 
 
 def test_v2_retrieval_preserves_conditional_scope(store):
-    from app.services.video_graph_identity import extraction_version
+    from app.services.video_graph.identity import extraction_version
 
     m = material("After setup, drone uses GPS.")
     version = extraction_version("video-graph-v2", "fixture")
@@ -176,7 +190,7 @@ def test_v2_retrieval_preserves_conditional_scope(store):
 
 
 def test_v2_refuses_unreviewed_cache_and_keeps_old_projection(store):
-    from app.services.video_graph_identity import extraction_version
+    from app.services.video_graph.identity import extraction_version
 
     m = material()
     old = publish(store, m)
@@ -185,7 +199,15 @@ def test_v2_refuses_unreviewed_cache_and_keeps_old_projection(store):
     build, token = store.claim(version, [m.id])
     assert "chunks" not in decode(build["output_json"])
     with pytest.raises(ValueError, match="审核凭据"):
-        store.activate(m, build["id"], token, output(m))
+        store.activate(
+            m,
+            build["id"],
+            token,
+            dict(
+                assessment={"relevant": True},
+                chunks={str(m.chunks[0].id): extraction().model_dump()},
+            ),
+        )
     assert (
         store.read("MATCH (v:VGVideo {id:$id}) RETURN v.active_build_id AS id", id=str(m.id))[0][
             "id"
@@ -197,7 +219,7 @@ def test_v2_refuses_unreviewed_cache_and_keeps_old_projection(store):
 def test_v2_context_change_does_not_reuse_old_review(store):
     from dataclasses import replace
 
-    from app.services.video_graph_identity import extraction_version
+    from app.services.video_graph.identity import extraction_version
 
     m = material("drone uses GPS.")
     version = extraction_version("video-graph-v2", "fixture")
@@ -210,17 +232,17 @@ def test_v2_context_change_does_not_reuse_old_review(store):
 
 
 def test_backfill_plan_and_resume_across_real_databases(store, tmp_path):
-    from app.services.video_graph import load_material
-    from app.services.video_graph_backfill import apply_plan, create_plan, save_plan
-    from app.services.video_graph_identity import extraction_version
-    from app.services.video_graph_quality import review_extraction
+    from app.services.video_graph.backfill import apply_plan, create_plan, save_plan
+    from app.services.video_graph.identity import extraction_version
+    from app.services.video_graph.material import load_material
+    from app.services.video_graph.review import review_extraction
     from sqlalchemy.orm import Session
 
-    from backend.tests.test_video_graph import TestVideoGraphPersistence
+    from backend.tests.video_graph_fixtures import SourceDatabase
 
     if not os.environ.get("VIDEO_GRAPH_TEST_DATABASE_URL"):
         pytest.skip("isolated PostgreSQL URL required for cross-database workflow")
-    source = TestVideoGraphPersistence()
+    source = SourceDatabase()
     source.setUp()
     try:
         content_id = source.seed_video()
@@ -251,8 +273,14 @@ def test_backfill_plan_and_resume_across_real_databases(store, tmp_path):
                         for key, name in [("s", "PX4"), ("o", "GPS")]
                     ],
                     "relations": [
-                        dict(index=0, supported=True, quote=chunk.text, reason="explicit",
-                             basis="use", modality="actual")
+                        dict(
+                            index=0,
+                            supported=True,
+                            quote=chunk.text,
+                            reason="explicit",
+                            basis="use",
+                            modality="actual",
+                        )
                     ],
                 }
                 return review_extraction(
@@ -288,7 +316,7 @@ def test_backfill_active_version_guard_is_atomic(store):
     m = material()
     old = publish(store, m)
     with pytest.raises(ValueError, match="有效版本已变化"):
-        store.enqueue(m, "new-version", expected_active_id="wrong-baseline")
+        store.enqueue(m, "video-graph-v2-next:fixture", expected_active_id="wrong-baseline")
     assert store.read("MATCH (b:VGBuild) RETURN count(b) AS n")[0]["n"] == 1
     assert (
         store.read("MATCH (v:VGVideo {id:$id}) RETURN v.active_build_id AS id", id=str(m.id))[0][
@@ -317,8 +345,8 @@ def test_active_graph_evidence_and_retrieval(store):
     assert q.get_graph(None).edges[0].evidence_count == 1
     assert not q.get_graph(None, content_id=m.id).nodes
     store.withdraw(m.id, restore=True)
-    assert store.enqueue(m, "test-v1") == "queued"
-    b, t = store.claim("test-v1", [m.id])
+    assert store.enqueue(m, "video-graph-v2:fixture") == "queued"
+    b, t = store.claim("video-graph-v2:fixture", [m.id])
     assert decode(b["output_json"])["chunks"]
     store.activate(m, b["id"], t, decode(b["output_json"]))
     assert q.get_graph(None).edges[0].evidence_count == 2
@@ -337,10 +365,15 @@ def test_partial_versions_and_stale_worker(store):
         m.caption_language,
         (*m.chunks, VideoChunk(uuid.uuid4(), "invalid", "transcript_segment", 10, 20)),
     )
-    store.enqueue(new, "test-v1")
-    b, t = store.claim("test-v1")
+    store.enqueue(new, "video-graph-v2:fixture")
+    b, t = store.claim("video-graph-v2:fixture")
     data = decode(b["output_json"])
-    assert str(m.chunks[0].id) in data["chunks"]
+    assert str(m.chunks[0].id) not in data.get("chunks", {})
+    data["chunks"] = {
+        str(m.chunks[0].id): reviewed_fixture(
+            new, m.chunks[0], extraction(), "invalid"
+        ).model_dump()
+    }
     data.update(
         assessment=dict(relevant=True, reason="test"),
         chunk_errors={str(new.chunks[1].id): dict(code="invalid")},
@@ -352,20 +385,22 @@ def test_partial_versions_and_stale_worker(store):
         ]
         == old
     )
-    assert store.enqueue(new, "test-v1") == "unchanged"
-    store.enqueue(new, "test-v1", retry_partial=True)
-    b, t = store.claim("test-v1")
+    assert store.enqueue(new, "video-graph-v2:fixture") == "unchanged"
+    store.enqueue(new, "video-graph-v2:fixture", retry_partial=True)
+    b, t = store.claim("video-graph-v2:fixture")
     with store.transaction() as tx:
         tx.run(
             "MATCH (b:VGBuild {id:$id}) SET b.lease_until=$past", id=b["id"], past=now_ms() - 1
         ).consume()
-    newer, token = store.claim("test-v1")
+    newer, token = store.claim("video-graph-v2:fixture")
     with pytest.raises(LeaseLostError):
         store.checkpoint(b["id"], m.id, t, data)
-    data["chunks"][str(new.chunks[1].id)] = {"entities": [], "relations": []}
+    data["chunks"][str(new.chunks[1].id)] = reviewed_fixture(
+        new, new.chunks[1], ChunkExtraction(entities=[], relations=[]), "PX4 uses GPS."
+    ).model_dump()
     data["chunk_errors"] = {}
     assert store.activate(new, newer["id"], token, data) == "success"
-    assert store.claim("test-v1") is None
+    assert store.claim("video-graph-v2:fixture") is None
 
 
 def test_first_partial_all_invalid_and_source_change(store):
@@ -380,18 +415,18 @@ def test_first_partial_all_invalid_and_source_change(store):
         m.caption_language,
         (*m.chunks, VideoChunk(uuid.uuid4(), "bad", "transcript_segment", 10, 20)),
     )
-    store.enqueue(m, "test-v1")
-    b, t = store.claim("test-v1")
+    store.enqueue(m, "video-graph-v2:fixture")
+    b, t = store.claim("video-graph-v2:fixture")
     data = output(m)
     data["chunk_errors"] = {str(m.chunks[1].id): {"code": "invalid"}}
     assert store.activate(m, b["id"], t, data) == "partial_success"
     assert data["projection_activated"]
-    store.enqueue(m, "test-v1", retry_partial=True)
-    b, t = store.claim("test-v1")
+    store.enqueue(m, "video-graph-v2:fixture", retry_partial=True)
+    b, t = store.claim("video-graph-v2:fixture")
     changed = material(id=m.id)
     assert store.activate(changed, b["id"], t, data) == "obsolete"
-    store.enqueue(changed, "test-v1")
-    b, t = store.claim("test-v1")
+    store.enqueue(changed, "video-graph-v2:fixture")
+    b, t = store.claim("video-graph-v2:fixture")
     data = dict(
         assessment=dict(relevant=True),
         chunks={},
@@ -403,7 +438,7 @@ def test_first_partial_all_invalid_and_source_change(store):
 
 def test_worker_checkpoint_resume_and_network_failure(store):
     from app.schemas.video_graph import VideoAssessment
-    from app.services.neo4j_graph.worker import process_next
+    from app.services.video_graph.tasks import process_next
 
     m = material()
 
@@ -418,7 +453,7 @@ def test_worker_checkpoint_resume_and_network_failure(store):
             return nullcontext()
 
     class Extractor:
-        version = "test-v1"
+        version = "video-graph-v2:fixture"
         broken = True
 
         def assess(self, material):
@@ -427,13 +462,13 @@ def test_worker_checkpoint_resume_and_network_failure(store):
         def extract(self, *args):
             if self.broken:
                 raise RuntimeError("network")
-            return extraction()
+            return reviewed_fixture(m, m.chunks[0], extraction())
 
     extractor = Extractor()
     store.enqueue(m, extractor.version)
     with (
-        patch("app.services.neo4j_graph.worker.Session", return_value=SourceSession()),
-        patch("app.services.neo4j_graph.worker.load_material", return_value=m),
+        patch("app.services.video_graph.tasks.Session", return_value=SourceSession()),
+        patch("app.services.video_graph.tasks.load_material", return_value=m),
     ):
         assert process_next(None, store, extractor)["status"] == "failed"
         store.enqueue(m, extractor.version, retry_failed=True)
@@ -472,7 +507,7 @@ def test_migration_preserves_properties_and_refuses_nonempty_graph(store):
                     id=bid,
                     content_item_id=vid,
                     fingerprint="test",
-                    extractor_version="test-v1",
+                    extractor_version="video-graph-v2:fixture",
                     status="success",
                     attempts=1,
                     output_json={"coverage": {"complete": True}},
@@ -518,12 +553,12 @@ def test_api_neo4j_unavailable_is_503_without_sql_fallback():
         yield UnusedSession()
 
     app.dependency_overrides[get_session] = source_dependency
-    settings = Settings(VIDEO_GRAPH_BACKEND="neo4j", NEO4J_PASSWORD="test-only")
+    settings = Settings(NEO4J_PASSWORD="test-only")
     try:
         with (
             patch("app.api.video_graph.get_settings", return_value=settings),
             patch(
-                "app.services.neo4j_graph.store.GraphStore.ensure_ready",
+                "app.services.video_graph.storage.GraphStore.ensure_ready",
                 side_effect=ServiceUnavailable("test outage"),
             ),
             TestClient(app) as client,
@@ -539,10 +574,18 @@ def test_concurrent_claims_have_one_owner(store):
     from concurrent.futures import ThreadPoolExecutor
 
     m = material()
-    store.enqueue(m, "test-v1")
+    store.enqueue(m, "video-graph-v2:fixture")
     with ThreadPoolExecutor(max_workers=4) as pool:
-        results = list(pool.map(lambda _: store.claim("test-v1"), range(4)))
+        results = list(pool.map(lambda _: store.claim("video-graph-v2:fixture"), range(4)))
     claimed = [row for row in results if row is not None]
     assert len(claimed) == 1
     build, token = claimed[0]
     assert store.activate(m, build["id"], token, output(m)) == "success"
+
+
+def test_v1_write_and_claim_are_rejected(store):
+    with pytest.raises(ValueError, match="v1"):
+        store.enqueue(material(), "video-graph-v1:legacy")
+    with pytest.raises(ValueError, match="v1"):
+        store.claim("video-graph-v1:legacy")
+    assert not store.read("MATCH (b:VGBuild) RETURN b")

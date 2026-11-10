@@ -25,6 +25,17 @@ const evidence: EvidenceObject = {
 };
 
 describe('EvidenceCard', () => {
+  it('preserves negative graph assertions, conditions and original quotes', () => {
+    render(<EvidenceCard evidence={{ ...evidence, matched_by: 'graph', graph_evidence: [{
+      id: 'g1', relation_id: 'r1', subject: 'PX4', predicate: 'supports', object: 'GPS',
+      quote: 'This firmware does not support GPS.', assertion: 'negated',
+      qualifiers: { firmware: 'test-only' }, video_url: 'https://example.test/video?t=12',
+    }] }} />);
+    expect(screen.getByText('图谱关联')).toBeInTheDocument();
+    expect(screen.getByText(/原文陈述：否定/)).toBeInTheDocument();
+    expect(screen.getByText('firmware：test-only')).toBeInTheDocument();
+    expect(screen.getByText('This firmware does not support GPS.')).toBeInTheDocument();
+  });
   it('renders a safe canonical URL as an external link', () => {
     render(<EvidenceCard evidence={evidence} />);
 

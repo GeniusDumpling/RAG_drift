@@ -12,15 +12,18 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "backend"))
 
 from app.schemas.video_graph import ExtractedEntity, ExtractedRelation  # noqa: E402
-from app.services.video_graph_semantics import (  # noqa: E402
+from app.services.video_graph.semantics import (  # noqa: E402
     DERIVED_PREDICATES,
     PREDICATE_DEFINITIONS,
     validate_relation_semantics,
 )
+
 from scripts.entity_gold_dataset import (  # noqa: E402
     TYPE_LABELS,
     case_text,
     cell,
+)
+from scripts.entity_gold_dataset import (  # noqa: E402
     validate as validate_entities,
 )
 
@@ -29,8 +32,15 @@ DEFAULT_ENTITIES = Path("scripts/evaluation_data/entity_gold_v3.json")
 # The original entity v1 filename contains a dataset whose declared version is v2.
 ENTITY_VERSIONS = {"relation-gold-v1": "entity-gold-v2", "relation-gold-v3": "entity-gold-v3"}
 ASSERTIONS = {"asserted": "明确陈述", "uncertain": "不确定", "negated": "明确否定"}
-MODALITIES = {"actual", "capability", "instruction", "conditional", "hypothetical",
-              "design_goal", "planned"}
+MODALITIES = {
+    "actual",
+    "capability",
+    "instruction",
+    "conditional",
+    "hypothetical",
+    "design_goal",
+    "planned",
+}
 SCOPED_MODALITIES = {"conditional", "hypothetical", "design_goal", "planned"}
 
 
@@ -53,9 +63,10 @@ def validate(data, entity_data):
         raise ValueError("未知关系复核状态")
     if [c["id"] for c in data["cases"]] != [c["id"] for c in entity_data["cases"]]:
         raise ValueError("关系集需要与实体集保持相同片段及顺序")
-    entity_view = {**data, "cases": [
-        {k: v for k, v in c.items() if k != "relations"} for c in data["cases"]
-    ]}
+    entity_view = {
+        **data,
+        "cases": [{k: v for k, v in c.items() if k != "relations"} for c in data["cases"]],
+    }
     validate_entities(entity_view)
     predicates, assertions = Counter(), Counter()
     empty_cases = []
@@ -80,7 +91,9 @@ def validate(data, entity_data):
         for relation in relations:
             required = {"subject", "predicate", "object", "assertion", "quote"}
             if not required <= set(relation) or set(relation) - required - {"qualifiers"}:
-                raise ValueError(prefix + "关系只需subject、predicate、object、assertion、quote及可选qualifiers")
+                raise ValueError(
+                    prefix + "关系只需subject、predicate、object、assertion、quote及可选qualifiers"
+                )
             subject, obj, predicate = (relation[k] for k in ("subject", "object", "predicate"))
             if subject not in entities or obj not in entities:
                 raise ValueError(prefix + "关系端点必须引用本片段已有实体名称")
@@ -94,9 +107,11 @@ def validate(data, entity_data):
             if not quote.strip() or quote not in case_text(case):
                 raise ValueError(prefix + "quote必须是正文中的连续原文，不能拼接或改写")
             qualifiers = relation.get("qualifiers", {})
-            if (not isinstance(qualifiers, dict) or
-                set(qualifiers) - {"modality", "scope", "mode"} or
-                any(not isinstance(v, str) or not v.strip() for v in qualifiers.values())):
+            if (
+                not isinstance(qualifiers, dict)
+                or set(qualifiers) - {"modality", "scope", "mode"}
+                or any(not isinstance(v, str) or not v.strip() for v in qualifiers.values())
+            ):
                 raise ValueError(prefix + "qualifiers仅使用非空字符串modality、scope、mode")
             modality = qualifiers.get("modality", "actual")
             if modality not in MODALITIES:
@@ -107,28 +122,45 @@ def validate(data, entity_data):
                 if field in qualifiers and qualifiers[field] not in quote:
                     raise ValueError(prefix + f"{field}必须逐字出现在本关系quote中")
             validate_relation_semantics(
-                ExtractedRelation(subject=subject, object=obj, predicate=predicate,
-                                  assertion=relation["assertion"], quote=quote, confidence=1.0),
-                ExtractedEntity(key="subject", surface_text=subject,
-                                entity_type=entities[subject]["type"]),
-                ExtractedEntity(key="object", surface_text=obj,
-                                entity_type=entities[obj]["type"]),
+                ExtractedRelation(
+                    subject=subject,
+                    object=obj,
+                    predicate=predicate,
+                    assertion=relation["assertion"],
+                    quote=quote,
+                    confidence=1.0,
+                ),
+                ExtractedEntity(
+                    key="subject", surface_text=subject, entity_type=entities[subject]["type"]
+                ),
+                ExtractedEntity(key="object", surface_text=obj, entity_type=entities[obj]["type"]),
             )
-            endpoints = tuple(sorted((subject, obj))) if predicate in {
-                "compatible_with", "connected_to"
-            } else (subject, obj)
-            identity = (endpoints, predicate, relation["assertion"], tuple(sorted(qualifiers.items())))
+            endpoints = (
+                tuple(sorted((subject, obj)))
+                if predicate in {"compatible_with", "connected_to"}
+                else (subject, obj)
+            )
+            identity = (
+                endpoints,
+                predicate,
+                relation["assertion"],
+                tuple(sorted(qualifiers.items())),
+            )
             if identity in seen:
                 raise ValueError(prefix + "重复关系（兼容和连接也检查反向重复）")
             seen.add(identity)
             predicates[predicate] += 1
             assertions[relation["assertion"]] += 1
     return {
-        "version": data["version"], "status": data["status"], "cases": len(data["cases"]),
+        "version": data["version"],
+        "status": data["status"],
+        "cases": len(data["cases"]),
         "languages": dict(Counter(c["language"] for c in data["cases"])),
         "entities": sum(len(c["entities"]) for c in data["cases"]),
-        "relations": sum(predicates.values()), "predicates": dict(sorted(predicates.items())),
-        "assertions": {k: assertions[k] for k in ASSERTIONS}, "empty_cases": empty_cases,
+        "relations": sum(predicates.values()),
+        "predicates": dict(sorted(predicates.items())),
+        "assertions": {k: assertions[k] for k in ASSERTIONS},
+        "empty_cases": empty_cases,
         "validation": "格式、端点、类型、证据原文检查通过；不代表关系语义已人工确认或模型质量通过",
     }
 
@@ -136,28 +168,53 @@ def validate(data, entity_data):
 def render(data):
     status = "已人工复核" if data["status"] == "human_reviewed" else "助手初标，待人工复核"
     count = sum(len(c["relations"]) for c in data["cases"])
-    lines = ["# 无人机关系金标准集复核稿", "",
-             f"状态：{status}。20个片段（中文、英文各10段），{count}条关系。", "",
-             "沿用实体金标准集的原文、来源和实体答案；JSON是编辑入口，本文件由脚本生成。",
-             "复核：是否漏标/多标，方向和谓词是否准确，原文是否支持，条件与不确定性是否保留。",
-             "asserted仅表示来源明确陈述，不代表外部事实已核实。未标关系不等于明确否定。", ""]
+    lines = [
+        "# 无人机关系金标准集复核稿",
+        "",
+        f"状态：{status}。20个片段（中文、英文各10段），{count}条关系。",
+        "",
+        "沿用实体金标准集的原文、来源和实体答案；JSON是编辑入口，本文件由脚本生成。",
+        "复核：是否漏标/多标，方向和谓词是否准确，原文是否支持，条件与不确定性是否保留。",
+        "asserted仅表示来源明确陈述，不代表外部事实已核实。未标关系不等于明确否定。",
+        "",
+    ]
     for case in data["cases"]:
         source = case["source"]
-        lines += [f"## {case['id']} · {'中文' if case['language'] == 'zh' else '英文'}", "",
-                  f"涉及型号：{'、'.join(case['models'])}。", "",
-                  f"[{source['title']}]({source['url']}) · "
-                  f"{source['start_seconds']}–{source['end_seconds']}秒", "",
-                  "```text", case_text(case), "```", "",
-                  "| 已确认实体 | 类型 | 原文提及 |", "|---|---|---|"]
+        lines += [
+            f"## {case['id']} · {'中文' if case['language'] == 'zh' else '英文'}",
+            "",
+            f"涉及型号：{'、'.join(case['models'])}。",
+            "",
+            f"[{source['title']}]({source['url']}) · "
+            f"{source['start_seconds']}–{source['end_seconds']}秒",
+            "",
+            "```text",
+            case_text(case),
+            "```",
+            "",
+            "| 已确认实体 | 类型 | 原文提及 |",
+            "|---|---|---|",
+        ]
         for entity in case["entities"]:
-            lines.append(f"| {cell(entity['name'])} | {TYPE_LABELS[entity['type']]} | "
-                         f"{cell('；'.join(entity['mentions']))} |")
-        lines += ["", "| 主体 | 关系 | 客体 | 断言 | 限定 | 证据原文 |", "|---|---|---|---|---|---|"]
+            lines.append(
+                f"| {cell(entity['name'])} | {TYPE_LABELS[entity['type']]} | "
+                f"{cell('；'.join(entity['mentions']))} |"
+            )
+        lines += [
+            "",
+            "| 主体 | 关系 | 客体 | 断言 | 限定 | 证据原文 |",
+            "|---|---|---|---|---|---|",
+        ]
         for relation in case["relations"]:
             qualifier = "；".join(f"{k}={v}" for k, v in relation.get("qualifiers", {}).items())
-            values = [relation["subject"],
-                      f"{relation['predicate']}（{PREDICATE_DEFINITIONS[relation['predicate']]}）",
-                      relation["object"], relation["assertion"], qualifier or "—", quote_text(relation)]
+            values = [
+                relation["subject"],
+                f"{relation['predicate']}（{PREDICATE_DEFINITIONS[relation['predicate']]}）",
+                relation["object"],
+                relation["assertion"],
+                qualifier or "—",
+                quote_text(relation),
+            ]
             lines.append("| " + " | ".join(cell(v) for v in values) + " |")
         if not case["relations"]:
             lines += ["", "本段未标注关系，原因见下方说明。"]
@@ -174,8 +231,11 @@ def main(argv=None):
     args = parser.parse_args(argv)
     data = json.loads(args.dataset.read_text())
     result = validate(data, json.loads(args.entities.read_text()))
-    output = (render(data) if args.command == "render"
-              else json.dumps(result, ensure_ascii=False, indent=2)) + "\n"
+    output = (
+        render(data)
+        if args.command == "render"
+        else json.dumps(result, ensure_ascii=False, indent=2)
+    ) + "\n"
     if args.output:
         if args.output.resolve() in {args.dataset.resolve(), args.entities.resolve()}:
             parser.error("输出不能覆盖关系或实体标注JSON")

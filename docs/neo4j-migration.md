@@ -1,6 +1,6 @@
 # 视频知识图谱迁移到 Neo4j
 
-本次迁移范围包含实体、别名、关系、证据、视频构图状态、任务、租约和切片检查点。PostgreSQL 继续保存源视频和字幕；Qdrant 继续负责原有向量检索。`VIDEO_GRAPH_BACKEND` 控制图谱 API 和构图脚本使用的后端，默认 `postgres`，导入校验完成后再切换为 `neo4j`。
+本次迁移范围包含实体、别名、关系、证据、视频构图状态、任务、租约和切片检查点。PostgreSQL 继续保存源视频和字幕；Qdrant 继续负责原有向量检索。2026-11-10 起在线图谱只使用 Neo4j，后端切换项已删除；模块职责及存量兼容策略见[重构说明](video-graph-refactor-2026-11-10.md)。
 
 当前部署已完成切换，数据与测试结果见 [迁移结果报告](neo4j-migration-report-2026-10-21.md)。下文保留可复用的迁移步骤。
 
@@ -40,7 +40,6 @@ Neo4j 属性不能直接保存嵌套对象，因此 `output_json`、`qualifiers_
 配置 `.env`（密码应自行设置或由部署过程生成，不提交到版本库）：
 
 ```dotenv
-VIDEO_GRAPH_BACKEND=postgres
 NEO4J_URI=bolt://neo4j:7687
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=替换为强密码
@@ -79,23 +78,23 @@ NEO4J_URI=bolt://localhost:7687 .venv/bin/python \
 
 导出使用 PostgreSQL `REPEATABLE READ` 一致性快照，不修改源表，也不调用模型。快照包含全部历史构图任务、现存图谱证据、别名及图谱引用的实体；不搬运其他业务独立使用的实体。输出文件禁止覆盖已有快照。
 
-首次导入要求目标不存在 `VG*` 业务节点。导入按批写入，同一快照可在中断后再次执行；不同快照不得覆盖已有导入。校验逐节点比较属性，并核对连接端点和直接关系，不只比较数量。校验失败时不要切换后端。迁移快照保留原文和检查点，应按业务数据备份管理。
+首次导入要求目标不存在 `VG*` 业务节点。导入按批写入，同一快照可在中断后再次执行；不同快照不得覆盖已有导入。校验逐节点比较属性，并核对连接端点和直接关系，不只比较数量。校验失败时不要启用新图谱服务。迁移快照保留原文和检查点，应按业务数据备份管理。
 
 ## 切换及日常运行
 
-完成迁移校验后，将 `.env` 中 `VIDEO_GRAPH_BACKEND` 改为 `neo4j`，使用新代码镜像重新创建应用：
+完成迁移校验并配置 `NEO4J_*` 连接后，使用新代码镜像重新创建应用：
 
 ```bash
 docker compose -f docker-compose.deploy.yml -f docker-compose.neo4j.yml up -d app
 ```
 
-图谱 API 路径和响应结构保持兼容，前端无需更换接口。后续 `build_graph.py scan/run/watch/withdraw/restore` 会使用 Neo4j 保存任务和图谱，源材料仍从 PostgreSQL 读取。`inventory` 和 `--dry-run` 仅访问源数据库。
+图谱 API 路径和响应结构保持兼容，前端无需更换接口。后续 `build_graph.py scan/run/watch/withdraw/restore` 会使用 Neo4j 保存任务和图谱，源材料仍从 PostgreSQL 读取。`inventory` 仅访问源数据库；`pipeline --dry-run` 还读取 Neo4j 状态，但不写入数据。
 
 ```bash
-VIDEO_GRAPH_BACKEND=neo4j NEO4J_URI=bolt://localhost:7687 \
+NEO4J_URI=bolt://localhost:7687 \
   .venv/bin/python tools/video-knowledge-graph/build_graph.py scan
 
-VIDEO_GRAPH_BACKEND=neo4j NEO4J_URI=bolt://localhost:7687 \
+NEO4J_URI=bolt://localhost:7687 \
   .venv/bin/python tools/video-knowledge-graph/build_graph.py run --limit 5
 ```
 
@@ -103,7 +102,7 @@ VIDEO_GRAPH_BACKEND=neo4j NEO4J_URI=bolt://localhost:7687 \
 
 PostgreSQL 与 Neo4j 之间没有分布式事务：发布时读取并锁定当前源视频和切片，核对指纹，再提交 Neo4j 事务。物理删除源视频无法再通过 SQL 外键直接级联 Neo4j；`scan/run/watch` 扫描时会在扫描范围内将不存在的源视频标为删除并撤回。删除与下一次扫描之间，图谱可能暂时仍显示旧贡献，运维应在删除后执行扫描或先显式撤回。
 
-旧 PostgreSQL 图谱表保留作为迁移时的备份，切换后不再同步新增构图结果。切回 `postgres` 只能恢复到旧表的状态，不能把它视为持续同步的热备；若 Neo4j 已产生新任务或新证据，应先备份 Neo4j，再单独规划反向迁移。不要同时运行两个后端的构图 worker。
+旧 PostgreSQL 图谱表保留作为迁移时的备份，切换后不再同步新增构图结果。当前代码已删除 PostgreSQL 图谱后端，不能通过环境变量切回旧表；回退需要旧代码镜像和相应时间点的数据备份。不要同时运行旧 PostgreSQL 构图 worker 和新 Neo4j worker。
 
 ## 验证
 

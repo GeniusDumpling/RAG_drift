@@ -10,16 +10,15 @@ from unittest.mock import Mock, patch
 import pytest
 from app.core.config import Settings
 from app.models.content import ContentChunk, ContentItem
-from app.models.video_graph import VideoGraphEvidence
 from app.schemas.video_graph import VideoAssessment
-from app.services import video_graph_build_pipeline as pipeline
-from app.services.neo4j_graph.store import GraphStore
-from app.services.video_graph import LLMVideoExtractor
+from app.services.video_graph import pipeline as pipeline
+from app.services.video_graph.extraction import LLMVideoExtractor
+from app.services.video_graph.storage import GraphStore
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from backend.tests import test_video_graph as graph_fixtures
-from backend.tests.test_video_graph import StubExtractor
+from backend.tests import video_graph_fixtures as graph_fixtures
+from backend.tests.video_graph_fixtures import StubExtractor
 
 pytestmark = pytest.mark.no_db
 ROOT = Path(__file__).resolve().parents[2]
@@ -29,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def sources():
     if not os.environ.get("VIDEO_GRAPH_TEST_DATABASE_URL"):
         pytest.skip("VIDEO_GRAPH_TEST_DATABASE_URL must select a test PostgreSQL")
-    fixture = graph_fixtures.TestVideoGraphPersistence(methodName="runTest")
+    fixture = graph_fixtures.SourceDatabase(methodName="runTest")
     fixture.setUp()
     try:
         yield fixture
@@ -37,11 +36,8 @@ def sources():
         fixture.tearDown()
 
 
-@pytest.fixture(params=["postgres", "neo4j"])
-def backend_store(request):
-    if request.param == "postgres":
-        yield None
-        return
+@pytest.fixture
+def backend_store():
     uri = os.environ.get("NEO4J_TEST_URI")
     if not uri:
         pytest.skip("NEO4J_TEST_URI must select an empty isolated graph")
@@ -82,7 +78,7 @@ def run(sources, extractor, tmp_path, store, *, content_ids=None, **kwargs):
 def test_build_publish_readback_and_idempotent_resume(sources, backend_store, tmp_path):
     cid = sources.seed_video(chunks=2)
     extractor = StubExtractor()
-    from app.services.video_graph_usage import TokenUsage
+    from app.services.video_graph.usage import TokenUsage
 
     extractor.token_usage = TokenUsage()
     events = run(sources, extractor, tmp_path, backend_store, content_ids=[cid])
@@ -91,6 +87,12 @@ def test_build_publish_readback_and_idempotent_resume(sources, backend_store, tm
     assert all(result["checks"].values())
     assert result["counts"] == dict(entities=2, relations=1, mentions=4, evidence=2)
     assert extractor.calls == 2 and extractor.assessments == 1
+    from sqlalchemy import text
+
+    with sources.engine.connect() as connection:
+        assert connection.scalar(text("SELECT count(*) FROM content_chunks")) == 2
+        assert connection.scalar(text("SELECT count(*) FROM video_graph_builds")) == 0
+        assert connection.scalar(text("SELECT count(*) FROM video_graph_evidence")) == 0
     assert json.loads((tmp_path / "report.json").read_text())["token_usage"] == {}
     again = run(sources, extractor, tmp_path, backend_store)
     assert again[-1]["status"] == "success" and extractor.calls == 2
@@ -115,8 +117,7 @@ def test_pipeline_enqueues_only_its_bounded_plan(sources, backend_store, tmp_pat
     for cid in set(ids) - {selected}:
         with Session(sources.engine) as session:
             assert not pipeline.state_snapshot(session, cid, backend_store).get("active_id")
-            if backend_store is not None:
-                assert not backend_store.read("MATCH (v:VGVideo {id:$id}) RETURN v", id=str(cid))
+            assert not backend_store.read("MATCH (v:VGVideo {id:$id}) RETURN v", id=str(cid))
 
 
 def test_dry_run_never_writes_plans_or_calls_model(sources, backend_store, tmp_path):
@@ -182,12 +183,8 @@ def test_stale_manifest_and_corrupted_evidence_fail_closed(sources, backend_stor
         run(sources, extractor, tmp_path, backend_store, content_ids=[cid])[-1]["status"]
         == "success"
     )
-    if backend_store is None:
-        with Session(sources.engine) as session, session.begin():
-            session.execute(delete(VideoGraphEvidence))
-    else:
-        with backend_store.transaction() as tx:
-            tx.run("MATCH (e:VGEvidence) DETACH DELETE e").consume()
+    with backend_store.transaction() as tx:
+        tx.run("MATCH (e:VGEvidence) DETACH DELETE e").consume()
     events = run(sources, extractor, tmp_path, backend_store)
     assert events[-1]["status"] == "incomplete"
     report = json.loads((tmp_path / "report.json").read_text())
@@ -257,10 +254,11 @@ def load_cli():
 
 def test_cli_dry_run_does_not_require_model_credentials(tmp_path):
     cli = load_cli()
-    settings = Settings(_env_file=None, VIDEO_GRAPH_BACKEND="postgres", LLM_API_KEY=None)
+    settings = Settings(_env_file=None, LLM_API_KEY=None)
     events = iter([{"stage": "pipeline_plan", "mode": "read_only"}])
     engine = Mock()
     with (
+        patch("app.services.video_graph.storage.GraphStore"),
         patch.object(cli, "get_settings", return_value=settings),
         patch.object(
             cli,
@@ -290,8 +288,9 @@ def test_cli_dry_run_does_not_require_model_credentials(tmp_path):
 @pytest.mark.parametrize("status,code", [("success", 0), ("incomplete", 1)])
 def test_cli_exit_code_comes_from_verification(tmp_path, status, code):
     cli = load_cli()
-    settings = Settings(_env_file=None, VIDEO_GRAPH_BACKEND="postgres", LLM_API_KEY="test")
+    settings = Settings(_env_file=None, LLM_API_KEY="test")
     with (
+        patch("app.services.video_graph.storage.GraphStore"),
         patch.object(cli, "get_settings", return_value=settings),
         patch.object(
             cli,
@@ -345,8 +344,6 @@ def test_publication_metadata_is_required_not_just_a_success_status(
     tmp_path,
     field,
 ):
-    from app.models.video_graph import VideoGraphBuild
-
     cid = sources.seed_video()
     extractor = StubExtractor()
     assert (
@@ -357,16 +354,12 @@ def test_publication_metadata_is_required_not_just_a_success_status(
         snapshot = pipeline._active_snapshot(session, cid, backend_store)
     damaged = dict(snapshot["output"])
     damaged.pop(field)
-    if backend_store is None:
-        with Session(sources.engine) as session, session.begin():
-            session.get(VideoGraphBuild, uuid.UUID(snapshot["id"])).output_json = damaged
-    else:
-        with backend_store.transaction() as tx:
-            tx.run(
-                "MATCH (b:VGBuild {id:$id}) SET b.output_json=$output",
-                id=snapshot["id"],
-                output=json.dumps(damaged),
-            ).consume()
+    with backend_store.transaction() as tx:
+        tx.run(
+            "MATCH (b:VGBuild {id:$id}) SET b.output_json=$output",
+            id=snapshot["id"],
+            output=json.dumps(damaged),
+        ).consume()
     events = run(sources, extractor, tmp_path, backend_store)
     verification = next(e for e in events if e["stage"] == "pipeline_verification")
     assert events[-1]["status"] == "incomplete"
@@ -375,19 +368,13 @@ def test_publication_metadata_is_required_not_just_a_success_status(
 
 
 def test_withdrawn_video_requires_explicit_restore(sources, backend_store, tmp_path):
-    from app.services.video_graph import withdraw_video
-
     cid = sources.seed_video()
     extractor = StubExtractor()
     assert (
         run(sources, extractor, tmp_path, backend_store, content_ids=[cid])[-1]["status"]
         == "success"
     )
-    if backend_store:
-        backend_store.withdraw(cid)
-    else:
-        with Session(sources.engine) as session, session.begin():
-            withdraw_video(session, cid)
+    backend_store.withdraw(cid)
     with pytest.raises(ValueError, match="已撤回"):
         run(sources, extractor, tmp_path, backend_store, content_ids=[cid])
     assert extractor.calls == 1
@@ -395,8 +382,9 @@ def test_withdrawn_video_requires_explicit_restore(sources, backend_store, tmp_p
 
 def test_cli_requires_the_final_pipeline_summary(tmp_path):
     cli = load_cli()
-    settings = Settings(_env_file=None, VIDEO_GRAPH_BACKEND="postgres", LLM_API_KEY="test")
+    settings = Settings(_env_file=None, LLM_API_KEY="test")
     with (
+        patch("app.services.video_graph.storage.GraphStore"),
         patch.object(cli, "get_settings", return_value=settings),
         patch.object(
             cli,
@@ -461,7 +449,7 @@ def cached_http_server():
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from threading import Thread
 
-    from app.services.video_graph_identity import stable_hash
+    from app.services.video_graph.identity import stable_hash
 
     @contextmanager
     def serve():
@@ -533,7 +521,6 @@ def invoke_pipeline_cli(sources, store, cid, manifest, report, endpoint):
         **os.environ,
         "DATABASE_URL": url.render_as_string(hide_password=False),
         "SYNC_DATABASE_URL": url.render_as_string(hide_password=False),
-        "VIDEO_GRAPH_BACKEND": "neo4j" if store else "postgres",
         "BASE_URL": endpoint,
         "LLM_API_KEY": "local-exact-response-fixture",
         "LLM_MODEL": "deepseek-v4.1-flash-economy",
@@ -580,7 +567,11 @@ def test_real_cli_http_extraction_publication_and_query(sources, backend_store, 
         first_payload = json.loads(report.read_text())
         first_usage = first_payload["token_usage"]
         assert set(first_usage) == {
-            "assessment", "entity_extraction", "entity_review", "relation", "relation_review",
+            "assessment",
+            "entity_extraction",
+            "entity_review",
+            "relation",
+            "relation_review",
         }
         assert all(row["unknown_usage_responses"] >= 1 for row in first_usage.values())
         again = invoke_pipeline_cli(sources, backend_store, cid, manifest, report, endpoint)
@@ -588,7 +579,7 @@ def test_real_cli_http_extraction_publication_and_query(sources, backend_store, 
     payload = json.loads(report.read_text())
     assert payload["status"] == "success"
     assert payload["token_usage"] == {}
-    from app.services.video_graph_identity import policy_id
+    from app.services.video_graph.identity import policy_id
 
     assert payload["extractor_version"].endswith(f":{policy_id()}-none-none")
     result = payload["results"][str(cid)]
@@ -602,14 +593,19 @@ def test_failed_stage_resumes_durable_requests_with_new_worker(sources, backend_
     from json import dumps, loads
 
     import httpx
-    from app.services.video_graph_identity import stable_hash
+    from app.services.video_graph.identity import stable_hash
 
     cid = seed_cached_case(sources)
     baseline = json.loads((ROOT / "data/video_graph_runs/token-baseline-20261106.json").read_text())
     responses = {}
     for trace in baseline["results"]["EG003"]["cache_trace"]:
-        envelope = json.loads((ROOT / "data/video_graph_runs/token-baseline-responses-20261106"
-                               / (trace["request_hash"] + ".json")).read_text())
+        envelope = json.loads(
+            (
+                ROOT
+                / "data/video_graph_runs/token-baseline-responses-20261106"
+                / (trace["request_hash"] + ".json")
+            ).read_text()
+        )
         responses[stable_hash(envelope["request"])] = envelope["response"]
     observed, failed, mismatches = [], [], []
 
@@ -618,8 +614,11 @@ def test_failed_stage_resumes_durable_requests_with_new_worker(sources, backend_
         system = body["messages"][0]["content"]
         request = httpx.Request("POST", "https://test.invalid")
         payload = loads(body["messages"][1]["content"])
-        if (system.lstrip().startswith("独立对照完整current_chunk")
-            and payload.get("format_correction") and len(failed) < 2):
+        if (
+            system.lstrip().startswith("独立对照完整current_chunk")
+            and payload.get("format_correction")
+            and len(failed) < 2
+        ):
             failed.append(True)
             return httpx.Response(500, request=request)
         if system.startswith("判断材料是否与无人机"):
@@ -630,13 +629,19 @@ def test_failed_stage_resumes_durable_requests_with_new_worker(sources, backend_
             assert stable_hash(body) in responses, "Unexpected request must not be fabricated"
             response = responses[stable_hash(body)]
         observed.append(stable_hash(body))
-        return httpx.Response(200, request=request, json={
-            "choices": [{"message": {"content": dumps(response)}}],
-        })
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "choices": [{"message": {"content": dumps(response)}}],
+            },
+        )
 
     first = LLMVideoExtractor(Settings())
-    with patch("app.services.video_graph.httpx.post", side_effect=post), \
-            patch("app.services.video_graph.time.sleep"):
+    with (
+        patch("app.services.video_graph.extraction.httpx.post", side_effect=post),
+        patch("app.services.video_graph.extraction.time.sleep"),
+    ):
         events = run(sources, first, tmp_path, backend_store, content_ids=[cid])
         assert events[-1]["status"] == "incomplete"
         assert len(observed) == 5 and len(failed) == 2  # topic + four successful chunk requests
@@ -648,8 +653,9 @@ def test_failed_stage_resumes_durable_requests_with_new_worker(sources, backend_
     usage = report["token_usage"]
     assert sum(row.get("checkpoint_replays", 0) for row in usage.values()) == 4
     assert sum(row.get("http_attempts", 0) for row in usage.values()) == 1
-    assert sum(row.get("http_attempts", 0)
-               for row in report["cumulative_token_usage"].values()) == 8
+    assert (
+        sum(row.get("http_attempts", 0) for row in report["cumulative_token_usage"].values()) == 8
+    )
     assert report["usage_history_complete"]
     assert first.request_checkpoint is None and resumed.request_checkpoint is None
     result = next(e for e in events if e["stage"] == "pipeline_verification")

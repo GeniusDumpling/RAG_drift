@@ -49,7 +49,7 @@ class _SearchHit:
     chunk_id: UUID
     content_item_id: UUID | None
     score: float
-    matched_by: Literal["vector", "keyword", "hybrid"]
+    matched_by: Literal["vector", "keyword", "hybrid", "graph"]
     vector_score: float | None = None
     keyword_score: float | None = None
 
@@ -807,7 +807,7 @@ def _keyword_score(
 
 
 def _hit_has_acceptable_evidence_score(hit: _SearchHit) -> bool:
-    if hit.matched_by == "keyword":
+    if hit.matched_by in ("keyword", "graph"):
         return True
     if hit.matched_by == "hybrid" and hit.keyword_score is not None:
         return True

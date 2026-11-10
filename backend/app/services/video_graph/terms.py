@@ -40,17 +40,23 @@ def source_terms(text, *, limit=24):
     selected, seen = [], set()
     for start, end, term, surface in matches:
         identity = (term["name"], term["type"])
-        if identity in seen or any(start < b and a < end and (
-                                      term["type"] == old["type"]
-                                      or (term["type"] == "organization"
-                                          and old["type"] in {"product", "product_family"}))
-                                   for a, b, old, _ in selected):
+        if identity in seen or any(
+            start < b
+            and a < end
+            and (
+                term["type"] == old["type"]
+                or (term["type"] == "organization" and old["type"] in {"product", "product_family"})
+            )
+            for a, b, old, _ in selected
+        ):
             continue
         seen.add(identity)
         selected.append((start, end, term, surface))
     selected.sort(key=lambda row: row[0])
-    return [{"surface_text": surface, "canonical_name": term["name"], "entity_type": term["type"]}
-            for _, _, term, surface in selected[:limit]]
+    return [
+        {"surface_text": surface, "canonical_name": term["name"], "entity_type": term["type"]}
+        for _, _, term, surface in selected[:limit]
+    ]
 
 
 def seed_term_mentions(candidate, text):
@@ -67,8 +73,11 @@ def seed_term_mentions(candidate, text):
         key = f"term_{index}"
         while key in keys:
             key += "_"
-        entities.append(ExtractedEntity(key=key, surface_text=row["surface_text"],
-                                        entity_type=row["entity_type"]))
+        entities.append(
+            ExtractedEntity(
+                key=key, surface_text=row["surface_text"], entity_type=row["entity_type"]
+            )
+        )
         keys.add(key)
         seen.add(signature)
     return candidate.model_copy(update={"entities": entities})
@@ -93,13 +102,25 @@ def confirmed_type(surface, proposed):
     value = re.sub(r"^(?:the|a|an|this|that)\s+", "", surface.strip(), flags=re.I)
     if term_key(value) in {"firmware", "固件", "韌體"}:
         return "software"
-    if term_key(value) in {"remotecontroller", "remotecontrol", "motioncontroller", "goggles",
-                           "遥控器", "遙控器", "飞行眼镜", "飛行眼鏡", "护目镜", "護目鏡"}:
+    if term_key(value) in {
+        "remotecontroller",
+        "remotecontrol",
+        "motioncontroller",
+        "goggles",
+        "遥控器",
+        "遙控器",
+        "飞行眼镜",
+        "飛行眼鏡",
+        "护目镜",
+        "護目鏡",
+    }:
         return "product"
     name = re.sub(r"\s*(?:遥控器|遙控器|remote controller|controller)$", "", value, flags=re.I)
     for term in TERMS:
-        if (term["type"] == "product" and re.match(r"^(?:RC\b|RC-|Goggles\b)", term["name"])
-            and any(term_key(name) == term_key(alias)
-                    for alias in [term["name"], *term["aliases"]])):
+        if (
+            term["type"] == "product"
+            and re.match(r"^(?:RC\b|RC-|Goggles\b)", term["name"])
+            and any(term_key(name) == term_key(alias) for alias in [term["name"], *term["aliases"]])
+        ):
             return "product"
     return proposed

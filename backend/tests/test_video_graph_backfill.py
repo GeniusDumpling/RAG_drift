@@ -4,8 +4,8 @@ import json
 from unittest.mock import patch
 
 import pytest
-from app.services import video_graph_backfill as backfill
-from app.services.video_graph_identity import stable_hash
+from app.services.video_graph import backfill as backfill
+from app.services.video_graph.identity import stable_hash
 
 from backend.tests.test_video_graph_quality import material
 
@@ -81,8 +81,8 @@ def test_only_selected_batch_is_enqueued_and_resume_uses_database_truth(tmp_path
         patch.object(backfill, "Session", return_value=SourceSession()),
         patch.object(backfill, "load_material", side_effect=lambda _, cid: by_id[cid]),
         patch.object(backfill, "state_snapshot", side_effect=lambda _, cid, store: states[cid]),
-        patch("app.services.neo4j_graph.worker.enqueue_videos", side_effect=enqueue),
-        patch("app.services.neo4j_graph.worker.process_next", side_effect=process),
+        patch("app.services.video_graph.backfill.enqueue_videos", side_effect=enqueue),
+        patch("app.services.video_graph.backfill.process_next", side_effect=process),
     ):
         first = list(
             backfill.apply_plan(None, Extractor(), path, store=object(), limit=2, batch_size=1)
@@ -119,7 +119,7 @@ def test_stale_source_withdrawal_and_competing_active_version_do_not_enqueue(tmp
             side_effect=lambda _, cid: next(m for m in materials if m.id == cid),
         ),
         patch.object(backfill, "state_snapshot", side_effect=lambda _, cid, store: states[cid]),
-        patch("app.services.neo4j_graph.worker.enqueue_videos") as enqueue,
+        patch("app.services.video_graph.backfill.enqueue_videos") as enqueue,
     ):
         events = list(backfill.apply_plan(None, Extractor(), path, store=object()))
     assert events[0]["selected"] == 0

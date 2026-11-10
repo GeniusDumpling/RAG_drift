@@ -18,20 +18,16 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from app.core.config import Settings  # noqa: E402
 from app.schemas.video_graph import ChunkExtraction  # noqa: E402
-from app.services.video_graph import (  # noqa: E402
-    LLMVideoExtractor,
-    VideoChunk,
-    VideoMaterial,
-    locate_quote,  # noqa: E402
-    validate_extraction,
-)
-from app.services.video_graph_diagnostics import describe_graph_error  # noqa: E402
-from app.services.video_graph_identity import (  # noqa: E402
+from app.services.video_graph.diagnostics import describe_graph_error  # noqa: E402
+from app.services.video_graph.extraction import LLMVideoExtractor  # noqa: E402
+from app.services.video_graph.identity import (  # noqa: E402
     compact_name,
     identity_name,
     input_hash,
     stable_hash,
 )
+from app.services.video_graph.material import VideoChunk, VideoMaterial, locate_quote  # noqa: E402
+from app.services.video_graph.validation import validate_extraction  # noqa: E402
 
 from scripts.video_graph_response_cache import (  # noqa: E402
     CachedEvaluationExtractor,

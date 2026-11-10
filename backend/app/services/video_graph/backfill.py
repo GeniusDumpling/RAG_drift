@@ -10,40 +10,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.content import ContentItem
-from app.models.video_graph import VideoGraphBuild, VideoGraphState
-from app.services.video_graph import enqueue_videos, load_material, process_next
-from app.services.video_graph_identity import stable_hash
+from app.services.video_graph.identity import stable_hash
+from app.services.video_graph.material import load_material
+from app.services.video_graph.tasks import enqueue_videos, process_next
 
 
-def state_snapshot(session: Session, content_id: uuid.UUID, store: Any = None) -> dict[str, Any]:
-    if store is not None:
-        rows = store.read(
-            "MATCH (v:VGVideo {id:$id}) OPTIONAL MATCH (b:VGBuild {id:v.active_build_id}) "
-            "RETURN v.withdrawn AS withdrawn,b.id AS active_id,b.extractor_version AS version, "
-            "b.fingerprint AS fingerprint,b.status AS status",
-            id=str(content_id),
-        )
-        return rows[0] if rows else {}
-    state = session.get(VideoGraphState, content_id)
-    active = (
-        session.get(VideoGraphBuild, state.active_build_id)
-        if state and state.active_build_id
-        else None
-    )
-    return {
-        "withdrawn": state.withdrawn if state else False,
-        "active_id": str(active.id) if active else None,
-        "version": active.extractor_version if active else None,
-        "fingerprint": active.fingerprint if active else None,
-        "status": active.status if active else None,
-    }
+def state_snapshot(session: Session, content_id: uuid.UUID, store: Any) -> dict[str, Any]:
+    return store.active_snapshot(content_id)
 
 
 def create_plan(
     engine: Any,
     version: str,
     *,
-    store: Any = None,
+    store: Any,
     content_ids: list[uuid.UUID] | None = None,
     include_current: bool = False,
 ) -> dict[str, Any]:
@@ -135,7 +115,7 @@ def apply_plan(
     extractor: Any,
     path: Path,
     *,
-    store: Any = None,
+    store: Any,
     limit: int = 20,
     batch_size: int = 5,
     retry_failed: bool = False,
@@ -192,35 +172,17 @@ def apply_plan(
     }
     for offset in range(0, len(selected), batch_size):
         batch = selected[offset : offset + batch_size]
-        if store is not None:
-            from app.services.neo4j_graph.worker import enqueue_videos as enqueue_neo4j
-
-            enqueue_neo4j(
-                engine,
-                store,
-                extractor_version=extractor.version,
-                content_ids=batch,
-                retry_failed=True,
-                expected_active_ids=expected_active,
-                expected_fingerprints=expected_fingerprints,
-            )
-        else:
-            with Session(engine) as session, session.begin():
-                enqueue_videos(
-                    session,
-                    extractor_version=extractor.version,
-                    content_ids=batch,
-                    retry_failed=True,
-                    expected_active_ids=expected_active,
-                    expected_fingerprints=expected_fingerprints,
-                )
+        enqueue_videos(
+            engine,
+            store,
+            extractor_version=extractor.version,
+            content_ids=batch,
+            retry_failed=True,
+            expected_active_ids=expected_active,
+            expected_fingerprints=expected_fingerprints,
+        )
         for _ in batch:
-            if store is not None:
-                from app.services.neo4j_graph.worker import process_next as process_neo4j
-
-                result = process_neo4j(engine, store, extractor, content_ids=batch)
-            else:
-                result = process_next(engine, extractor, content_ids=batch)
+            result = process_next(engine, store, extractor, content_ids=batch)
             if result is None:
                 break
             plan["results"][result["content_item_id"]] = result

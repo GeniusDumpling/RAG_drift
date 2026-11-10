@@ -7,74 +7,23 @@ from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.search import ContentEntityMention
-from app.models.video_graph import VideoGraphBuild, VideoGraphEvidence, VideoGraphState
 from app.schemas.video_graph import ChunkExtraction, GraphRetrieveRequest, VideoAssessment
-from app.services import video_graph_queries
-from app.services.video_graph import (
-    ENTITY_NAMESPACE,
-    MENTION_METHOD,
-    canonical_name,
-    digest,
-    load_material,
-    locate_quote,
-    normalized_name,
-    update_coverage,
-    validate_extraction,
-)
-from app.services.video_graph_backfill import (
+from app.services.video_graph.backfill import (
     apply_plan,
     create_plan,
     save_plan,
     state_snapshot,
     validate_plan,
 )
-from app.services.video_graph_identity import entity_identity, is_quality_version, stable_hash
+from app.services.video_graph.identity import entity_identity, stable_hash
+from app.services.video_graph.material import ENTITY_NAMESPACE, digest, load_material, locate_quote
+from app.services.video_graph.validation import update_coverage, validate_extraction
 
 
 def _active_snapshot(session, content_id, store):
-    if store is not None:
-        rows = store.read(
-            "MATCH (v:VGVideo {id:$id}) "
-            "OPTIONAL MATCH (b:VGBuild {id:v.active_build_id}) "
-            "RETURN v.withdrawn AS withdrawn,v.deleted AS deleted,"
-            "v.desired_build_id AS desired_id,b",
-            id=str(content_id),
-        )
-        if not rows or not rows[0]["b"]:
-            return {}
-        row, build = rows[0], rows[0]["b"]
-        return dict(
-            id=build["id"],
-            version=build["extractor_version"],
-            fingerprint=build["fingerprint"],
-            status=build["status"],
-            withdrawn=bool(row["withdrawn"]),
-            deleted=bool(row.get("deleted")),
-            desired_id=row["desired_id"],
-            output=json.loads(build.get("output_json") or "{}"),
-        )
-    state = session.get(VideoGraphState, content_id)
-    build = (
-        session.get(VideoGraphBuild, state.active_build_id)
-        if state and state.active_build_id
-        else None
-    )
-    if build is None:
-        return {}
-    return dict(
-        id=str(build.id),
-        version=build.extractor_version,
-        fingerprint=build.fingerprint,
-        status=build.status,
-        withdrawn=state.withdrawn,
-        deleted=False,
-        desired_id=str(state.desired_build_id) if state.desired_build_id else None,
-        output=copy.deepcopy(build.output_json or {}),
-    )
+    return state_snapshot(session, content_id, store)
 
 
 def _evidence_key(row):
@@ -113,18 +62,12 @@ def _expected_projection(material, snapshot):
             chunk,
             ChunkExtraction.model_validate(output["chunks"][str(chunk.id)]),
             material=material,
-            require_review=is_quality_version(snapshot["version"]),
+            require_review=True,
         )
         keys = {}
         for entity in extraction.entities:
-            if extraction.schema_version == 2:
-                identity = entity_identity(entity, material)
-                eid, name = str(identity.id), identity.name
-            else:
-                name = canonical_name(entity.surface_text, entity.entity_type)
-                eid = str(
-                    uuid.uuid5(ENTITY_NAMESPACE, f"{entity.entity_type}:{normalized_name(name)}")
-                )
+            identity = entity_identity(entity, material)
+            eid, name = str(identity.id), identity.name
             keys[entity.key] = eid
             nodes[eid] = (name, entity.entity_type)
             start, end = locate_quote(chunk.text, entity.surface_text)
@@ -160,67 +103,27 @@ def _expected_projection(material, snapshot):
 
 
 def _stored_source_rows(session, snapshot, content_id, store):
-    if store is not None:
-        mentions = store.read(
-            "MATCH (b:VGBuild {id:$id})-[:HAS_MENTION]->(m:VGMention)-[:REFERS_TO]->(e:VGEntity) "
-            "RETURN m.content_chunk_id AS chunk,e.id AS entity,"
-            "m.start_char AS start,m.end_char AS end",
-            id=snapshot["id"],
-        )
-        evidence = store.read(
-            "MATCH (b:VGBuild {id:$id})-[:HAS_EVIDENCE]->(ev:VGEvidence)"
-            "-[:SUPPORTS]->(r:VGRelation) "
-            "RETURN r.id AS relation_id,ev",
-            id=snapshot["id"],
-        )
-        return (
-            {(m["chunk"], m["entity"], m["start"], m["end"]) for m in mentions},
-            {_evidence_key({**r["ev"], "relation_id": r["relation_id"]}) for r in evidence},
-        )
-    mentions = session.execute(
-        select(
-            ContentEntityMention.content_chunk_id,
-            ContentEntityMention.entity_id,
-            ContentEntityMention.start_char,
-            ContentEntityMention.end_char,
-        ).where(
-            ContentEntityMention.content_item_id == content_id,
-            ContentEntityMention.extraction_method == MENTION_METHOD,
-            ContentEntityMention.metadata_json["video_graph_build_id"].astext == snapshot["id"],
-        )
-    ).all()
-    evidence = session.scalars(
-        select(VideoGraphEvidence).where(
-            VideoGraphEvidence.build_id == uuid.UUID(snapshot["id"]),
-        )
-    ).all()
+    mentions = store.read(
+        "MATCH (b:VGBuild {id:$id})-[:HAS_MENTION]->(m:VGMention)-[:REFERS_TO]->(e:VGEntity) "
+        "RETURN m.content_chunk_id AS chunk,e.id AS entity,"
+        "m.start_char AS start,m.end_char AS end",
+        id=snapshot["id"],
+    )
+    evidence = store.read(
+        "MATCH (b:VGBuild {id:$id})-[:HAS_EVIDENCE]->(ev:VGEvidence)"
+        "-[:SUPPORTS]->(r:VGRelation) "
+        "RETURN r.id AS relation_id,ev",
+        id=snapshot["id"],
+    )
     return (
-        {(str(m.content_chunk_id), str(m.entity_id), m.start_char, m.end_char) for m in mentions},
-        {
-            _evidence_key(
-                {
-                    key: getattr(row, key)
-                    for key in (
-                        "relation_id",
-                        "content_chunk_id",
-                        "quote",
-                        "char_start",
-                        "char_end",
-                        "assertion",
-                        "start_seconds",
-                        "end_seconds",
-                        "caption_source",
-                    )
-                }
-            )
-            for row in evidence
-        },
+        {(m["chunk"], m["entity"], m["start"], m["end"]) for m in mentions},
+        {_evidence_key({**r["ev"], "relation_id": r["relation_id"]}) for r in evidence},
     )
 
 
-def verify_projection(engine, content_id, version, fingerprint, *, store=None):
+def verify_projection(engine, content_id, version, fingerprint, *, store):
     """Read through the same graph/retrieval services as the API; never mutate a projection."""
-    from app.services.neo4j_graph.queries import GraphQueries
+    from app.services.video_graph.queries import GraphQueries
 
     result = dict(content_item_id=str(content_id), verified=False, checks={})
     with Session(engine) as session:
@@ -253,7 +156,7 @@ def verify_projection(engine, content_id, version, fingerprint, *, store=None):
             result.update(status="invalid_saved_output", error_type=type(exc).__name__)
             return result
         checks["saved_output_valid"] = True
-        queries = GraphQueries(store) if store is not None else video_graph_queries
+        queries = GraphQueries(store)
         graph = queries.get_graph(
             session,
             content_id=content_id,
@@ -342,7 +245,7 @@ def run_pipeline(
     manifest_path,
     report_path,
     *,
-    store=None,
+    store,
     content_ids=None,
     limit=20,
     batch_size=5,
@@ -407,7 +310,7 @@ def run_pipeline(
     report = dict(
         pipeline_version=1,
         extractor_version=version,
-        backend="neo4j" if store else "postgres",
+        backend="neo4j",
         plan_hash=plan["plan_hash"],
         manifest=str(manifest_path),
         started_at=datetime.now(UTC).isoformat(),
@@ -416,18 +319,20 @@ def run_pipeline(
     )
     usage = getattr(extractor, "token_usage", None)
     usage_before = usage.snapshot() if usage is not None else {}
-    prior_usage = (previous.get("cumulative_token_usage", previous.get("token_usage", {}))
-                   if previous else {})
+    prior_usage = (
+        previous.get("cumulative_token_usage", previous.get("token_usage", {})) if previous else {}
+    )
 
     def save_report():
         if usage is not None:
-            from app.services.video_graph_usage import merge_usage, usage_delta
+            from app.services.video_graph.usage import merge_usage, usage_delta
 
             report["token_usage"] = usage_delta(usage_before, usage.snapshot())
             report["cumulative_token_usage"] = merge_usage(prior_usage, report["token_usage"])
             report["usage_history_complete"] = (
                 previous.get("usage_history_complete", "token_usage" in previous)
-                if previous else True
+                if previous
+                else True
             )
         save_plan(report_path, report)
 

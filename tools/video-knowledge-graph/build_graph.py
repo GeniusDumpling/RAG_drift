@@ -15,17 +15,12 @@ sys.path.insert(0, str(ROOT / "backend"))
 import app.models  # noqa: E402, F401
 from app.core.config import get_settings  # noqa: E402
 from app.models.content import ContentItem  # noqa: E402
-from app.services.video_graph import (  # noqa: E402
-    PROMPT_VERSION,
-    LLMVideoExtractor,
-    enqueue_videos,
-    load_material,
-    process_next,
-    withdraw_video,
-)
-from app.services.video_graph_backfill import apply_plan, create_plan, save_plan  # noqa: E402
-from app.services.video_graph_build_pipeline import run_pipeline  # noqa: E402
-from app.services.video_graph_identity import extraction_version  # noqa: E402
+from app.services.video_graph.backfill import apply_plan, create_plan, save_plan  # noqa: E402
+from app.services.video_graph.extraction import PROMPT_VERSION, LLMVideoExtractor  # noqa: E402
+from app.services.video_graph.identity import extraction_version  # noqa: E402
+from app.services.video_graph.material import load_material  # noqa: E402
+from app.services.video_graph.pipeline import run_pipeline  # noqa: E402
+from app.services.video_graph.tasks import enqueue_videos, process_next  # noqa: E402
 from sqlalchemy import create_engine, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
@@ -139,12 +134,10 @@ def main(argv: list[str] | None = None) -> int:
     engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
     store = None
     try:
-        if (
-            settings.video_graph_backend == "neo4j"
-            and args.command != "inventory"
-            and (not getattr(args, "dry_run", False) or args.command == "pipeline")
+        if args.command != "inventory" and (
+            not getattr(args, "dry_run", False) or args.command == "pipeline"
         ):
-            from app.services.neo4j_graph.store import GraphStore
+            from app.services.video_graph.storage import GraphStore
 
             store = GraphStore(settings)
             if args.command != "plan-backfill" and not getattr(args, "dry_run", False):
@@ -152,12 +145,9 @@ def main(argv: list[str] | None = None) -> int:
             store.ensure_ready()
         if args.command in {"withdraw", "restore"}:
             with Session(engine) as session, session.begin():
-                if store:
-                    if load_material(session, args.content_id) is None:
-                        raise ValueError("找不到视频记录")
-                    store.withdraw(args.content_id, restore=args.command == "restore")
-                else:
-                    withdraw_video(session, args.content_id, restore=args.command == "restore")
+                if load_material(session, args.content_id) is None:
+                    raise ValueError("找不到视频记录")
+                store.withdraw(args.content_id, restore=args.command == "restore")
             emit({"status": args.command, "content_item_id": str(args.content_id)})
             return 0
         if args.command == "inventory" or (args.dry_run and args.command != "pipeline"):
@@ -232,37 +222,20 @@ def main(argv: list[str] | None = None) -> int:
             return 1 if failed else 0
         failed = False
         while True:
-            if store:
-                from app.services.neo4j_graph.worker import enqueue_videos as enqueue_neo4j
-
-                scan = enqueue_neo4j(
-                    engine,
-                    store,
-                    extractor_version=version,
-                    content_ids=args.content_id,
-                    retry_failed=args.retry_failed,
-                    retry_partial=args.retry_partial,
-                )
-            else:
-                with Session(engine) as session, session.begin():
-                    scan = enqueue_videos(
-                        session,
-                        extractor_version=version,
-                        content_ids=args.content_id,
-                        retry_failed=args.retry_failed,
-                        retry_partial=args.retry_partial,
-                    )
+            scan = enqueue_videos(
+                engine,
+                store,
+                extractor_version=version,
+                content_ids=args.content_id,
+                retry_failed=args.retry_failed,
+                retry_partial=args.retry_partial,
+            )
             emit({"stage": "scan", **scan})
             if args.command == "scan":
                 return 0
             assert extractor is not None
             for _ in range(args.limit):
-                if store:
-                    from app.services.neo4j_graph.worker import process_next as process_neo4j
-
-                    result = process_neo4j(engine, store, extractor, content_ids=args.content_id)
-                else:
-                    result = process_next(engine, extractor, content_ids=args.content_id)
+                result = process_next(engine, store, extractor, content_ids=args.content_id)
                 if result is None:
                     break
                 emit(result)
@@ -284,7 +257,7 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "status": "error",
                 "error_type": type(exc).__name__,
-                "hint": "检查 PostgreSQL 连接及 alembic upgrade head；此工具不自动迁移",
+                "hint": "检查 Neo4j 连接和迁移状态、PostgreSQL 源内容连接；此工具不自动迁移",
             }
         )
         return 1

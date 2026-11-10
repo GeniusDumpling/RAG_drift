@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.content import ContentChunk
 from app.schemas.search import EvidenceObject
+from app.services.graph_evidence_text import graph_evidence_text
 
 
 @dataclass(frozen=True)
@@ -97,7 +98,8 @@ async def prepare_answer_context(
         if budget < 1:
             break
         # Prefer the actual hit. Only add neighbors when its full text fits.
-        text = hit.display_text.strip()[:budget]
+        graph_text = graph_evidence_text(item, budget // 2)
+        text = graph_text + hit.display_text.strip()[:budget - len(graph_text)]
         used_ids = [hit.id]
         for neighbor in neighbors:
             if (

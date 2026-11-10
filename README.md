@@ -71,7 +71,7 @@ uv sync --extra dev --extra literature
 - **本地数据库端口**：当前 `docker-compose.yml` 映射为 `55432:5432`，而 `.env.example` 和后端默认值仍使用 `54329`。使用此 Compose 时，将 `DATABASE_URL`、`SYNC_DATABASE_URL` 的主机端口都改为 `55432`。开发 Compose 的 PostgreSQL、Qdrant 映射未显式限制为 localhost。
 - **向量服务**：默认使用 SiliconFlow BGE-M3，填写 `EMBEDDING_API_KEY`，或提供可复用的 `VLM_API_KEY`。
 - **答案生成**：填写 `LLM_API_KEY`；缺少密钥时问答返回证据摘录。
-- **图谱连接**：默认 `VIDEO_GRAPH_BACKEND=postgres`。宿主机使用 Neo4j 时，`NEO4J_URI` 应为 `bolt://localhost:7687`；模板中的 `bolt://neo4j:7687` 用于 Compose 容器网络。
+- **图谱连接**：图谱统一使用 Neo4j。宿主机的 `NEO4J_URI` 应为 `bolt://localhost:7687`；模板中的 `bolt://neo4j:7687` 用于 Compose 容器网络。PostgreSQL 保存原始内容与切片。
 
 启动本地服务：
 
@@ -352,7 +352,7 @@ docker compose -f docker-compose.deploy.yml up -d --build app
 
 图谱工具栏现支持 **2D / 3D** 切换，桌面首次进入默认三维、手机默认二维，并记住用户选择。三维模式使用 G6 官方扩展，支持球体光照、点击节点居中并围绕该节点上下左右 360° 连续旋转、视角平移、节点拖拽、悬停高亮、关系证据及邻居展开，保留现有数据预算和小图过滤；无 WebGL 支持时自动使用二维。操作、部署与回退见 [3D 图谱说明](docs/graph-ui-3d-2026-10-26.md)。
 
-默认 `VIDEO_GRAPH_BACKEND=postgres`；2026-10-21 的 [迁移记录](docs/neo4j-migration-report-2026-10-21.md) 已完成历史数据导入和正式环境 Neo4j 切换。迁移步骤（包括租约和检查点）见 [Neo4j 迁移指南](docs/neo4j-migration.md)。使用 Neo4j 时，PostgreSQL 继续保存源内容，图谱、构图任务、租约及检查点以 Neo4j 为准。
+图谱、构图任务、租约及检查点统一保存在 Neo4j，模块位于 `backend/app/services/video_graph/`；PostgreSQL 继续保存源内容和切片。2026-11-10已删除在线 PostgreSQL 图谱后端和切换配置，v1 存量图谱仍可查询，但新任务只支持 v2 及后续版本。职责划分及验证见[模块重构说明](docs/video-graph-refactor-2026-11-10.md)，历史数据导入见 [Neo4j 迁移指南](docs/neo4j-migration.md)。
 
 ```bash
 # 只读盘点，不调用抽取模型

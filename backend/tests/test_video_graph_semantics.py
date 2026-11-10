@@ -8,19 +8,16 @@ from unittest.mock import patch
 import pytest
 from app.core.config import Settings
 from app.schemas.video_graph import ChunkExtraction, EntityType, Predicate
-from app.services.video_graph import (
-    LLMVideoExtractor,
-    VideoChunk,
-    VideoMaterial,
-    validate_extraction,
-)
-from app.services.video_graph_semantics import (
+from app.services.video_graph.extraction import LLMVideoExtractor
+from app.services.video_graph.material import VideoChunk, VideoMaterial
+from app.services.video_graph.semantics import (
     ENTITY_TYPE_DEFINITIONS,
     PREDICATE_DEFINITIONS,
     RELATION_TYPE_RULES,
     EntitySemanticError,
     RelationSemanticError,
 )
+from app.services.video_graph.validation import validate_extraction
 
 pytestmark = pytest.mark.no_db
 
@@ -198,8 +195,14 @@ class TestVideoGraphSemantics(unittest.TestCase):
     def test_extraction_prompt_explains_types_roles_and_abstention(self):
         current = chunk("Ukraine")
         material = VideoMaterial(
-            uuid.uuid4(), "youtube:test", "test", "https://youtu.be/test", "", "manual", "en",
-            (current,)
+            uuid.uuid4(),
+            "youtube:test",
+            "test",
+            "https://youtu.be/test",
+            "",
+            "manual",
+            "en",
+            (current,),
         )
         extractor = LLMVideoExtractor(Settings(_env_file=None, LLM_API_KEY="test-key"))
         with patch.object(

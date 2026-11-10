@@ -2,16 +2,19 @@
 
 import json
 
-from app.services.video_graph_identity import stable_hash
+from app.services.video_graph.identity import stable_hash
 
 
 class RequestCheckpoint:
     def __init__(self, output, extractor, persist):
         self.output, self.persist = output, persist
-        self.identity = stable_hash([
-            extractor.version, extractor.settings.base_url.rstrip("/"),
-            extractor.settings.llm_api_key,
-        ])
+        self.identity = stable_hash(
+            [
+                extractor.version,
+                extractor.settings.base_url.rstrip("/"),
+                extractor.settings.llm_api_key,
+            ]
+        )
         self.namespace = "assessment"
 
     def clear(self):
@@ -45,8 +48,10 @@ class RequestCheckpoint:
             raise ValueError("阶段检查点只接受JSON对象")
         # JSONB reorders object keys. Preserve original nested key order so rebuilding
         # a downstream user-message JSON string produces exactly the same request.
-        rows[key] = {"response_json": json.dumps(response, ensure_ascii=False),
-                     "response_hash": stable_hash(response)}
+        rows[key] = {
+            "response_json": json.dumps(response, ensure_ascii=False),
+            "response_hash": stable_hash(response),
+        }
         try:
             self.persist()  # Commit under the existing lease before the next model call.
         except Exception:

@@ -7,9 +7,9 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.services.video_graph import LLMVideoExtractor
-from app.services.video_graph_identity import stable_hash
-from app.services.video_graph_usage import request_stage
+from app.services.video_graph.extraction import LLMVideoExtractor
+from app.services.video_graph.identity import stable_hash
+from app.services.video_graph.usage import request_stage
 
 
 class ResponseCacheMiss(ValueError):

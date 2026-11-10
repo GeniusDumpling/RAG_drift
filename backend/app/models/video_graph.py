@@ -1,4 +1,8 @@
-"""Video graph projections. Active evidence is selected through a per-video build pointer."""
+"""Historical PostgreSQL graph schema, retained for Alembic and one-time migration.
+
+Online graph builds and queries use app.services.video_graph.storage (Neo4j).
+Do not add new runtime writes or reads against these legacy tables.
+"""
 
 import uuid
 from datetime import datetime
@@ -72,8 +76,13 @@ class VideoGraphState(Base, TimestampMixin):
 class VideoGraphAlias(Base, UuidPrimaryKeyMixin):
     __tablename__ = "video_graph_aliases"
     __table_args__ = (
-        UniqueConstraint("entity_type", "normalized_alias", "scope_key", "entity_id",
-                         name="uq_video_graph_alias_scope_entity"),
+        UniqueConstraint(
+            "entity_type",
+            "normalized_alias",
+            "scope_key",
+            "entity_id",
+            name="uq_video_graph_alias_scope_entity",
+        ),
     )
 
     entity_id: Mapped[uuid.UUID] = mapped_column(

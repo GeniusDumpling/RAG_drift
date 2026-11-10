@@ -62,7 +62,10 @@ def usage_delta(before, after):
 
 def merge_usage(first, second):
     phases = set(first) | set(second)
-    return {phase: {
-        key: first.get(phase, {}).get(key, 0) + second.get(phase, {}).get(key, 0)
-        for key in sorted(set(first.get(phase, {})) | set(second.get(phase, {})))
-    } for phase in sorted(phases)}
+    return {
+        phase: {
+            key: first.get(phase, {}).get(key, 0) + second.get(phase, {}).get(key, 0)
+            for key in sorted(set(first.get(phase, {})) | set(second.get(phase, {})))
+        }
+        for phase in sorted(phases)
+    }

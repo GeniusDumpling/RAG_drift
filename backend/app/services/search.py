@@ -27,6 +27,7 @@ from app.schemas.search import (
 )
 from app.services.answer_context import AnswerContext, prepare_answer_context
 from app.services.answer_generation import AnswerGenerationError, LLMAnswerClient
+from app.services.answer_graph import merge_graph_evidence, recall_graph_evidence
 from app.services.citation_check import validate_citations
 from app.services.conversation_policy import (
     contextual_followup,
@@ -141,6 +142,12 @@ class SearchService:
                 generation.history_used = bool(history)
                 generation.retrieval_query = retrieval_query
                 query, hits = await self._retrieve(request, retrieval_query=retrieval_query)
+                yield {"event": "status", "data": {"stage": "graph_retrieving"}}
+                graph = await recall_graph_evidence(
+                    self.session, retrieval_query, request.filters, self.settings
+                )
+                generation.graph_retrieval = graph.trace
+                hits = merge_graph_evidence(hits, graph.evidence)
                 if self.settings.reranker_provider != "none":
                     yield {"event": "status", "data": {"stage": "reranking"}}
                 reranked = await rerank_evidence(self.session, retrieval_query, hits, self.settings)
@@ -155,6 +162,10 @@ class SearchService:
             generation.evidence_count = len(evidence)
             generation.context_chars = len(context.text)
             generation.context_chunk_ids = context.chunk_ids
+            if generation.graph_retrieval:
+                generation.graph_retrieval["selected_chunk_ids"] = [
+                    str(item.chunk_id) for item in evidence if item.graph_evidence
+                ]
             yield {
                 "event": "evidence",
                 "data": {

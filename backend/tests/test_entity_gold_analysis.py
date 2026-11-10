@@ -90,7 +90,7 @@ def test_diagnosis_reads_exact_source_bound_cache_and_rejects_tampering(tmp_path
 
 
 def test_failed_cases_keep_all_gold_in_fn_and_are_not_claimed_as_semantic_misses():
-    from app.services.video_graph_identity import stable_hash
+    from app.services.video_graph.identity import stable_hash
 
     from scripts.analyze_entity_gold import SCORING_RULE, analyze
 

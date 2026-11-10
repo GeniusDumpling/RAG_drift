@@ -6,8 +6,8 @@ from collections import Counter
 
 import pytest
 from app.schemas.video_graph import ChunkExtraction, QualityReview
-from app.services.video_graph_identity import input_hash, policy_id
-from app.services.video_graph_quality import result_hash, review_extraction
+from app.services.video_graph.identity import input_hash, policy_id
+from app.services.video_graph.review import result_hash, review_extraction
 
 from scripts import evaluate_relation_gold as evaluation
 

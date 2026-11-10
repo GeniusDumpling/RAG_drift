@@ -58,7 +58,7 @@ export function EvidenceCard({ evidence, onOpenContent }: EvidenceCardProps) {
             {evidence.source_site_name} · {itemTypeLabel(evidence.item_type)}
           </p>
         </div>
-        <span className="badge">{evidence.matched_by}</span>
+        <span className="badge">{evidence.graph_evidence?.length ? '图谱关联' : evidence.matched_by}</span>
       </div>
 
       <div className="evidence-snippet">
@@ -76,6 +76,19 @@ export function EvidenceCard({ evidence, onOpenContent }: EvidenceCardProps) {
       </div>
 
       {evidence.thread_summary ? <p className="muted evidence-thread">帖子摘要：{evidence.thread_summary}</p> : null}
+      {evidence.graph_evidence?.length ? (
+        <details>
+          <summary>查看图谱关系与原文</summary>
+          {evidence.graph_evidence.map((entry) => (
+            <div key={entry.id}>
+              <p>{entry.subject} · {entry.predicate} · {entry.object}</p>
+              <p>原文陈述：{{ asserted: '肯定', uncertain: '不确定', negated: '否定' }[entry.assertion]}（未独立事实验证）</p>
+              {Object.entries(entry.qualifiers).map(([key, value]) => <p key={key}>{key}：{value}</p>)}
+              <p>{entry.quote}</p>
+            </div>
+          ))}
+        </details>
+      ) : null}
 
       {youtubeEmbedHref ? (
         <div className="video-wrapper">

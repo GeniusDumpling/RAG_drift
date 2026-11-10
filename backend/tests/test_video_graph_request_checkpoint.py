@@ -4,15 +4,19 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from app.services.video_graph_request_checkpoint import RequestCheckpoint
+from app.services.video_graph.request_checkpoint import RequestCheckpoint
 
 pytestmark = pytest.mark.no_db
 
 
 def extractor(version="v1", key="private", endpoint="https://test.invalid"):
-    return SimpleNamespace(version=version, settings=SimpleNamespace(
-        llm_api_key=key, base_url=endpoint,
-    ))
+    return SimpleNamespace(
+        version=version,
+        settings=SimpleNamespace(
+            llm_api_key=key,
+            base_url=endpoint,
+        ),
+    )
 
 
 def test_exact_response_is_durable_and_isolated_from_return_value_mutations():
@@ -59,7 +63,8 @@ def test_failed_requests_are_not_pinned_and_corruption_is_recomputed():
 def test_lost_lease_does_not_return_uncommitted_model_response():
     output = {}
     checkpoint = RequestCheckpoint(
-        output, extractor(), Mock(side_effect=RuntimeError("lease lost")))
+        output, extractor(), Mock(side_effect=RuntimeError("lease lost"))
+    )
     with pytest.raises(RuntimeError, match="lease lost"):
         checkpoint.get({}, lambda: {"answer": "ok"})
     assert output["request_checkpoints"]["assessment"] == {}

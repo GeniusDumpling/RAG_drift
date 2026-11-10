@@ -165,7 +165,7 @@ export function DronesPage() {
                   ) : null}
                   {sourceHref ? <a className="drone-source" href={sourceHref} target="_blank" rel="noreferrer">查看官方来源 ↗</a> : null}
                 </header>
-                {activeDetail.note ? <p className="drone-note" role="note">{activeDetail.note}</p> : null}
+                {brand !== 'parrot' && activeDetail.note ? <p className="drone-note" role="note">{activeDetail.note}</p> : null}
                 <div className="drone-parameter-controls">
                   <div><label htmlFor="drone-parameter-search">搜索技术参数</label><input id="drone-parameter-search" type="search" placeholder="搜索参数名称或内容，如重量、电池" value={parameterQuery} onChange={(event) => setParameterQuery(event.target.value)} /></div>
                   <div><label htmlFor="drone-parameter-group">参数分组</label><select id="drone-parameter-group" value={groupIndex} onChange={(event) => setGroupIndex(event.target.value)}>

@@ -8,11 +8,21 @@ from pathlib import Path
 
 DEFAULT_DATASET = Path("scripts/evaluation_data/entity_gold_v3.json")
 TYPE_LABELS = {
-    "product": "产品/设备", "component": "硬件部件", "organization": "组织",
-    "software": "软件", "technology": "技术/功能", "method": "方法/操作",
-    "fault": "故障", "person": "人物", "country": "国家", "region": "地区",
-    "protocol": "协议", "data": "数据", "document": "资料",
-    "product_family": "产品系列", "event": "活动",
+    "product": "产品/设备",
+    "component": "硬件部件",
+    "organization": "组织",
+    "software": "软件",
+    "technology": "技术/功能",
+    "method": "方法/操作",
+    "fault": "故障",
+    "person": "人物",
+    "country": "国家",
+    "region": "地区",
+    "protocol": "协议",
+    "data": "数据",
+    "document": "资料",
+    "product_family": "产品系列",
+    "event": "活动",
 }
 
 
@@ -67,7 +77,9 @@ def validate(data):
         # models describes the source, not a second list of gold answers.
         # Human review may omit a passing mention or rename its canonical form.
     return {
-        "version": data["version"], "status": data["status"], "cases": len(cases),
+        "version": data["version"],
+        "status": data["status"],
+        "cases": len(cases),
         "languages": dict(Counter(c["language"] for c in cases)),
         "entities": sum(len(c["entities"]) for c in cases),
         "validation": "来源和格式检查通过；不代表语义已人工确认或模型质量通过",
@@ -81,21 +93,36 @@ def cell(text):
 def render(data):
     reviewed = data["status"] == "human_reviewed"
     status = "用户已确认实体答案人工复核完成。" if reviewed else "助手初标，待人工复核。"
-    lines = ["# 无人机实体金标准集" if reviewed else "# 无人机实体金标准候选集", "",
-             f"中文10段、英文10段；每段正文均涉及具体无人机型号。{status}",
-             "每段先读原文，再核对实体是否漏标、多标或分错类型。JSON是编辑入口，本文件由脚本生成。",
-             "数值参数不单独作为实体；普通动作不逐句拆成方法。未核实来源说法的现实真伪。", ""]
+    lines = [
+        "# 无人机实体金标准集" if reviewed else "# 无人机实体金标准候选集",
+        "",
+        f"中文10段、英文10段；每段正文均涉及具体无人机型号。{status}",
+        "每段先读原文，再核对实体是否漏标、多标或分错类型。JSON是编辑入口，本文件由脚本生成。",
+        "数值参数不单独作为实体；普通动作不逐句拆成方法。未核实来源说法的现实真伪。",
+        "",
+    ]
     for case in data["cases"]:
         source = case["source"]
-        lines += [f"## {case['id']} · {'中文' if case['language'] == 'zh' else '英文'}", "",
-                  f"涉及型号：{'、'.join(case['models'])}。", "",
-                  f"[{source['title']}]({source['url']}) · "
-                  f"{source['start_seconds']}–{source['end_seconds']}秒", "",
-                  "```text", case_text(case), "```", "",
-                  "| 实体名称 | 类型 | 原文提及 |", "|---|---|---|"]
+        lines += [
+            f"## {case['id']} · {'中文' if case['language'] == 'zh' else '英文'}",
+            "",
+            f"涉及型号：{'、'.join(case['models'])}。",
+            "",
+            f"[{source['title']}]({source['url']}) · "
+            f"{source['start_seconds']}–{source['end_seconds']}秒",
+            "",
+            "```text",
+            case_text(case),
+            "```",
+            "",
+            "| 实体名称 | 类型 | 原文提及 |",
+            "|---|---|---|",
+        ]
         for entity in case["entities"]:
-            lines.append(f"| {cell(entity['name'])} | {TYPE_LABELS[entity['type']]} | "
-                         f"{cell('；'.join(entity['mentions']))} |")
+            lines.append(
+                f"| {cell(entity['name'])} | {TYPE_LABELS[entity['type']]} | "
+                f"{cell('；'.join(entity['mentions']))} |"
+            )
         if case["notes"]:
             lines += ["", "复核说明：", "", *[f"- {note}" for note in case["notes"]]]
         lines.append("")
@@ -110,8 +137,11 @@ def main(argv=None):
     args = parser.parse_args(argv)
     data = json.loads(args.dataset.read_text())
     report = validate(data)
-    result = (render(data) if args.command == "render"
-              else json.dumps(report, ensure_ascii=False, indent=2)) + "\n"
+    result = (
+        render(data)
+        if args.command == "render"
+        else json.dumps(report, ensure_ascii=False, indent=2)
+    ) + "\n"
     if args.output:
         if args.output.resolve() == args.dataset.resolve():
             parser.error("输出文档不能覆盖标注JSON")

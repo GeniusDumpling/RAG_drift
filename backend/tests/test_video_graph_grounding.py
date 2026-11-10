@@ -4,20 +4,20 @@ from typing import get_args
 
 import pytest
 from app.schemas.video_graph import ExtractedEntity, ExtractedRelation, Predicate
-from app.services.video_graph_grounding import (
+from app.services.video_graph.grounding import (
     BASIS_BY_PREDICATE,
     composition_direction,
     project_inventory,
     validate_support,
 )
-from app.services.video_graph_quality import (
+from app.services.video_graph.review import (
     RelationVerdict,
     normalize_reviewed,
     review_extraction,
     seed_fault_mentions,
     validate_identity_proof,
 )
-from app.services.video_graph_semantics import (
+from app.services.video_graph.semantics import (
     validate_entity_semantics,
     validate_relation_semantics,
 )
@@ -30,15 +30,22 @@ pytestmark = pytest.mark.no_db
 def pair(text, predicate="contains", subject_type="product", object_type="component"):
     subject = ExtractedEntity(key="s", surface_text="Rover", entity_type=subject_type)
     obj = ExtractedEntity(key="o", surface_text="motor", entity_type=object_type)
-    relation = ExtractedRelation(subject="s", object="o", predicate=predicate,
-                                 quote=text, assertion="asserted", confidence=0.9)
+    relation = ExtractedRelation(
+        subject="s",
+        object="o",
+        predicate=predicate,
+        quote=text,
+        assertion="asserted",
+        confidence=0.9,
+    )
     return subject, obj, relation
 
 
 def support(text, predicate="contains", basis="composition", modality="actual", scope=None):
     subject, obj, relation = pair(text, predicate)
-    return validate_support(relation, subject, obj, basis=basis, modality=modality,
-                            scope_quote=scope, source=text)
+    return validate_support(
+        relation, subject, obj, basis=basis, modality=modality, scope_quote=scope, source=text
+    )
 
 
 def test_every_predicate_has_an_explicit_claim_contract():
@@ -60,38 +67,59 @@ def test_box_inventory_and_physical_parts_have_distinct_relations():
     assert support(physical).predicate == "contains"
     next_scene = "Also included is a driver. Back to the Rover: it contains a motor."
     s, o, r = pair("it contains a motor.")
-    assert validate_support(r, s, o, basis="composition", modality="actual", scope_quote=None,
-                            source=next_scene).predicate == "contains"
+    assert (
+        validate_support(
+            r, s, o, basis="composition", modality="actual", scope_quote=None, source=next_scene
+        ).predicate
+        == "contains"
+    )
 
 
 def test_company_product_ownership_cannot_be_hardware_composition():
     subject, obj, relation = pair("Company offers Rover.", subject_type="organization")
     with pytest.raises(ValueError, match="产品归属"):
         validate_relation_semantics(relation, subject, obj)
-    product, company, offered = pair("Rover is a Company product.", "offered_by",
-                                     object_type="organization")
+    product, company, offered = pair(
+        "Rover is a Company product.", "offered_by", object_type="organization"
+    )
     validate_relation_semantics(offered, product, company)
-    assert validate_support(offered, product, company, basis="ownership", modality="actual",
-                            scope_quote=None, source=offered.quote)
+    assert validate_support(
+        offered,
+        product,
+        company,
+        basis="ownership",
+        modality="actual",
+        scope_quote=None,
+        source=offered.quote,
+    )
 
 
 def test_a_series_contains_models_in_the_lineup_instead_of_physical_parts():
-    series, model, relation = pair("Series has model M1.", subject_type="product_family",
-                                    object_type="product")
+    series, model, relation = pair(
+        "Series has model M1.", subject_type="product_family", object_type="product"
+    )
     with pytest.raises(ValueError, match="系列不是机体"):
         validate_relation_semantics(relation, series, model)
     relation.predicate = "has_model"
     validate_relation_semantics(relation, series, model)
-    assert validate_support(relation, series, model, basis="model_lineup", modality="actual",
-                            scope_quote=None, source=relation.quote)
+    assert validate_support(
+        relation,
+        series,
+        model,
+        basis="model_lineup",
+        modality="actual",
+        scope_quote=None,
+        source=relation.quote,
+    )
 
 
 def test_ui_readout_does_not_prove_a_physical_part():
     with pytest.raises(ValueError, match="电量读数"):
         support("The remaining battery is shown in the right corner.")
     with pytest.raises(ValueError, match="参数名称"):
-        validate_entity_semantics(ExtractedEntity(key="load", surface_text="CPU load",
-                                                  entity_type="technology"))
+        validate_entity_semantics(
+            ExtractedEntity(key="load", surface_text="CPU load", entity_type="technology")
+        )
 
 
 def test_simulation_and_threats_do_not_become_compatibility_or_application():
@@ -123,24 +151,41 @@ def test_corrected_data_and_document_types_reach_the_stored_result():
         ("Software uses movement records.", "technology", "data", "uses", "data_use"),
         ("Kit is packaged with user guide.", "product", "document", "packaged_with", "package"),
     ]:
-        name, obj = ("Software", "movement records") if corrected_type == "data" else (
-            "Kit", "user guide"
+        name, obj = (
+            ("Software", "movement records") if corrected_type == "data" else ("Kit", "user guide")
         )
         m = material(body)
-        s, o, rel = pair(body, predicate, "software" if corrected_type == "data" else "product",
-                         original_type)
+        s, o, rel = pair(
+            body, predicate, "software" if corrected_type == "data" else "product", original_type
+        )
         s.surface_text, o.surface_text = name, obj
         from app.schemas.video_graph import ChunkExtraction
 
         draft = ChunkExtraction(entities=[s, o], relations=[rel])
         verdict = {
-            "entities": [dict(key=e.key, accepted=True, canonical_name=e.surface_text,
-                              identity_scope="video", identity_source="current_chunk",
-                              identity_quote=e.surface_text, reason="explicit",
-                              entity_type=corrected_type if e.key == "o" else e.entity_type)
-                         for e in draft.entities],
-            "relations": [dict(index=0, supported=True, basis=basis, modality="actual",
-                               quote=body, reason="explicit")],
+            "entities": [
+                dict(
+                    key=e.key,
+                    accepted=True,
+                    canonical_name=e.surface_text,
+                    identity_scope="video",
+                    identity_source="current_chunk",
+                    identity_quote=e.surface_text,
+                    reason="explicit",
+                    entity_type=corrected_type if e.key == "o" else e.entity_type,
+                )
+                for e in draft.entities
+            ],
+            "relations": [
+                dict(
+                    index=0,
+                    supported=True,
+                    basis=basis,
+                    modality="actual",
+                    quote=body,
+                    reason="explicit",
+                )
+            ],
         }
         result = review_extraction(
             lambda *_, reviewed=verdict: reviewed, m, m.chunks[0], "", draft, ""
@@ -153,32 +198,60 @@ def test_corrected_data_and_document_types_reach_the_stored_result():
 def test_data_use_requires_a_data_endpoint():
     subject, obj, relation = pair("Software uses tracks.", "uses")
     with pytest.raises(ValueError, match="数据不能强标"):
-        validate_support(relation, subject, obj, basis="data_use", modality="actual",
-                         scope_quote=None, source=relation.quote)
+        validate_support(
+            relation,
+            subject,
+            obj,
+            basis="data_use",
+            modality="actual",
+            scope_quote=None,
+            source=relation.quote,
+        )
 
 
 def graph_with_owners(*, resolved=False, nested=False):
     m = material("Device and remote each have a power button.")
-    entities = [entity("Device", "product", scope="video", key="device"),
-                entity("remote", "component", scope="video", key="remote"),
-                entity("power button", "component", scope="video", key="button")]
+    entities = [
+        entity("Device", "product", scope="video", key="device"),
+        entity("remote", "component", scope="video", key="remote"),
+        entity("power button", "component", scope="video", key="button"),
+    ]
     relations = []
     for subject in ["device", "remote"]:
         obj = "button"
         if subject == "remote" and resolved:
-            entities.append(entity("power button", "component", "remote power button", "video",
-                                   key="remote_button"))
+            entities.append(
+                entity(
+                    "power button", "component", "remote power button", "video", key="remote_button"
+                )
+            )
             entities[2].canonical_name = "Device power button"
             obj = "remote_button"
-        relations.append(ExtractedRelation(subject=subject, object=obj, predicate="contains",
-                                           quote=m.chunks[0].text, assertion="asserted",
-                                           confidence=0.9))
+        relations.append(
+            ExtractedRelation(
+                subject=subject,
+                object=obj,
+                predicate="contains",
+                quote=m.chunks[0].text,
+                assertion="asserted",
+                confidence=0.9,
+            )
+        )
     if nested:
-        relations.append(ExtractedRelation(subject="device", object="remote", predicate="contains",
-                                           quote=m.chunks[0].text, assertion="asserted",
-                                           confidence=0.9))
-    proofs = [dict(source_index=str(i), basis="composition", modality="actual", scope_quote="")
-              for i in range(len(relations))]
+        relations.append(
+            ExtractedRelation(
+                subject="device",
+                object="remote",
+                predicate="contains",
+                quote=m.chunks[0].text,
+                assertion="asserted",
+                confidence=0.9,
+            )
+        )
+    proofs = [
+        dict(source_index=str(i), basis="composition", modality="actual", scope_quote="")
+        for i in range(len(relations))
+    ]
     return m, entities, relations, proofs
 
 
@@ -203,9 +276,16 @@ def test_disjoint_owners_get_distinct_instances_without_losing_the_supported_com
 def test_owner_partition_does_not_copy_unattributed_values_or_actions():
     m, entities, relations, proofs = graph_with_owners()
     entities[2].attributes = {"voltage": "5V"}
-    relations.append(ExtractedRelation(subject="button", object="device", predicate="controls",
-                                       quote=m.chunks[0].text, assertion="asserted",
-                                       confidence=0.8))
+    relations.append(
+        ExtractedRelation(
+            subject="button",
+            object="device",
+            predicate="controls",
+            quote=m.chunks[0].text,
+            assertion="asserted",
+            confidence=0.8,
+        )
+    )
     proofs.append(dict(source_index="2", basis="control", modality="actual", scope_quote=""))
     rejected = []
     kept, result, _ = normalize_reviewed(entities, relations, proofs, rejected, m)
@@ -239,12 +319,12 @@ def test_constituents_forming_a_whole_have_the_correct_composition_direction():
 
 
 def test_missing_or_tampered_claim_proof_cannot_be_published():
-    from app.services.video_graph import validate_extraction
+    from app.services.video_graph.validation import validate_extraction
 
     m = material("Device uses GPS.")
     result = reviewed_pair(m.chunks[0].text, "Device", "product", "GPS", "technology", "uses")
     # Rebind to this test material through its source-independent extraction helper.
-    from app.services.video_graph_identity import input_hash
+    from app.services.video_graph.identity import input_hash
 
     result.review.input_hash = input_hash(m, m.chunks[0])
     validate_extraction(m.chunks[0], result, material=m, require_review=True)
@@ -262,8 +342,16 @@ def test_identity_proof_preserves_model_generation_and_variant(canonical):
 
 
 def test_misplaced_scope_does_not_override_candidate_polarity():
-    verdict = RelationVerdict.model_validate(dict(index=0, supported=True,
-        assertion="instruction", modality="instruction", basis="use", reason="explicit"))
+    verdict = RelationVerdict.model_validate(
+        dict(
+            index=0,
+            supported=True,
+            assertion="instruction",
+            modality="instruction",
+            basis="use",
+            reason="explicit",
+        )
+    )
     assert verdict.assertion is None and verdict.modality == "instruction"
 
 
@@ -279,13 +367,18 @@ def test_literal_fault_seed_adds_only_candidates_and_keeps_existing_mentions():
 
 def test_military_inventory_is_projected_with_its_source_scope():
     text = "中國閱兵。反無人機方隊包括高能激光。"
-    s, o, r = pair("反無人機方隊包括高能激光", subject_type="organization",
-                   object_type="technology")
+    s, o, r = pair(
+        "反無人機方隊包括高能激光", subject_type="organization", object_type="technology"
+    )
     s.surface_text, o.surface_text = "反無人機方隊", "高能激光"
     projected, basis, rule = project_inventory(r, s, o, "composition", text)
     assert projected.predicate == "equipped_with" and rule == "military_inventory"
-    assert validate_support(projected, s, o, basis=basis, modality="actual",
-                            scope_quote=None, source=text) == projected
+    assert (
+        validate_support(
+            projected, s, o, basis=basis, modality="actual", scope_quote=None, source=text
+        )
+        == projected
+    )
     reverse = r.model_copy(update={"subject": "o", "object": "s"})
     assert project_inventory(reverse, o, s, "composition", text)[0] == projected
     for body in ["反無人機方隊不包括高能激光", "Company includes 高能激光"]:
@@ -303,23 +396,29 @@ def test_partial_graph_does_not_prove_that_a_device_and_subsystem_are_independen
 
 
 def test_uphill_composition_requires_an_explicit_membership_statement():
-    s, o, r = pair("The spool adds weight to the drone.", subject_type="component",
-                   object_type="product")
+    s, o, r = pair(
+        "The spool adds weight to the drone.", subject_type="component", object_type="product"
+    )
     with pytest.raises(ValueError, match="包含"):
-        validate_support(r, s, o, basis="composition", modality="actual", scope_quote=None,
-                         source=r.quote)
+        validate_support(
+            r, s, o, basis="composition", modality="actual", scope_quote=None, source=r.quote
+        )
 
 
 def test_protection_transfer_and_publication_are_not_stronger_relations():
     s, o, r = pair("Cover provides protection to the lens.")
     s.surface_text, o.surface_text = "Cover", "lens"
     with pytest.raises(ValueError, match="保护关系"):
-        validate_support(r, s, o, basis="composition", modality="actual", scope_quote=None,
-                         source=r.quote)
+        validate_support(
+            r, s, o, basis="composition", modality="actual", scope_quote=None, source=r.quote
+        )
     assert support("The protective housing contains the motor.")
     with pytest.raises(ValueError, match="结果迁移"):
-        support("Low-speed tuning results carry over to high-speed tuning.",
-                "compatible_with", "compatibility")
+        support(
+            "Low-speed tuning results carry over to high-speed tuning.",
+            "compatible_with",
+            "compatibility",
+        )
     with pytest.raises(ValueError, match="发布或推出"):
         support("The minister launched the initiative.", "developed_by", "development")
 
@@ -330,9 +429,17 @@ def test_scalar_parameter_names_are_not_technical_entities(name):
         validate_entity_semantics(entity(name, "technology"))
 
 
-@pytest.mark.parametrize("name,kind", [("Flight mode", "software"), ("Fly screen", "software"),
-    ("virtual joystick", "component"), ("information card", "product"),
-    ("home point", "technology"), ("lift", "technology")])
+@pytest.mark.parametrize(
+    "name,kind",
+    [
+        ("Flight mode", "software"),
+        ("Fly screen", "software"),
+        ("virtual joystick", "component"),
+        ("information card", "product"),
+        ("home point", "technology"),
+        ("lift", "technology"),
+    ],
+)
 def test_source_objects_must_fit_the_actual_entity_type(name, kind):
     with pytest.raises(ValueError):
         validate_entity_semantics(entity(name, kind))
@@ -347,25 +454,33 @@ def test_self_description_mounting_and_workflow_order_are_not_composition_or_app
     s.surface_text, o.surface_text = "camera", "gimbal"
     # 'has' only proves camera -> lens; it cannot establish camera -> gimbal.
     with pytest.raises(ValueError, match="安装在"):
-        validate_support(r, s, o, basis="composition", modality="actual", scope_quote=None,
-                         source=r.quote)
+        validate_support(
+            r, s, o, basis="composition", modality="actual", scope_quote=None, source=r.quote
+        )
     s, o, r = pair("然后upload，然后把固件刷写进去。", "applied_to", "method", "method")
     with pytest.raises(ValueError, match="两个步骤"):
-        validate_support(r, s, o, basis="application", modality="instruction", scope_quote=None,
-                         source=r.quote)
+        validate_support(
+            r, s, o, basis="application", modality="instruction", scope_quote=None, source=r.quote
+        )
 
 
 def test_past_affiliation_keeps_its_source_time_in_the_published_fact():
     s, o, r = pair("甲有乙公司工作背景。", "affiliated_with", "person", "organization")
-    result = validate_support(r, s, o, basis="affiliation", modality="actual", scope_quote=None,
-                              source=r.quote)
+    result = validate_support(
+        r, s, o, basis="affiliation", modality="actual", scope_quote=None, source=r.quote
+    )
     assert result.qualifiers == {"time": "past", "scope": r.quote}
-    assert validate_support(result, s, o, basis="affiliation", modality="actual", scope_quote=None,
-                            source=r.quote) == result
+    assert (
+        validate_support(
+            result, s, o, basis="affiliation", modality="actual", scope_quote=None, source=r.quote
+        )
+        == result
+    )
 
 
-@pytest.mark.parametrize("name,kind", [("map", "software"), ("机身设计", "component"),
-                                      ("姿态指令", "technology")])
+@pytest.mark.parametrize(
+    "name,kind", [("map", "software"), ("机身设计", "component"), ("姿态指令", "technology")]
+)
 def test_resources_designs_and_commands_are_not_programs_parts_or_technologies(name, kind):
     with pytest.raises(ValueError):
         validate_entity_semantics(entity(name, kind))
@@ -375,8 +490,13 @@ def test_failure_to_eliminate_every_consequence_does_not_negate_mitigation():
     s, o, r = pair("No helmet makes every crash harmless.", "mitigates", "product", "fault")
     r.assertion = "negated"
     with pytest.raises(ValueError, match="量词"):
-        validate_support(r, s, o, basis="mitigation", modality="actual", scope_quote=None,
-                         source=r.quote)
+        validate_support(
+            r, s, o, basis="mitigation", modality="actual", scope_quote=None, source=r.quote
+        )
     r.quote = "The helmet does not reduce the impact."
-    assert validate_support(r, s, o, basis="mitigation", modality="actual", scope_quote=None,
-                            source=r.quote).assertion == "negated"
+    assert (
+        validate_support(
+            r, s, o, basis="mitigation", modality="actual", scope_quote=None, source=r.quote
+        ).assertion
+        == "negated"
+    )

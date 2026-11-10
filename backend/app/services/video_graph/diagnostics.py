@@ -41,8 +41,10 @@ def describe_graph_error(
     }
     if chunk is not None:
         detail.update(
-            chunk_id=str(chunk.id), chunk_index=chunk_index,
-            evidence_type=chunk.evidence_type, chunk_chars=len(chunk.text),
+            chunk_id=str(chunk.id),
+            chunk_index=chunk_index,
+            evidence_type=chunk.evidence_type,
+            chunk_chars=len(chunk.text),
         )
     if isinstance(exc, ValidationError):
         detail.update(code="schema_validation_failed", message="模型输出不符合字段结构")
@@ -87,37 +89,46 @@ def describe_graph_error(
     code = detail["code"]
     if code == "duplicate_entity_key":
         detail["duplicate_keys"] = [
-            key[:160] for key, count in Counter(e.key for e in extraction.entities).items()
+            key[:160]
+            for key, count in Counter(e.key for e in extraction.entities).items()
             if count > 1
         ][:10]
     elif code == "entity_surface_not_found":
         for index, entity in enumerate(extraction.entities):
             if locate(chunk.text, entity.surface_text) is None:
                 detail.update(
-                    entity_index=index, entity_key=entity.key[:160],
-                    surface_text=entity.surface_text[:255], entity_type=entity.entity_type,
+                    entity_index=index,
+                    entity_key=entity.key[:160],
+                    surface_text=entity.surface_text[:255],
+                    entity_type=entity.entity_type,
                 )
                 break
     elif code in {
-        "relation_entity_not_found", "relation_quote_not_found", "relation_qualifier_too_long"
+        "relation_entity_not_found",
+        "relation_quote_not_found",
+        "relation_qualifier_too_long",
     }:
         for index, relation in enumerate(extraction.relations):
             invalid = (
-                (code == "relation_entity_not_found" and (
-                    relation.subject not in keys or relation.object not in keys
-                ))
+                (
+                    code == "relation_entity_not_found"
+                    and (relation.subject not in keys or relation.object not in keys)
+                )
                 or (
                     code == "relation_quote_not_found"
                     and locate(chunk.text, relation.quote) is None
                 )
-                or (code == "relation_qualifier_too_long" and any(
-                    len(k) > 80 or len(v) > 500 for k, v in relation.qualifiers.items()
-                ))
+                or (
+                    code == "relation_qualifier_too_long"
+                    and any(len(k) > 80 or len(v) > 500 for k, v in relation.qualifiers.items())
+                )
             )
             if invalid:
                 detail.update(
-                    relation_index=index, subject=relation.subject[:160],
-                    object=relation.object[:160], predicate=relation.predicate,
+                    relation_index=index,
+                    subject=relation.subject[:160],
+                    object=relation.object[:160],
+                    predicate=relation.predicate,
                 )
                 if code == "relation_quote_not_found":
                     detail["quote"] = relation.quote[:240]

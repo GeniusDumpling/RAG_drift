@@ -21,9 +21,11 @@ from app.models.video_graph import (  # noqa: E402
     VideoGraphRelation,
     VideoGraphState,
 )
-from app.services.video_graph import MENTION_METHOD, digest  # noqa: E402
+from app.services.video_graph.material import digest  # noqa: E402
 from sqlalchemy import create_engine, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
+
+MENTION_METHOD = "video_graph_v1"  # Historical SQL snapshot format only.
 
 
 def row_dict(row):
@@ -278,7 +280,7 @@ def main():
         {k: v for k, v in snapshot.items() if k != "snapshot_id"}
     ):
         raise ValueError("快照格式或校验和不正确")
-    from app.services.neo4j_graph.store import GraphStore
+    from app.services.video_graph.storage import GraphStore
 
     with GraphStore(settings) as store:
         result = (

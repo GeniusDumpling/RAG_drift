@@ -5,6 +5,13 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.common import OrmBaseModel
+from app.schemas.video_graph import GraphEvidenceRead
+
+
+class GraphAnswerEvidence(GraphEvidenceRead):
+    subject: str
+    predicate: str
+    object: str
 
 
 class SearchFilters(BaseModel):
@@ -84,7 +91,8 @@ class EvidenceObject(BaseModel):
     vector_score: float | None = None
     keyword_score: float | None = None
     rerank_score: float | None = None
-    matched_by: Literal["vector", "keyword", "hybrid"]
+    matched_by: Literal["vector", "keyword", "hybrid", "graph"]
+    graph_evidence: list[GraphAnswerEvidence] = Field(default_factory=list)
     thread_summary: str | None
     video_url: str | None = None
     description_text: str | None = None
@@ -110,6 +118,7 @@ class GenerationInfo(BaseModel):
     retrieval_query: str | None = None
     rewrite_status: str = "not_needed"
     reranking: dict[str, Any] = Field(default_factory=dict)
+    graph_retrieval: dict[str, Any] = Field(default_factory=dict)
     citation_check: dict[str, Any] = Field(default_factory=dict)
 
 

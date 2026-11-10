@@ -5,7 +5,7 @@ AI 问答对专业问题先检索知识库，再基于本轮证据生成带编�
 ## 对话意图与上下文优先级
 
 - 当前用户消息决定本轮任务。历史用于明确承接前文的指代与省略，不能把当前寒暄或新话题强行变成旧型号的问题。
-- 完整、明确的寒暄、致谢、确认、告别和功能询问走 `conversation` 分支，例如“你好”“谢谢”“好的”“你能做什么”。不调用追问改写、Embedding、向量/关键词检索或 reranker，生成时不传旧历史和证据。
+- 完整、明确的寒暄、致谢、确认、告别和功能询问走 `conversation` 分支，例如“你好”“谢谢”“好的”“你能做什么”。不调用追问改写、Embedding、向量/关键词检索、图谱检索或 reranker，生成时不传旧历史和证据。
 - 路由采用保守的完整消息匹配；“你好，请介绍 Mavic 3 Pro”“谢谢，请继续解释参数”仍走知识问答。未识别的消息默认保留知识检索流程，不将任意专业问题当作闲聊。
 - 纯对话通常仍由已配置的 LLM 流式回复；缺少密钥或模型失败时返回简短的本地回复，界面标为“对话回复”，不显示“未找到支持证据”或“证据摘录”。模型中途失败仍用 `reset` 替换不完整文本。
 - 知识问题的提示词要求先核对证据与当前型号、版本和场景；专业事实须引用本轮原文，条件推断说明前提。无关材料不必逐项复述，不要求用户提供系统本应检索的引用材料。
@@ -29,6 +29,38 @@ AI 问答对专业问题先检索知识库，再基于本轮证据生成带编�
 - 界面仍使用短 `snippet`。生成结果记录实际读取的 `context_chunk_ids` 和 `context_chars`，答案中的 `[n]` 对应本轮返回的证据顺序。
 
 检索 trace 的 `ranking_version=phrase-coverage-v1` 标识本次排序规则，`model_phrases` 保存从实际检索问题识别的型号短语。旧视频向量缺少 `item_type` 时允许进入候选，随后仍按 PostgreSQL 的真实类型过滤；新采集视频会写入类型、来源、语言等过滤字段。详细修复与验证见 [检索排序修复记录](retrieval-ranking-fix-2026-10-21.md)。
+
+## 知识图谱接入（2026-11-06）
+
+专业问答在混合检索后调用图谱检索能力，`/video-graph/retrieve` 与问答共享 `retrieve_graph_context` 服务，统一查询 Neo4j，再回 PostgreSQL 校验业务切片。图谱模块位于 `app/services/video_graph/`，旧后端选择配置已删除。寒暄分支不查询图谱，普通 `/search` 不改变。
+
+图谱通过问题中的显式实体别名进行一跳关系召回。返回的证据按当前数据库中的原文切片补齐来源信息，执行与普通检索相同的来源、类型、语言、标签及发布时间筛选，排除 obsolete 切片，并再次核验引句能否在当前切片定位。无原文切片、关系端点不完整或引句已失效的条目不进入回答。
+
+混合检索与图谱按名次交错合并、按 chunk_id 去重，重复切片保留原始检索分数并附加图谱证据。抽取置信度不参与相关性比较。合并后统一进入现有 reranker，完整返回所有候选排序，再执行最多 8 条和每篇最多 2 条的上下文选择。因此开启图谱后，20 条混合候选还可能补充最多 10 个图谱候选，并非将合并结果再次截为 20 条。
+
+`supporting_evidence[].graph_evidence` 保存关系 ID、主谓宾、原文引句、陈述状态、适用条件及时间定位 URL。生成上下文及重排文本包含这些关系线索；长引句允许明确标记截断，状态与条件不按头尾裁剪。提示词要求保留 negated/uncertain，不得把关系路径或抽取置信度当作兼容性、因果关系或已核实事实。
+
+配置默认启用：
+
+- `ANSWER_GRAPH_ENABLED=true`：是否为知识问答补充图谱证据。
+- `ANSWER_GRAPH_TOP_K=10`：图谱接口返回的证据条目上限（1–30），去重和过滤后可能更少。
+- `ANSWER_GRAPH_TIMEOUT_SECONDS=5`：图谱召回及原文补齐的总等待上限。
+
+图谱为空、故障或超时会沿用混合检索结果；PostgreSQL 查询使用保存点，图谱 SQL 错误不会使问答事务失效。Neo4j 同步查询运行在独立线程和数据库连接中；达到等待上限后回答继续，已经开始的线程会在底层查询返回或超时后清理资源，不承诺强制终止线程。
+
+`generation.graph_retrieval` 记录后端、retrieved/empty/disabled/fallback、耗时、原始证据数、有效切片及最终选择的图谱切片 ID。字段随现有 JSON 审计、流式 done 和历史对话保存，不需要数据库迁移。
+
+前端新增 `graph_retrieving` 状态及“图谱关联”证据标记，可展开查看关系、原文、否定/不确定状态及适用条件。
+
+验证：专用测试数据库覆盖图谱独立召回进入答案和历史、去重、来源筛选、撤回、失效切片、SQL 故障及超时回退；现有 Neo4j 数据以 PX4、Mavic 3 Pro 完成只读召回与上下文组装检查。本次源码接入不包含线上镜像重建。
+
+2026-11-06 验证结果：
+
+- `test_chat_answers.py`、`test_answer_generation.py` 合计 41 项通过，包含 JSON `/answer` 与 SSE `/answer/stream` 的图谱证据传递。
+- 前端问答与证据卡片 16 项测试通过，`npm run build` 通过。
+- 相关 Python 文件 Ruff 通过；7 个核心变更模块使用 `mypy --follow-imports=silent` 检查通过（未声称整个既有图谱模块通过严格类型检查）。
+- 真实 Neo4j 只读验证：PX4 返回 3 个可用切片，Mavic 3 Pro 返回 4 个，两者均包含图谱生成上下文。该检查未调用 LLM，不代表答案质量提升评测。
+- 扩大到 `test_search_pipeline.py` 时，`test_search_persists_optimization_before_retrieval_failure` 因缺少 `query_trace_json.provider` 失败；在临时副本中使用 HEAD 原版 `search.py` 单独复测，同样失败。未改动该独立查询优化行为或放宽其断言。
 
 ## 状态追踪与降级
 
@@ -82,7 +114,7 @@ JSON 响应及流式 `done` 事件增加 `generation`：
 
 事件依次包含：
 
-1. `status`：知识问答包含 `retrieving`、可选的 `reranking`、`generating`；普通对话仅包含 `generating`。
+1. `status`：知识问答包含 `retrieving`、`graph_retrieving`、可选的 `reranking`、`generating`；普通对话仅包含 `generating`。
 2. `evidence`：检索记录 ID、问答 ID 和本轮支持证据。
 3. `delta`：模型生成的文本增量，形如 `{"text":"内容"}`。
 4. `reset`：出现降级时提供完整替换文本和生成状态。

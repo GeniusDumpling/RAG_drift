@@ -3,7 +3,6 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import create_engine
-from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -17,7 +16,6 @@ from app.schemas.video_graph import (
     GraphRetrieveRequest,
     GraphRetrieveResponse,
 )
-from app.services import video_graph_queries as queries
 from app.services.graph_display import DEFAULT_MIN_COMPONENT_SIZE
 
 router = APIRouter(prefix="/video-graph", tags=["video-graph"])
@@ -25,37 +23,27 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
 async def _query(session: AsyncSession, callback: Any) -> Any:
-    try:
-        settings = get_settings()
-        if settings.video_graph_backend == "neo4j":
+    settings = get_settings()
 
-            def query_neo4j():
-                from neo4j.exceptions import Neo4jError, ServiceUnavailable
+    def query_neo4j():
+        from neo4j.exceptions import Neo4jError, ServiceUnavailable
 
-                from app.services.neo4j_graph.queries import GraphQueries
-                from app.services.neo4j_graph.store import GraphStore
+        from app.services.video_graph.queries import GraphQueries
+        from app.services.video_graph.storage import GraphStore
 
-                engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
-                try:
-                    with GraphStore(settings) as store, Session(engine) as source:
-                        store.ensure_ready()
-                        return callback(source, GraphQueries(store))
-                except (Neo4jError, ServiceUnavailable, ValueError) as exc:
-                    raise HTTPException(
-                        status_code=503, detail="Neo4j 图谱不可用，请检查连接及迁移状态"
-                    ) from exc
-                finally:
-                    engine.dispose()
-
-            return await run_in_threadpool(query_neo4j)
-        return await session.run_sync(lambda sync: callback(sync, queries))
-    except ProgrammingError as exc:
-        if getattr(exc.orig, "sqlstate", None) == "42P01":
-            await session.rollback()
+        engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+        try:
+            with GraphStore(settings) as store, Session(engine) as source:
+                store.ensure_ready()
+                return callback(source, GraphQueries(store))
+        except (Neo4jError, ServiceUnavailable, ValueError) as exc:
             raise HTTPException(
-                status_code=503, detail="视频知识图谱尚未初始化，请执行 alembic upgrade head"
+                status_code=503, detail="Neo4j 图谱不可用，请检查连接及迁移状态"
             ) from exc
-        raise
+        finally:
+            engine.dispose()
+
+    return await run_in_threadpool(query_neo4j)
 
 
 @router.get("/overview")
@@ -97,7 +85,9 @@ async def graph(
     max_nodes: int = Query(default=300, ge=2, le=500),
     max_edges: int = Query(default=500, ge=1, le=1000),
     min_component_size: int = Query(
-        default=DEFAULT_MIN_COMPONENT_SIZE, ge=0, le=50,
+        default=DEFAULT_MIN_COMPONENT_SIZE,
+        ge=0,
+        le=50,
         description="隐藏少于指定节点数的独立子图，优先展示关联密集的区域；0 关闭筛选",
     ),
     full: bool = Query(default=False, description="返回当前筛选范围内的完整有效图谱，不截断数量"),
@@ -151,4 +141,9 @@ async def video_status(content_id: uuid.UUID, session: SessionDep) -> Any:
 
 @router.post("/retrieve", response_model=GraphRetrieveResponse)
 async def retrieve(payload: GraphRetrieveRequest, session: SessionDep) -> Any:
-    return await _query(session, lambda sync, service: service.retrieve_context(sync, payload))
+    from app.services.graph_retrieval import retrieve_graph_context
+
+    try:
+        return await retrieve_graph_context(session, payload, get_settings())
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="图谱检索暂不可用") from exc

@@ -4,11 +4,12 @@ import uuid
 
 import pytest
 from app.schemas.video_graph import ChunkExtraction, ExtractedEntity
-from app.services.video_graph import VideoChunk, VideoMaterial, validate_extraction
-from app.services.video_graph_grounding import source_span
-from app.services.video_graph_identity import entity_identity
-from app.services.video_graph_normalization import core_name, normalize_entity_review
-from app.services.video_graph_quality import relation_pairs, review_extraction
+from app.services.video_graph.grounding import source_span
+from app.services.video_graph.identity import entity_identity
+from app.services.video_graph.material import VideoChunk, VideoMaterial
+from app.services.video_graph.normalization import core_name, normalize_entity_review
+from app.services.video_graph.review import relation_pairs, review_extraction
+from app.services.video_graph.validation import validate_extraction
 
 from scripts.evaluate_entity_gold import prediction_entities
 

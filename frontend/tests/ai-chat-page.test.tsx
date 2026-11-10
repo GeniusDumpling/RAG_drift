@@ -50,6 +50,8 @@ describe('AI chat streaming and sessions', () => {
     render(<AiChatPage initialQuery="PX4" />);
     await send();
     await waitFor(() => expect(api.streamAnswer).toHaveBeenCalledOnce());
+    act(() => emit({ event: 'status', data: { stage: 'graph_retrieving' } }));
+    expect(screen.getByText('正在检索知识图谱')).toBeInTheDocument();
     act(() => emit({ event: 'status', data: { stage: 'reranking' } }));
     expect(screen.getByText('正在筛选证据')).toBeInTheDocument();
     act(() => emit({ event: 'delta', data: { text: '第一段' } }));

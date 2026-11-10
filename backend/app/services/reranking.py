@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.models.content import ContentChunk
 from app.schemas.search import EvidenceObject
+from app.services.graph_evidence_text import graph_evidence_text
 
 
 @dataclass(frozen=True)
@@ -63,7 +64,8 @@ class SiliconFlowReranker:
             if not body:
                 trace["reason"] = "missing_chunk_text"
                 return result()
-            document = f"标题: {item.title or '无标题'}\n正文: {body}"
+            graph_text = graph_evidence_text(item, self.settings.reranker_document_max_chars // 2)
+            document = f"标题: {item.title or '无标题'}\n{graph_text}正文: {body}"
             if len(document) > self.settings.reranker_document_max_chars:
                 truncated_ids.append(str(item.chunk_id))
             documents.append(document[: self.settings.reranker_document_max_chars])

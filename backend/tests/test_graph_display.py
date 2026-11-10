@@ -7,7 +7,7 @@ from itertools import combinations
 import pytest
 from app.schemas.video_graph import GraphData, GraphEdge, GraphNode
 from app.services.graph_display import connected_display_graph
-from app.services.neo4j_graph.queries import GraphQueries
+from app.services.video_graph.queries import GraphQueries
 
 pytestmark = pytest.mark.no_db
 

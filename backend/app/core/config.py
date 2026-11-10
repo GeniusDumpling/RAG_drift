@@ -61,13 +61,15 @@ class Settings(LLMSettings):
         default=8000, ge=100, alias="RERANKER_DOCUMENT_MAX_CHARS"
     )
     answer_max_evidence: int = Field(default=8, ge=1, le=50, alias="ANSWER_MAX_EVIDENCE")
+    answer_graph_enabled: bool = Field(default=True, alias="ANSWER_GRAPH_ENABLED")
+    answer_graph_top_k: int = Field(default=10, ge=1, le=30, alias="ANSWER_GRAPH_TOP_K")
+    answer_graph_timeout_seconds: float = Field(
+        default=5, gt=0, le=30, alias="ANSWER_GRAPH_TIMEOUT_SECONDS"
+    )
     llm_provider: str = Field(default="fake", alias="LLM_PROVIDER")
     agent_timeout_seconds: int = Field(default=20, alias="AGENT_TIMEOUT_SECONDS")
     worker_poll_interval_seconds: int = Field(default=2, alias="WORKER_POLL_INTERVAL_SECONDS")
 
-    video_graph_backend: Literal["postgres", "neo4j"] = Field(
-        default="postgres", alias="VIDEO_GRAPH_BACKEND"
-    )
     video_graph_request_timeout_seconds: int = Field(
         default=120, ge=1, le=120, alias="VIDEO_GRAPH_REQUEST_TIMEOUT_SECONDS"
     )

@@ -22,7 +22,6 @@ services:
       LITERATURE_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/literature_research
       LITERATURE_SYNC_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/literature_research
       QDRANT_URL: http://qdrant:6333
-      VIDEO_GRAPH_BACKEND: ${VIDEO_GRAPH_BACKEND:-postgres}
       VIDEO_GRAPH_REQUEST_TIMEOUT_SECONDS: ${VIDEO_GRAPH_REQUEST_TIMEOUT_SECONDS:-120}
       VIDEO_GRAPH_EXTRACTION_EFFORT: ${VIDEO_GRAPH_EXTRACTION_EFFORT:-none}
       VIDEO_GRAPH_REASONING_EFFORT: ${VIDEO_GRAPH_REASONING_EFFORT:-none}
@@ -102,7 +101,6 @@ services:
       LITERATURE_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/literature_research
       LITERATURE_SYNC_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/literature_research
       QDRANT_URL: http://qdrant:6333
-      VIDEO_GRAPH_BACKEND: ${VIDEO_GRAPH_BACKEND:-postgres}
       NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
       NEO4J_USER: ${NEO4J_USER:-neo4j}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-}

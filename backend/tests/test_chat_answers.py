@@ -1,4 +1,5 @@
 import json
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -110,6 +111,8 @@ def settings(*, api_key: str | None = None) -> Settings:
         EMBEDDING_API_KEY="test",
         LLM_API_KEY=api_key,
         QDRANT_URL="memory://chat-tests",
+        NEO4J_URI=os.environ.get("NEO4J_TEST_URI", "bolt://127.0.0.1:1"),
+        NEO4J_PASSWORD=os.environ.get("NEO4J_TEST_PASSWORD"),
     )
 
 
@@ -302,6 +305,7 @@ async def test_answer_reranking_preserves_scores_order_and_audit_or_falls_back(
     response = events[-1]["data"]
     assert [e["data"]["stage"] for e in events if e["event"] == "status"] == [
         "retrieving",
+        "graph_retrieving",
         "reranking",
         "generating",
     ]
@@ -670,3 +674,198 @@ async def test_delete_preserves_queries_shared_by_another_session(
     assert (await chat_client.get(f"/chat-sessions/{other_id}")).json()["turns"][0][
         "answer"
     ] == "shared answer"
+
+
+@pytest.fixture
+def graph_store():
+    from app.services.video_graph.storage import GraphStore
+
+    if not os.environ.get("NEO4J_TEST_URI"):
+        pytest.skip("NEO4J_TEST_URI must select an empty isolated graph")
+    with GraphStore(settings()) as store:
+        count = store.read(
+            'MATCH (n) WHERE any(l IN labels(n) WHERE l STARTS WITH "VG") RETURN count(n) AS n'
+        )[0]["n"]
+        assert count == 0, "Refusing to clear a populated graph"
+        store.initialize()
+        try:
+            yield store
+        finally:
+            with store.transaction() as tx:
+                tx.run(
+                    'MATCH (n) WHERE any(l IN labels(n) WHERE l STARTS WITH "VG") DETACH DELETE n'
+                ).consume()
+
+
+async def seed_answer_graph(session: AsyncSession, store) -> ContentChunk:
+    """Historical Neo4j projection fixture also verifies v1 read compatibility."""
+    chunk = (await seed(session))[0]
+    chunk.display_text = "PX4 does not support GPS in this firmware."
+    await session.commit()
+    item = await session.get(ContentItem, chunk.content_item_id)
+    vid, bid, sid, oid, rid, evid = map(str, [item.id, uuid4(), uuid4(), uuid4(), uuid4(), uuid4()])
+    with store.transaction() as tx:
+        tx.run(
+            "CREATE (v:VGVideo {id:$vid, title:$title, url:$url, withdrawn:false, "
+            "active_build_id:$bid, desired_build_id:$bid}) "
+            "CREATE (b:VGBuild {id:$bid, content_item_id:$vid, status:'success', "
+            "extractor_version:'video-graph-v1:fixture'}) "
+            "CREATE (v)-[:HAS_BUILD]->(b) "
+            "CREATE (s:VGEntity {id:$sid, name:'PX4', canonical_name:'PX4', "
+            "entity_type:'software'}) "
+            "CREATE (o:VGEntity {id:$oid, name:'GPS', canonical_name:'GPS', "
+            "entity_type:'technology'}) "
+            "CREATE (a:VGAlias {id:$sid, normalized_alias:'px4'})-[:ALIAS_OF]->(s) "
+            "CREATE (z:VGAlias {id:$oid, normalized_alias:'gps'})-[:ALIAS_OF]->(o) "
+            "CREATE (b)-[:HAS_MENTION]->(:VGMention {id:$sid, "
+            "content_chunk_id:$cid})-[:REFERS_TO]->(s) "
+            "CREATE (b)-[:HAS_MENTION]->(:VGMention {id:$oid, "
+            "content_chunk_id:$cid})-[:REFERS_TO]->(o) "
+            "CREATE (r:VGRelation {id:$rid, predicate:'supports', qualifiers_json:$qualifiers}) "
+            "CREATE (r)-[:SUBJECT]->(s) CREATE (r)-[:OBJECT]->(o) "
+            "CREATE (ev:VGEvidence {id:$evid, content_chunk_id:$cid, quote:$quote, "
+            "assertion:'negated', confidence:0.9}) "
+            "CREATE (b)-[:HAS_EVIDENCE]->(ev)-[:SUPPORTS]->(r)",
+            vid=vid,
+            bid=bid,
+            sid=sid,
+            oid=oid,
+            rid=rid,
+            evid=evid,
+            cid=str(chunk.id),
+            title=item.title,
+            url=item.canonical_url,
+            quote=chunk.display_text,
+            qualifiers=json.dumps({"firmware": "test-only"}),
+        ).consume()
+    return chunk
+
+
+async def test_graph_evidence_reaches_answer_and_saved_history(
+    graph_store, db_session, monkeypatch
+):
+    chunk = await seed_answer_graph(db_session, graph_store)
+    config = settings(api_key="test")
+    captured = []
+
+    async def model_stream(self, query, evidence, **kwargs):
+        captured.append(kwargs["context"])
+        yield "该固件不支持 GPS [1]。"
+
+    # Force graph-only recall, proving the answer isn't just ordinary text retrieval.
+    from app.services.retrieval import RetrievalResult
+
+    async def empty(*args, **kwargs):
+        return RetrievalResult([], {})
+
+    monkeypatch.setattr("app.services.search.retrieve_evidence", empty)
+    monkeypatch.setattr(LLMAnswerClient, "stream", model_stream)
+    chat = await ChatRepository(db_session).create_session()
+    result = await SearchService(db_session, settings=config).answer(
+        AnswerRequest(query="PX4支持GPS吗", session_id=chat.id)
+    )
+    assert [item.chunk_id for item in result.supporting_evidence] == [chunk.id], result.generation
+    assert result.supporting_evidence[0].matched_by == "graph"
+    assert "negated" in captured[0] and "test-only" in captured[0]
+    assert "PX4 — supports — GPS" in captured[0]
+    assert result.generation.graph_retrieval["selected_chunk_ids"] == [str(chunk.id)]
+    saved = await ChatRepository(db_session).detail(chat.id)
+    assert saved.turns[0].supporting_evidence[0].graph_evidence[0].assertion == "negated"
+    assert saved.turns[0].generation.graph_retrieval["status"] == "retrieved"
+
+
+@pytest.mark.parametrize("excluded", ["filter", "obsolete", "withdrawn", "disabled"])
+async def test_graph_respects_source_lifecycle_and_filters(graph_store, db_session, excluded):
+    from app.services.answer_graph import recall_graph_evidence
+
+    chunk = await seed_answer_graph(db_session, graph_store)
+    config = settings()
+    filters = SearchFilters()
+    if excluded == "filter":
+        filters = SearchFilters(source_site_id=uuid4())
+    elif excluded == "obsolete":
+        chunk.embed_status = "obsolete"
+    elif excluded == "withdrawn":
+        graph_store.withdraw(chunk.content_item_id)
+    else:
+        config.answer_graph_enabled = False
+    await db_session.commit()
+    result = await recall_graph_evidence(db_session, "PX4", filters, config)
+    assert result.evidence == []
+    assert result.trace["status"] == ("disabled" if excluded == "disabled" else "empty")
+
+
+async def test_graph_duplicates_merge_without_losing_grounding(graph_store, db_session):
+    from app.services.answer_graph import merge_graph_evidence, recall_graph_evidence
+
+    chunk = await seed_answer_graph(db_session, graph_store)
+    graph = await recall_graph_evidence(db_session, "PX4", SearchFilters(), settings())
+    regular = graph.evidence[0].model_copy(update={"matched_by": "keyword", "graph_evidence": []})
+    merged = merge_graph_evidence([regular], graph.evidence)
+    assert len(merged) == 1 and merged[0].chunk_id == chunk.id
+    assert merged[0].matched_by == "keyword" and merged[0].graph_evidence
+    assert regular.graph_evidence == []
+
+
+@pytest.mark.parametrize("failure", ["neo4j", "timeout"])
+async def test_graph_failure_does_not_break_answer_transaction(db_session, monkeypatch, failure):
+    from sqlalchemy import text
+
+    await seed(db_session)
+    if failure == "neo4j":
+        from neo4j.exceptions import ServiceUnavailable
+
+        async def broken(*args):
+            raise ServiceUnavailable("test unavailable")
+
+        monkeypatch.setattr("app.services.answer_graph.retrieve_graph_context", broken)
+    else:
+        import asyncio
+
+        async def slow(*args):
+            await asyncio.sleep(1)
+
+        monkeypatch.setattr("app.services.answer_graph.retrieve_graph_context", slow)
+    config = settings()
+    config.answer_graph_timeout_seconds = 0.01 if failure == "timeout" else 5
+    result = await SearchService(db_session, settings=config).answer(AnswerRequest(query="PX4"))
+    assert result.supporting_evidence
+    assert result.generation.graph_retrieval["status"] == "fallback"
+    assert await db_session.scalar(text("SELECT 1")) == 1
+
+
+@pytest.mark.parametrize("route", ["/answer", "/answer/stream"])
+async def test_graph_answer_http_routes(graph_store, db_session, chat_client, monkeypatch, route):
+    await seed_answer_graph(db_session, graph_store)
+    config = settings(api_key="test").model_copy(update={"reranker_provider": "none"})
+    monkeypatch.setattr("app.services.search.get_settings", lambda: config)
+
+    async def model_stream(self, query, evidence, **kwargs):
+        assert any(item.graph_evidence for item in evidence)
+        assert "negated" in kwargs["context"]
+        yield "仅适用于指定固件 [1]。"
+
+    monkeypatch.setattr(LLMAnswerClient, "stream", model_stream)
+    response = await chat_client.post(route, json={"query": "PX4支持GPS吗"})
+    assert response.status_code == 200
+    if route.endswith("stream"):
+        assert '"stage": "graph_retrieving"' in response.text
+        blocks = response.text.split("\n\n")
+        result = json.loads(
+            next(block.split("data: ", 1)[1] for block in blocks if block.startswith("event: done"))
+        )
+    else:
+        result = response.json()
+    assert result["generation"]["graph_retrieval"]["status"] == "retrieved"
+    assert any(item["graph_evidence"] for item in result["supporting_evidence"])
+
+
+async def test_graph_rejects_quotes_removed_from_current_source(graph_store, db_session):
+    from app.services.answer_graph import recall_graph_evidence
+
+    chunk = await seed_answer_graph(db_session, graph_store)
+    chunk.display_text = "This is a revised transcript with unrelated information."
+    await db_session.commit()
+    result = await recall_graph_evidence(db_session, "PX4", SearchFilters(), settings())
+    assert result.trace["raw_evidence_count"] == 1
+    assert result.evidence == []

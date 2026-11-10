@@ -4,7 +4,7 @@ import json
 from copy import deepcopy
 
 import pytest
-from app.services.video_graph_identity import extraction_version, stable_hash
+from app.services.video_graph.identity import extraction_version, stable_hash
 
 from backend.tests.test_video_graph_quality import material, reviewed
 from scripts.evaluate_video_graph_quality import (
@@ -22,20 +22,21 @@ def criteria():
 
 
 def target():
-    return {"errors": [], "pending": [], "supported_retention": 0.85,
-            "bad_target_rejection": 0.96}
+    return {"errors": [], "pending": [], "supported_retention": 0.85, "bad_target_rejection": 0.96}
 
 
 def test_source_precision_gate_is_separate_from_old_target_regression():
-    assert release_score(target(), ["supported"] * 51 + ["issue"] * 3 + ["review"] * 6,
-                         criteria())["release_gate"]
-    assert not release_score(target(), ["supported"] * 56 + ["issue"] * 4,
-                             criteria())["release_gate"]
-    assert not release_score(target(), ["supported"] * 53 + ["review"] * 7,
-                             criteria())["release_gate"]
+    assert release_score(target(), ["supported"] * 51 + ["issue"] * 3 + ["review"] * 6, criteria())[
+        "release_gate"
+    ]
+    assert not release_score(target(), ["supported"] * 56 + ["issue"] * 4, criteria())[
+        "release_gate"
+    ]
+    assert not release_score(target(), ["supported"] * 53 + ["review"] * 7, criteria())[
+        "release_gate"
+    ]
     assert not release_score(target(), ["supported"] * 59, criteria())["release_gate"]
-    assert not release_score(target(), ["supported"] * 59 + ["pending"],
-                             criteria())["release_gate"]
+    assert not release_score(target(), ["supported"] * 59 + ["pending"], criteria())["release_gate"]
     errors = {**target(), "errors": ["case1"]}
     assert not release_score(errors, ["supported"] * 60, criteria())["release_gate"]
 
@@ -44,22 +45,53 @@ def fixture_evaluation():
     m = material()
     output = reviewed(m)
     chunk = m.chunks[0]
-    dataset = {"cases": [{
-        "case_id": "case1", "video_id": str(m.id), "chunk_id": str(chunk.id),
-        "title": m.title, "url": m.url, "text": chunk.text, "expectation": "supported",
-        "start_seconds": chunk.start_seconds, "end_seconds": chunk.end_seconds,
-        "baseline_relation": {"subject": "The Neo", "subject_type": "product",
-                              "object": "GPS", "object_type": "technology", "predicate": "uses",
-                              "assertion": "asserted"},
-    }]}
+    dataset = {
+        "cases": [
+            {
+                "case_id": "case1",
+                "video_id": str(m.id),
+                "chunk_id": str(chunk.id),
+                "title": m.title,
+                "url": m.url,
+                "text": chunk.text,
+                "expectation": "supported",
+                "start_seconds": chunk.start_seconds,
+                "end_seconds": chunk.end_seconds,
+                "baseline_relation": {
+                    "subject": "The Neo",
+                    "subject_type": "product",
+                    "object": "GPS",
+                    "object_type": "technology",
+                    "predicate": "uses",
+                    "assertion": "asserted",
+                },
+            }
+        ]
+    }
     version = extraction_version("video-graph-v2", "fixture")
-    evaluation = {"target_version": version, "dataset_hash": stable_hash(dataset),
-                  "evaluation_protocol": EVALUATION_PROTOCOL,
-                  "results": {"case1": {"status": "success", "expectation": "supported",
-                                        "target_present": False, "output": output.model_dump()}}}
-    rule = {**criteria(), "output_review": {"sample_size": 1, "seed": 20261102,
-                                            "minimum_supported": 1, "maximum_issue": 0,
-                                            "maximum_review": 0}}
+    evaluation = {
+        "target_version": version,
+        "dataset_hash": stable_hash(dataset),
+        "evaluation_protocol": EVALUATION_PROTOCOL,
+        "results": {
+            "case1": {
+                "status": "success",
+                "expectation": "supported",
+                "target_present": False,
+                "output": output.model_dump(),
+            }
+        },
+    }
+    rule = {
+        **criteria(),
+        "output_review": {
+            "sample_size": 1,
+            "seed": 20261102,
+            "minimum_supported": 1,
+            "maximum_issue": 0,
+            "maximum_review": 0,
+        },
+    }
     return evaluation, dataset, rule, version
 
 

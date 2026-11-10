@@ -17,8 +17,9 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from app.core.config import Settings  # noqa: E402
 from app.schemas.video_graph import ChunkExtraction  # noqa: E402
-from app.services.video_graph import LLMVideoExtractor, validate_extraction  # noqa: E402
-from app.services.video_graph_identity import stable_hash  # noqa: E402
+from app.services.video_graph.extraction import LLMVideoExtractor  # noqa: E402
+from app.services.video_graph.identity import stable_hash  # noqa: E402
+from app.services.video_graph.validation import validate_extraction  # noqa: E402
 
 from scripts.evaluate_entity_gold import (  # noqa: E402
     match_reason,

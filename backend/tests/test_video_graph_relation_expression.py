@@ -4,14 +4,14 @@ from unittest.mock import Mock
 
 import pytest
 from app.schemas.video_graph import ChunkExtraction, ExtractedRelation
-from app.services.video_graph import validate_extraction
-from app.services.video_graph_quality import (
+from app.services.video_graph.review import (
     classify_relations,
     relation_payload,
     review_extraction,
     review_relation_batches,
 )
-from app.services.video_graph_semantics import canonicalize_relation_expression
+from app.services.video_graph.semantics import canonicalize_relation_expression
+from app.services.video_graph.validation import validate_extraction
 
 from backend.tests.test_video_graph_quality import entity, material
 
@@ -293,7 +293,7 @@ def test_source_line_selection_cannot_bypass_quote_length_limit():
 
 
 def test_missing_required_quote_repair_gets_one_retry_and_pins_other_negative_decisions():
-    from app.services.video_graph_quality import request_verdicts
+    from app.services.video_graph.review import request_verdicts
 
     payload = {
         "current_chunk": "First line.\nExact second line.",
@@ -331,7 +331,7 @@ def test_missing_required_quote_repair_gets_one_retry_and_pins_other_negative_de
 
 
 def test_unrepaired_positive_is_quarantined_after_one_retry():
-    from app.services.video_graph_quality import request_verdicts
+    from app.services.video_graph.review import request_verdicts
 
     request = Mock(
         return_value={

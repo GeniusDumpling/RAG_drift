@@ -223,6 +223,7 @@ export type GenerationInfo = {
   retrieval_query: string | null;
   rewrite_status: string;
   reranking?: Record<string, unknown>;
+  graph_retrieval?: Record<string, unknown>;
 };
 
 export type ChatSession = {
@@ -255,7 +256,12 @@ export type EvidenceObject = {
   vector_score: number | null;
   keyword_score: number | null;
   rerank_score?: number | null;
-  matched_by: 'vector' | 'keyword' | 'hybrid';
+  matched_by: 'vector' | 'keyword' | 'hybrid' | 'graph';
+  graph_evidence?: Array<{
+    id: UUID; relation_id: UUID; subject: string; predicate: string; object: string;
+    quote: string; assertion: 'asserted' | 'uncertain' | 'negated';
+    qualifiers: Record<string, string>; video_url: string;
+  }>;
   thread_summary: string | null;
   video_url: string | null;
   description_text: string | null;
@@ -276,7 +282,7 @@ export type AnswerResponse = {
 };
 
 export type AnswerStreamEvent =
-  | { event: 'status'; data: { stage: 'retrieving' | 'reranking' | 'generating' } }
+  | { event: 'status'; data: { stage: 'retrieving' | 'graph_retrieving' | 'reranking' | 'generating' } }
   | { event: 'delta'; data: { text: string } }
   | { event: 'reset'; data: { text: string; generation: GenerationInfo } }
   | { event: 'evidence'; data: { query_id: UUID; turn_id: UUID | null; supporting_evidence: EvidenceObject[] } }

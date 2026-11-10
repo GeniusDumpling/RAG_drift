@@ -7,7 +7,7 @@ import httpx
 import pytest
 from app.api import video_graph as api
 from app.schemas.video_graph import GraphData
-from app.services.neo4j_graph.queries import GraphQueries
+from app.services.video_graph.queries import GraphQueries
 from fastapi import FastAPI
 
 pytestmark = pytest.mark.no_db

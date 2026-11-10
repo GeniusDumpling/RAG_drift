@@ -15,8 +15,8 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from app.core.config import Settings  # noqa: E402
 from app.schemas.video_graph import ChunkExtraction  # noqa: E402
-from app.services.video_graph import PROMPT_VERSION  # noqa: E402
-from app.services.video_graph_identity import (  # noqa: E402
+from app.services.video_graph.extraction import PROMPT_VERSION  # noqa: E402
+from app.services.video_graph.identity import (  # noqa: E402
     entity_identity,
     extraction_version,
     stable_hash,

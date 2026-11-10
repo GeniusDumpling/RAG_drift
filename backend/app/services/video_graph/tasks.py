@@ -11,24 +11,29 @@ from sqlalchemy.orm import Session
 from app.db.base import utcnow
 from app.models.content import ContentItem
 from app.schemas.video_graph import ChunkExtraction, VideoAssessment
-from app.services.neo4j_graph.store import GraphStore, decode
-from app.services.video_graph import (
+from app.services.video_graph.diagnostics import describe_graph_error, graph_error_summary
+from app.services.video_graph.extraction import LLMVideoExtractor, VideoExtractor
+from app.services.video_graph.identity import neighbor_context
+from app.services.video_graph.material import (
     LeaseLostError,
-    LLMVideoExtractor,
-    VideoExtractor,
     chunk_fingerprint,
     load_material,
     locate_quote,
-    update_coverage,
-    validate_extraction,
 )
-from app.services.video_graph_diagnostics import describe_graph_error, graph_error_summary
-from app.services.video_graph_identity import is_quality_version, neighbor_context
+from app.services.video_graph.storage import GraphStore, decode
+from app.services.video_graph.validation import update_coverage, validate_extraction
 
 
 def enqueue_videos(
-    engine, store, *, extractor_version, content_ids=None, retry_failed=False, retry_partial=False,
-    expected_fingerprints=None, expected_active_ids=None,
+    engine,
+    store,
+    *,
+    extractor_version,
+    content_ids=None,
+    retry_failed=False,
+    retry_partial=False,
+    expected_fingerprints=None,
+    expected_active_ids=None,
 ):
     counts = dict(scanned=0, queued=0, unchanged=0, withdrawn=0, no_evidence=0)
     with Session(engine) as session:
@@ -40,15 +45,24 @@ def enqueue_videos(
             material = load_material(session, content_id)
             if material is None:
                 continue
-            if (expected_fingerprints is not None
-                and material.fingerprint != expected_fingerprints[content_id]):
+            if (
+                expected_fingerprints is not None
+                and material.fingerprint != expected_fingerprints[content_id]
+            ):
                 raise ValueError("回补材料在排队前已变化，请重新生成清单")
             counts["scanned"] += 1
             if not material.extraction_chunks:
                 counts["no_evidence"] += 1
             expected = expected_active_ids[content_id] if expected_active_ids is not None else ...
-            counts[store.enqueue(material, extractor_version, retry_failed, retry_partial,
-                                 expected_active_id=expected)] += 1
+            counts[
+                store.enqueue(
+                    material,
+                    extractor_version,
+                    retry_failed,
+                    retry_partial,
+                    expected_active_id=expected,
+                )
+            ] += 1
     # PostgreSQL cannot cascade into Neo4j. Reconcile deletions within this scan's scope.
     known = store.read(
         "MATCH (v:VGVideo) WHERE NOT coalesce(v.deleted,false) "
@@ -91,7 +105,7 @@ def process_next(
             raise LeaseLostError("源视频已删除")
         if isinstance(extractor, LLMVideoExtractor):
             extractor.heartbeat = lambda: store.checkpoint(build_id, content_id, token, output)
-            from app.services.video_graph_request_checkpoint import RequestCheckpoint
+            from app.services.video_graph.request_checkpoint import RequestCheckpoint
 
             extractor.request_checkpoint = RequestCheckpoint(output, extractor, extractor.heartbeat)
         if "assessment" not in output:
@@ -143,8 +157,10 @@ def process_next(
                 if key in output["chunks"]:
                     try:
                         validate_extraction(
-                            chunk, ChunkExtraction.model_validate(output["chunks"][key]),
-                            material=material, require_review=is_quality_version(expected_version),
+                            chunk,
+                            ChunkExtraction.model_validate(output["chunks"][key]),
+                            material=material,
+                            require_review=True,
                         )
                     except ValueError:
                         del output["chunks"][key]
@@ -165,8 +181,10 @@ def process_next(
                 stage = "validation"
                 try:
                     extracted = validate_extraction(
-                        chunk, extraction, material=material,
-                        require_review=is_quality_version(expected_version),
+                        chunk,
+                        extraction,
+                        material=material,
+                        require_review=True,
                     )
                 except ValueError as exc:
                     skip_chunk(exc)
@@ -212,8 +230,11 @@ def process_next(
             "status": "lease_lost",
         }
     except Exception as exc:
-        if (isinstance(exc, ValueError) and isinstance(extractor, LLMVideoExtractor)
-            and extractor.request_checkpoint is not None):
+        if (
+            isinstance(exc, ValueError)
+            and isinstance(extractor, LLMVideoExtractor)
+            and extractor.request_checkpoint is not None
+        ):
             extractor.request_checkpoint.clear()
             try:
                 store.checkpoint(build_id, content_id, token, output)

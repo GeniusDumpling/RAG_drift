@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from app.schemas.video_graph import ExtractedEntity
-from app.services.video_graph_semantics import normalized_name
+from app.services.video_graph.semantics import normalized_name
 
 ENTITY_NAMESPACE = uuid.UUID("a37984c5-3e93-43a7-8051-2503bfc69e68")
 QUALITY_VERSION = "video-graph-v2"
@@ -77,19 +77,21 @@ def policy_id() -> str:
     paths = [
         here / name
         for name in (
-            "video_graph.py",
-            "video_graph_identity.py",
-            "video_graph_quality.py",
-            "video_graph_semantics.py",
-            "video_graph_grounding.py",
-            "video_graph_terms.py",
-            "video_graph_terms.json",
-            "video_graph_normalization.py",
-            "video_graph_usage.py",
-            "video_graph_request_checkpoint.py",
+            "material.py",
+            "extraction.py",
+            "validation.py",
+            "identity.py",
+            "review.py",
+            "semantics.py",
+            "grounding.py",
+            "terms.py",
+            "terms.json",
+            "normalization.py",
+            "usage.py",
+            "request_checkpoint.py",
         )
     ]
-    paths.append(here.parent / "schemas" / "video_graph.py")
+    paths.append(here.parent.parent / "schemas" / "video_graph.py")
     dependency = version("opencc-python-reimplemented").encode()
     payload = b"\n".join([*(p.read_bytes() for p in paths), dependency])
     return hashlib.sha256(payload).hexdigest()[:12]
@@ -98,11 +100,10 @@ def policy_id() -> str:
 def extraction_version(
     base: str, model: str, effort: str = "none", extraction_effort: str = "none"
 ) -> str:
-    if base != "video-graph-v1" and not is_quality_version(base):
+    if not is_quality_version(base):
         raise ValueError("抽取版本须为 video-graph-v2 或更高版本，可追加规则修订后缀")
     version = f"{base}:{model}"
-    if is_quality_version(base):
-        version += f":{policy_id()}-{extraction_effort}-{effort}"
+    version += f":{policy_id()}-{extraction_effort}-{effort}"
     if len(version) > 160:
         raise ValueError("抽取版本和模型名称合计不能超过 160 个字符")
     return version
@@ -113,14 +114,16 @@ def compact_name(value: str) -> str:
 
 
 def identity_name(value: str, kind: str, context: str = "") -> str:
-    from app.services.video_graph_terms import canonical_term
+    from app.services.video_graph.terms import canonical_term
 
     cleaned = " ".join(value.split())
     if kind == "component":
         axes = {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6"}
         cleaned = re.sub(
             r"\b(one|two|three|four|five|six)[ -]*axis\b",
-            lambda match: axes[match[1].casefold()] + "-axis", cleaned, flags=re.I,
+            lambda match: axes[match[1].casefold()] + "-axis",
+            cleaned,
+            flags=re.I,
         )
         cleaned = re.sub(r"\b(\d+)\s*[- ]?\s*(?:in|inch|inches)\b", r"\1-inch", cleaned, flags=re.I)
     if kind in {"product", "component", "software", "technology", "method", "fault", "protocol"}:
@@ -133,7 +136,9 @@ def identity_name(value: str, kind: str, context: str = "") -> str:
         model = re.fullmatch(
             r"(?:DJI\s+)?(?:O\s*\d+\s*(?:Lite|Pro)?|RC[\s\w-]*\d[\w-]*|"
             r"(?:Neo|Mini|Air|Mavic|Avata|Matrice|Inspire|Phantom|Dock)"
-            r"\s*\d*(?:\s*(?:S|K|Pro|Classic|Cine|Enterprise|Zoom|SE|M|T))*)", base, re.I,
+            r"\s*\d*(?:\s*(?:S|K|Pro|Classic|Cine|Enterprise|Zoom|SE|M|T))*)",
+            base,
+            re.I,
         )
         if base != cleaned and model:
             cleaned = base
@@ -184,7 +189,8 @@ def model_vector(value: str) -> tuple[str, str] | None:
     match = re.fullmatch(
         r"DJI (Neo|Mini|Air|Mavic|Avata|Matrice|Inspire|Phantom|Dock|N|O)\s*"
         r"(\d+(?:[SKMT])?(?:\s+(?:Pro|Lite|Classic|Cine|Enterprise|Zoom|SE))*)?",
-        normalized, re.I,
+        normalized,
+        re.I,
     )
     return (match[1].casefold(), re.sub(r"\s+", "", match[2] or "").casefold()) if match else None
 
@@ -195,7 +201,8 @@ def is_attribute_value(value: str) -> bool:
     if re.fullmatch(
         r"\d+(?:\.\d+)?\s*(?:g|kg|grams?|fps|MP|GB|TB|px|年|月|天)|"
         r"\d+(?:\.\d+)?\s*[Kk](?:\s*\d+\s*(?:fps|p))?|"
-        r"\d{3,5}\s*[x×]\s*\d{3,5}", value.strip(),
+        r"\d{3,5}\s*[x×]\s*\d{3,5}",
+        value.strip(),
     ):
         return True
     try:
@@ -260,8 +267,11 @@ def entity_identity(entity: ExtractedEntity, material: Any) -> EntityIdentity:
         raise ValueError("属性值不能作为图谱实体")
     if entity.identity_scope == "global" and is_generic(name):
         raise ValueError("泛称不能作为全局实体")
-    if (entity.identity_scope == "global" and entity.entity_type == "product"
-        and re.fullmatch(r"[A-Z]{1,2}-?\d{1,3}(?:\s+(?:Pro|Lite))?", name, re.I)):
+    if (
+        entity.identity_scope == "global"
+        and entity.entity_type == "product"
+        and re.fullmatch(r"[A-Z]{1,2}-?\d{1,3}(?:\s+(?:Pro|Lite))?", name, re.I)
+    ):
         raise ValueError("短型号缺少明确制造商，不能作为全局实体")
     if (
         entity.identity_scope == "global"

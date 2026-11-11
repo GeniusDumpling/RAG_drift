@@ -19,6 +19,12 @@ class Settings(LLMSettings):
     document_artifacts_dir: Path = Field(
         default=Path("data/processed/drone-documents"), alias="DOCUMENT_ARTIFACTS_DIR"
     )
+    document_graph_vlm_model: str = Field(
+        default="Qwen/Qwen3-VL-32B-Instruct", alias="DOCUMENT_GRAPH_VLM_MODEL"
+    )
+    document_graph_artifacts_dir: Path = Field(
+        default=Path("data/document_graph_runs"), alias="DOCUMENT_GRAPH_ARTIFACTS_DIR"
+    )
     document_artifacts_source_root: Path | None = Field(
         default=None, alias="DOCUMENT_ARTIFACTS_SOURCE_ROOT"
     )
@@ -120,9 +126,13 @@ class Settings(LLMSettings):
 
     @property
     def resolved_literature_sync_database_url(self) -> str:
-        return self.literature_sync_database_url or self.literature_database_url or make_url(
-            self.sync_database_url
-        ).set(database="literature_research").render_as_string(hide_password=False)
+        return (
+            self.literature_sync_database_url
+            or self.literature_database_url
+            or make_url(self.sync_database_url)
+            .set(database="literature_research")
+            .render_as_string(hide_password=False)
+        )
 
 
 @lru_cache(maxsize=1)

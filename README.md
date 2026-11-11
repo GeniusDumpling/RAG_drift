@@ -340,9 +340,11 @@ docker compose -f docker-compose.deploy.yml up -d --build app
 
 ## 视频知识图谱
 
-当前实体金标准集包含中英文各10段、101条实体记录；采用原文加实体表的简化格式。标注、测试命令及保留文件见[实体评测入口](docs/entity-gold-evaluation.md)，最近两轮结果见[评测记录](docs/entity-gold-r3-fresh-2026-11-05.md)。旧版关系金标准配套的106条实体集继续保留，关系评测当前配置见[关系评测说明](docs/relation-gold-evaluation.md)。
+统一入口见[架构与构建操作](docs/knowledge-graph.md)，实体边界、身份归一、关系方向及证据要求见[抽取与审核规则](docs/knowledge-graph-extraction.md)。
 
-视频知识图谱提供历史视频构图、增量轮询、字幕证据定位和前端浏览代码，入口位于 `tools/video-knowledge-graph/`。当前代码默认使用 v2：将提及与实体身份分离，独立审核关系语义，并通过包含规则指纹的版本和固定清单回补存量。修复设计、固定样本验收和操作见 [v2 说明](docs/video-graph-v2.md)；基础命令及 GraphRAG 接口见 [视频知识图谱说明](tools/video-knowledge-graph/README.md)。存量数据是否已更新应查看实际有效版本，不能只看默认配置。
+当前金标准集包含中英文各10段、101条实体、77条关系。标注、评分及复现命令统一见[实体与关系评测](docs/knowledge-graph-evaluation.md)；逐轮指标见[历史评测汇总](docs/knowledge-graph-evaluation-results.md)，方案取舍与审计见[实验与演进记录](docs/knowledge-graph-history.md)。配套旧版关系集的106条实体集继续保留，开发集成绩不代表全图准确率或线上已回补。
+
+视频知识图谱提供历史视频构图、增量轮询、字幕证据定位和前端浏览代码，入口位于 `tools/video-knowledge-graph/`。当前代码默认使用 v2：将提及与实体身份分离，独立审核关系语义，并通过包含规则指纹的版本和固定清单回补存量。CLI 完整参数及 GraphRAG 接口见[构图工具说明](tools/video-knowledge-graph/README.md)。存量数据是否已更新应查看实际有效版本，不能只看默认配置。
 
 2026-10-23 已正式部署白色背景的 AntV G6 图谱工作台，仅保留交互视图，支持拖拽、悬停邻居与连线高亮、入链/出链与字幕证据面板。图谱与供应链、AI 问答共用左侧导航，移除图谱顶部标题、说明及系统顶栏，图谱区域铺满导航右侧的可用空间；从左侧“视频知识图谱”进入，或访问 `http://localhost:8000/?view=VideoGraph`，镜像和回退说明见 [当前部署记录](docs/graph-ui-navigation-2026-10-23.md)。
 
@@ -352,7 +354,9 @@ docker compose -f docker-compose.deploy.yml up -d --build app
 
 图谱工具栏现支持 **2D / 3D** 切换，桌面首次进入默认三维、手机默认二维，并记住用户选择。三维模式使用 G6 官方扩展，支持球体光照、点击节点居中并围绕该节点上下左右 360° 连续旋转、视角平移、节点拖拽、悬停高亮、关系证据及邻居展开，保留现有数据预算和小图过滤；无 WebGL 支持时自动使用二维。操作、部署与回退见 [3D 图谱说明](docs/graph-ui-3d-2026-10-26.md)。
 
-图谱、构图任务、租约及检查点统一保存在 Neo4j，模块位于 `backend/app/services/video_graph/`；PostgreSQL 继续保存源内容和切片。2026-11-10已删除在线 PostgreSQL 图谱后端和切换配置，v1 存量图谱仍可查询，但新任务只支持 v2 及后续版本。职责划分及验证见[模块重构说明](docs/video-graph-refactor-2026-11-10.md)，历史数据导入见 [Neo4j 迁移指南](docs/neo4j-migration.md)。
+图谱、构图任务、租约及检查点统一保存在 Neo4j，模块位于 `backend/app/services/video_graph/`；PostgreSQL 继续保存源内容和切片。2026-11-10已删除在线 PostgreSQL 图谱后端和切换配置，v1 存量图谱仍可查询，但新任务只支持 v2 及后续版本。职责划分及验证见[模块重构说明](docs/knowledge-graph-history.md#video-graph-refactor-2026-11-10)，历史数据导入见 [Neo4j 迁移指南](docs/neo4j-migration.md)。
+
+官方技术手册多模态图谱试点：DJI Air 2S 与 Parrot ANAFI Ai 的原文、编号图、操作图及灯态表 → 来源定位与审核 → Neo4j 构建、恢复和图文检索。入口、golden 及验证说明见 [文档图谱流程](docs/document-knowledge-graph.md)。
 
 ```bash
 # 只读盘点，不调用抽取模型
@@ -365,7 +369,7 @@ docker compose -f docker-compose.deploy.yml up -d --build app
 
 构图需 `LLM_API_KEY`。`--limit` 仅限制处理数量，`run` 仍会扫描并排队整个范围；限定视频使用 `--content-id VIDEO_UUID`。实体和关系来自已保存的字幕证据，无字幕时仅生成摘要实体提及；图谱接口为 `/video-graph/*`。失败、部分完成、检查点恢复与增量轮询见工具说明。
 
-推荐的`pipeline`会先固定最多limit条范围，再构建和逐项验证，范围外视频不会排队。当前优化版抽取与Neo4j/PostgreSQL入库、证据及检索已接成完整管线；配置、恢复与运行验证见[闭环管线说明](docs/video-graph-build-pipeline-2026-11-05.md)。
+推荐的`pipeline`会先固定最多limit条范围，再构建和逐项验证，范围外视频不会排队。管线从PostgreSQL读取源材料，将图谱发布到Neo4j，并回读验证证据及检索；配置、完成判据和恢复见[构建操作](docs/knowledge-graph.md#推荐构建流程)。
 
 ## 开发验证
 
@@ -385,7 +389,7 @@ Neo4j、视频图谱和 iFixit 集成测试使用各自文档指定的测试连�
 ## 核心不变量
 
 - 在调用抽取 agent 之前，必须先持久化 raw pages。
-- PostgreSQL 保存源内容事实；使用 Neo4j 图谱后端时，图谱及构图任务以 Neo4j 为准。
+- PostgreSQL 保存源内容事实；图谱及构图任务以 Neo4j 为准。
 - Qdrant 只保存用于检索的 chunk 向量和 payload。
 - 前端只调用后端 API。
 - 搜索和回答响应会暴露证据对象，其中包含 source 和 content 链接。
@@ -398,6 +402,6 @@ Neo4j、视频图谱和 iFixit 集成测试使用各自文档指定的测试连�
 - [通用网页采集：百度搜索、原文证据及标准化 JSONL](tools/web-crawler/README.md)
 - [AI 问答实现](docs/ai-chat.md) · [AI 问答部署验收（2026-10-21）](docs/ai-chat-deployment-2026-10-21.md)
 - [型号检索排序修复与验证（2026-10-21）](docs/retrieval-ranking-fix-2026-10-21.md)
-- [视频知识图谱](tools/video-knowledge-graph/README.md) · [Neo4j 迁移指南](docs/neo4j-migration.md) · [迁移结果](docs/neo4j-migration-report-2026-10-21.md)
+- [视频知识图谱](tools/video-knowledge-graph/README.md) · [Neo4j 迁移指南](docs/neo4j-migration.md) · [迁移结果](docs/neo4j-migration.md#neo4j-migration-report-2026-10-21)
 - [iFixit 导入工具](tools/ifixit_rag/README.md) · [正式导入验收（2026-10-21）](docs/ifixit-production-import-2026-10-21.md)
 - [文献研究](docs/literature-research.md)

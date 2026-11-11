@@ -12,4 +12,4 @@
 
 [历史24项人工取舍](../../docs/entity-value-selection-review.md)保留供追溯，后续直接修改的当前JSON优先。旧版关系金标准v1与[entity_gold_v1.json](entity_gold_v1.json)的106条实体配套，两者均保留供历史复现；当前关系默认数据以关系工具配置为准，本次不改动关系流程。
 
-校验、生成阅读版、真实抽取及离线重放命令见[实体评测入口](../../docs/entity-gold-evaluation.md)。
+校验、生成阅读版、真实抽取及离线重放命令见[实体评测入口](../../docs/knowledge-graph-evaluation.md#实体计分)。

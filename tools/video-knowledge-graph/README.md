@@ -4,7 +4,7 @@
 
 图谱实体、别名、关系、证据、任务、租约和检查点**只存 Neo4j**。PostgreSQL 保存原始内容和切片，构图只读取业务材料，发布前使用源行锁核对材料。不存在 PostgreSQL 图谱后端或 `VIDEO_GRAPH_BACKEND` 切换项。
 
-代码组织见[模块重构说明](../../docs/video-graph-refactor-2026-11-10.md)。历史导入工具保留为 `migrate_neo4j.py`，旧 PostgreSQL 图谱表只用于历史导出和 Alembic 兼容，见[迁移指南](../../docs/neo4j-migration.md)。
+架构及构建流程见[统一入口](../../docs/knowledge-graph.md)，抽取口径见[抽取与审核规则](../../docs/knowledge-graph-extraction.md)，标注与复现见[评测说明](../../docs/knowledge-graph-evaluation.md)。历史导入工具保留为 `migrate_neo4j.py`，旧 PostgreSQL 图谱表只用于历史导出和 Alembic 兼容，见[迁移指南](../../docs/neo4j-migration.md)。
 
 ## 配置
 
@@ -15,6 +15,22 @@
 - `VIDEO_GRAPH_EXTRACTION_EFFORT`、`VIDEO_GRAPH_REASONING_EFFORT`：抽取和审核推理档位，默认均 `none`。
 
 新任务只允许 `video-graph-v2` 及后续基础版本。完整版本包含模型、抽取规则指纹和推理档位。规则或来源上下文变化时旧审核凭据不能复用。历史 v1 结果继续查询、展示和引用，但不能用新 worker 领取、补写 v1 任务；需使用当前版本新建有界计划。
+
+## 独立的新图谱目标
+
+新容器 `intelligence-rag-neo4j-next` 使用 Browser `127.0.0.1:7475`、Bolt `127.0.0.1:7688`，并使用独立数据卷。连接信息保存在未提交的 `.env.video-graph-next`，权限为600。详见[独立容器与验证记录](../../docs/video-graph-next-2026-11-10.md)。
+
+构建新图谱时显式增加 `--neo4j-env-file .env.video-graph-next`：
+
+```bash
+.venv/bin/python tools/video-knowledge-graph/build_graph.py pipeline \
+  --neo4j-env-file .env.video-graph-next \
+  --limit 100 --batch-size 5 \
+  --manifest data/video_graph_runs/neo4j-next-batch.plan.json \
+  --report data/video_graph_runs/neo4j-next-batch.report.json --retry-failed
+```
+
+该参数只覆盖本次CLI的Neo4j URI、用户、密码和数据库名，保留原业务PostgreSQL和模型配置，不修改Web应用配置。当前Web已通过独立发布配置连接next库，构建该图谱时应始终使用此目标文件。指定文件缺失或配置不完整会报错，不会回退到原图谱。`scan/run/watch/backfill/withdraw/restore`等入口同样支持该参数；恢复任务时使用相同目标、清单和报告。不指定该参数仍使用原 `.env` 的目标。
 
 ## 推荐：有界构建并验证
 
@@ -48,7 +64,7 @@
 
 网络、429/5xx、JSON解析故障最多重试一次；结构不完整允许一次修正。拒绝的实体、属性、关系保留原因，不以反复调用强行通过语义审核。每次真实请求前续租。
 
-同一任务、同一切片、完全相同的请求可从 Neo4j 持久化检查点恢复，覆盖抽取、审核和证据格式修正。请求绑定版本、提供方/账户哈希及完整消息；不跨任务共享原始响应。结构或来源校验失败会清理对应片段缓存，完整切片通过后只保留正常审核结果。详见[token 用量与检查点](../../docs/video-graph-token-optimization-2026-11-06.md)。
+同一任务、同一切片、完全相同的请求可从 Neo4j 持久化检查点恢复，覆盖抽取、审核和证据格式修正。请求绑定版本、提供方/账户哈希及完整消息；不跨任务共享原始响应。结构或来源校验失败会清理对应片段缓存，完整切片通过后只保留正常审核结果。详见[token 用量与检查点](../../docs/knowledge-graph-extraction.md#重试请求检查点与-token-统计)。
 
 发布在一个 Neo4j 事务内检查视频状态、目标版本和租约，再切换有效构建。首次部分完成可发布通过的切片；新版本部分完成时保留旧有效图谱；所有切片无效不会发布新图谱。模型调用不在数据库事务内。
 

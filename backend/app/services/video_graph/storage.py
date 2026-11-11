@@ -2,13 +2,10 @@
 
 import json
 import uuid
-from contextlib import contextmanager
 from datetime import UTC, datetime
 
-from neo4j import GraphDatabase
-
-from app.core.config import Settings
 from app.schemas.video_graph import ChunkExtraction
+from app.services.graph_storage import Neo4jStore
 from app.services.video_graph.identity import entity_identity, is_quality_version
 from app.services.video_graph.material import (
     ENTITY_NAMESPACE,
@@ -36,38 +33,7 @@ def now_ms():
     return int(datetime.now(UTC).timestamp() * 1000)
 
 
-class GraphStore:
-    def __init__(self, settings: Settings):
-        if not settings.neo4j_password:
-            raise ValueError("请配置 NEO4J_PASSWORD")
-        self.driver = GraphDatabase.driver(
-            settings.neo4j_uri,
-            auth=(settings.neo4j_user, settings.neo4j_password),
-            connection_timeout=10,
-            max_transaction_retry_time=15,
-        )
-        self.database = settings.neo4j_database
-
-    def close(self):
-        self.driver.close()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        self.close()
-
-    @contextmanager
-    def transaction(self):
-        with self.driver.session(database=self.database) as session:
-            with session.begin_transaction(timeout=120) as tx:
-                yield tx
-                tx.commit()
-
-    def read(self, cypher, **params):
-        with self.driver.session(database=self.database) as session:
-            return session.execute_read(lambda tx: tx.run(cypher, parameters=params).data())
-
+class GraphStore(Neo4jStore):
     def active_snapshot(self, content_id):
         rows = self.read(
             "MATCH (v:VGVideo {id:$id}) OPTIONAL MATCH (b:VGBuild {id:v.active_build_id}) "

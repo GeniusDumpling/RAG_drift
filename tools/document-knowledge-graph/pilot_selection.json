@@ -1,0 +1,65 @@
+{
+  "purpose": "官方技术文档多模态知识图谱试点选材",
+  "page_numbering": "原始 PDF 从 1 开始的物理页码；DJI 印刷页码比此页码少 1",
+  "manuals": [
+    {
+      "brand": "DJI",
+      "model": "DJI Air 2S",
+      "title": "DJI Air 2S   - 用户手册 v1.0",
+      "language": "zh-Hans",
+      "manual_version": "1.0",
+      "manual_date": "2021-06",
+      "date_basis": "封面年月",
+      "source_path": "data/DJI无人机文档/air-2s/DJI Air 2S   - 用户手册 v1.0_bbbf5d08e32f.pdf",
+      "source_url": "https://dl.djicdn.com/downloads/DJI_Air_2S/20240528UM/DJI_Air_2S_User_Manual_v1.0_CHSV.pdf",
+      "sha256": "f0aaca30a8d3218232a8bfe1829562c973690bacc3661f50d3c6cc857df440e2",
+      "pdf_pages": 55,
+      "sample_pages": {
+        "parts": [
+          9
+        ],
+        "specifications": [
+          50,
+          51,
+          52,
+          53
+        ],
+        "procedure": [
+          26
+        ],
+        "led_states": [
+          28
+        ]
+      }
+    },
+    {
+      "brand": "Parrot",
+      "model": "Parrot ANAFI Ai",
+      "title": "ANAFI Ai User Guide",
+      "language": "en",
+      "manual_version": "7.7.1.7",
+      "manual_date": "2025-04-02",
+      "date_basis": "封面 Updated",
+      "source_path": "data/Parrot无人机文档/anafi-ai/[图像_ 见原始网页] Download_7deb4150fce3.pdf",
+      "source_url": "https://www.parrot.com/assets/s3fs-public/2023-01/ANAFI-Ai-user-manual.pdf",
+      "sha256": "78a771b86a8dda041fc77af8e3c3744f35cdba3e65585af6d76a50e0b08ff67b",
+      "pdf_pages": 89,
+      "sample_pages": {
+        "parts": [
+          17,
+          18
+        ],
+        "specifications": [
+          14,
+          15
+        ],
+        "procedure": [
+          19
+        ],
+        "led_states": [
+          23
+        ]
+      }
+    }
+  ]
+}

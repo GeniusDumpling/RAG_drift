@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
 
 import app.models  # noqa: E402, F401
-from app.core.config import get_settings  # noqa: E402
+from app.core.config import Settings, get_settings  # noqa: E402
 from app.models.content import ContentItem  # noqa: E402
 from app.services.video_graph.backfill import apply_plan, create_plan, save_plan  # noqa: E402
 from app.services.video_graph.extraction import PROMPT_VERSION, LLMVideoExtractor  # noqa: E402
@@ -29,11 +29,36 @@ def emit(value: object) -> None:
     print(json.dumps(value, ensure_ascii=False), flush=True)
 
 
+def target_settings(settings: Settings, env_file: Path | None) -> Settings:
+    """Override only the graph connection without changing the app's shared settings."""
+    if env_file is None:
+        return settings
+    if not env_file.is_file():
+        raise ValueError("Neo4j目标配置文件不存在，拒绝回退到默认图谱")
+    from dotenv import dotenv_values
+
+    values = dotenv_values(env_file, interpolate=False)
+    fields = {
+        "NEO4J_URI": "neo4j_uri",
+        "NEO4J_USER": "neo4j_user",
+        "NEO4J_PASSWORD": "neo4j_password",
+        "NEO4J_DATABASE": "neo4j_database",
+    }
+    if set(values) - set(fields):
+        raise ValueError("Neo4j目标配置只允许URI、用户、密码和数据库名")
+    if any(not isinstance(values.get(key), str) or not values[key].strip() for key in fields):
+        raise ValueError("Neo4j目标配置必须完整提供URI、用户、密码和数据库名")
+    return settings.model_copy(update={field: values[key] for key, field in fields.items()})
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("inventory", "scan", "run", "watch", "plan-backfill", "backfill", "pipeline"):
         command = commands.add_parser(name)
+        command.add_argument(
+            "--neo4j-env-file", type=Path, help="仅为本次构图选择独立Neo4j连接配置"
+        )
         command.add_argument(
             "--content-id", type=uuid.UUID, action="append", help="只处理指定视频，可重复"
         )
@@ -72,6 +97,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             )
     for name in ("withdraw", "restore"):
         command = commands.add_parser(name)
+        command.add_argument(
+            "--neo4j-env-file", type=Path, help="选择要撤回或恢复的Neo4j目标"
+        )
         command.add_argument("--content-id", type=uuid.UUID, required=True)
     args = parser.parse_args(argv)
     if getattr(args, "limit", 1) < 1:
@@ -130,7 +158,7 @@ def inventory(session: Session, args: argparse.Namespace) -> dict[str, object]:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    settings = get_settings()
+    settings = target_settings(get_settings(), args.neo4j_env_file)
     engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
     store = None
     try:

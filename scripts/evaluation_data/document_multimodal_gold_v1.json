@@ -1,0 +1,722 @@
+{
+  "version": "document-multimodal-gold-v1",
+  "review_status": "source_checked_by_assistant",
+  "human_review_required": true,
+  "annotation_scope": "targeted_fact_and_text_image_link_checks_not_exhaustive_entities_relations",
+  "source_hash": "101af98d6585ea8960328f58ca39a8b45674f3d338238bcac5091a279eecf03a",
+  "manuals": [
+    {
+      "model": "DJI Air 2S",
+      "sha256": "f0aaca30a8d3218232a8bfe1829562c973690bacc3661f50d3c6cc857df440e2",
+      "manual_version": "1.0"
+    },
+    {
+      "model": "Parrot ANAFI Ai",
+      "sha256": "78a771b86a8dda041fc77af8e3c3744f35cdba3e65585af6d76a50e0b08ff67b",
+      "manual_version": "7.7.1.7"
+    }
+  ],
+  "cases": [
+    {
+      "id": "DJI-parts",
+      "targets": [
+        {
+          "label": "编号5云台相机",
+          "predicate": "contains",
+          "subject": [
+            "DJI Air 2S"
+          ],
+          "object": [
+            "一体式云台相机"
+          ],
+          "evidence": {
+            "page": 9,
+            "text_contains": [
+              "一体式云台相机"
+            ],
+            "bbox": [
+              59.29,
+              376.12,
+              965.96,
+              645.06
+            ],
+            "visual_label": "5"
+          }
+        },
+        {
+          "label": "编号8红外传感系统",
+          "predicate": "contains",
+          "subject": [
+            "DJI Air 2S"
+          ],
+          "object": [
+            "红外传感系统"
+          ],
+          "evidence": {
+            "page": 9,
+            "text_contains": [
+              "红外传感系统"
+            ],
+            "bbox": [
+              59.29,
+              376.12,
+              965.96,
+              645.06
+            ],
+            "visual_label": "8"
+          }
+        },
+        {
+          "label": "编号17存储卡槽",
+          "predicate": "contains",
+          "subject": [
+            "DJI Air 2S"
+          ],
+          "object": [
+            "microSD 卡槽",
+            "microSD卡槽"
+          ],
+          "evidence": {
+            "page": 9,
+            "text_contains": [
+              "microSD"
+            ],
+            "bbox": [
+              59.29,
+              376.12,
+              965.96,
+              645.06
+            ],
+            "visual_label": "17"
+          }
+        }
+      ]
+    },
+    {
+      "id": "DJI-specifications",
+      "targets": [
+        {
+          "label": "整机起飞重量",
+          "predicate": "has_parameter",
+          "subject": [
+            "DJI Air 2S"
+          ],
+          "value_contains": [
+            "595 g"
+          ],
+          "attribute": [
+            "起飞重量"
+          ],
+          "evidence": {
+            "page": 50,
+            "text_contains": [
+              "起飞重量",
+              "595 g"
+            ]
+          }
+        },
+        {
+          "label": "续航参数与试验条件",
+          "predicate": "has_parameter",
+          "subject": [
+            "DJI Air 2S"
+          ],
+          "value_contains": [
+            "31 分钟"
+          ],
+          "attribute": [
+            "最长飞行时间"
+          ],
+          "qualifier_contains": [
+            "19.4"
+          ],
+          "evidence": {
+            "page": 50,
+            "text_contains": [
+              "最长飞行时间",
+              "无风环境 19.4 km/h 匀速飞行"
+            ]
+          }
+        },
+        {
+          "label": "飞行海拔高度",
+          "predicate": "has_parameter",
+          "subject": [
+            "DJI Air 2S"
+          ],
+          "value_contains": [
+            "5000 m"
+          ],
+          "attribute": [
+            "最大飞行海拔高度"
+          ],
+          "evidence": {
+            "page": 50,
+            "text_contains": [
+              "最大飞行海拔高度",
+              "5000 m"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "DJI-procedure",
+      "targets": [
+        {
+          "label": "桨叶安装至电机桨座",
+          "predicate": "installed_on",
+          "subject": [
+            "螺旋桨",
+            "带标记的螺旋桨",
+            "不带标记的螺旋桨"
+          ],
+          "object": [
+            "电机桨座",
+            "电机安装座",
+            "电机",
+            "带标记的电机桨座",
+            "不带标记的电机桨座"
+          ],
+          "evidence": {
+            "page": 26,
+            "text_contains": [
+              "安装"
+            ],
+            "bbox": [
+              57.73,
+              434.43,
+              943.48,
+              815.78
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "DJI-led_states",
+      "targets": [
+        {
+          "label": "四灯常亮对应至少88%",
+          "predicate": "indicates",
+          "subject": [
+            "智能飞行电池",
+            "电池"
+          ],
+          "value_contains": [
+            "电量≥ 88%",
+            "≥88%"
+          ],
+          "led_pattern": [
+            "steady",
+            "steady",
+            "steady",
+            "steady"
+          ],
+          "operating_state": "level_check",
+          "evidence": {
+            "page": 28,
+            "text_contains": [
+              "电量≥ 88%"
+            ],
+            "bbox": [
+              57.1,
+              424.9,
+              942.85,
+              625.51
+            ]
+          }
+        },
+        {
+          "label": "最后一灯闪烁的区间",
+          "predicate": "indicates",
+          "subject": [
+            "智能飞行电池",
+            "电池"
+          ],
+          "value_contains": [
+            "75% ≤电量＜88%"
+          ],
+          "led_pattern": [
+            "steady",
+            "steady",
+            "steady",
+            "blinking"
+          ],
+          "operating_state": "level_check",
+          "evidence": {
+            "page": 28,
+            "text_contains": [
+              "75% ≤电量＜88%"
+            ],
+            "bbox": [
+              57.1,
+              424.9,
+              942.85,
+              625.51
+            ]
+          }
+        },
+        {
+          "label": "第一灯闪烁的低电量",
+          "predicate": "indicates",
+          "subject": [
+            "智能飞行电池",
+            "电池"
+          ],
+          "value_contains": [
+            "0% ≤电量＜13%"
+          ],
+          "led_pattern": [
+            "blinking",
+            "off",
+            "off",
+            "off"
+          ],
+          "operating_state": "level_check",
+          "evidence": {
+            "page": 28,
+            "text_contains": [
+              "0% ≤电量＜13%"
+            ],
+            "bbox": [
+              57.1,
+              424.9,
+              942.85,
+              625.51
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "PARROT-parts",
+      "targets": [
+        {
+          "label": "编号3 GNSS天线",
+          "predicate": "contains",
+          "subject": [
+            "Parrot ANAFI Ai",
+            "ANAFI Ai"
+          ],
+          "object": [
+            "GNSS antenna"
+          ],
+          "evidence": {
+            "page": 17,
+            "text_contains": [
+              "GNSS antenna"
+            ],
+            "bbox": [
+              170.09,
+              77.5,
+              851.7,
+              394.65
+            ],
+            "visual_label": "3"
+          }
+        },
+        {
+          "label": "编号7电池",
+          "predicate": "contains",
+          "subject": [
+            "Parrot ANAFI Ai",
+            "ANAFI Ai"
+          ],
+          "object": [
+            "Smart battery"
+          ],
+          "evidence": {
+            "page": 17,
+            "text_contains": [
+              "Smart battery"
+            ],
+            "bbox": [
+              115.91,
+              395.54,
+              907.14,
+              678.83
+            ],
+            "visual_label": "7"
+          }
+        }
+      ]
+    },
+    {
+      "id": "PARROT-specifications",
+      "targets": [
+        {
+          "label": "整机质量不能错配电池或遥控器",
+          "predicate": "has_parameter",
+          "subject": [
+            "Parrot ANAFI Ai",
+            "ANAFI Ai"
+          ],
+          "value_contains": [
+            "898 g"
+          ],
+          "attribute": [
+            "Mass"
+          ],
+          "evidence": {
+            "page": 14,
+            "text_contains": [
+              "Mass: 898 g"
+            ]
+          }
+        },
+        {
+          "label": "最大起飞质量与自身质量分开",
+          "predicate": "has_parameter",
+          "subject": [
+            "Parrot ANAFI Ai",
+            "ANAFI Ai"
+          ],
+          "value_contains": [
+            "1,170 g"
+          ],
+          "attribute": [
+            "Maximum take-off mass (MTOM)"
+          ],
+          "evidence": {
+            "page": 14,
+            "text_contains": [
+              "Maximum take-off mass (MTOM): 1,170 g"
+            ]
+          }
+        },
+        {
+          "label": "整机续航",
+          "predicate": "has_parameter",
+          "subject": [
+            "Parrot ANAFI Ai",
+            "ANAFI Ai"
+          ],
+          "value_contains": [
+            "32 minutes"
+          ],
+          "attribute": [
+            "Maximum flight time"
+          ],
+          "evidence": {
+            "page": 14,
+            "text_contains": [
+              "Maximum flight time: 32 minutes"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "PARROT-procedure",
+      "targets": [
+        {
+          "label": "存储卡插入步骤关联上方存储卡图而非下方SIM图",
+          "predicate": "instruction",
+          "subject": [
+            "microSD card",
+            "Parrot ANAFI Ai",
+            "ANAFI Ai"
+          ],
+          "value_contains": [
+            "Insert the microSD card into the keyed slot"
+          ],
+          "evidence": {
+            "page": 19,
+            "text_contains": [
+              "Insert the microSD card into the keyed slot"
+            ],
+            "bbox": [
+              228.04,
+              126.5,
+              795.0,
+              332.29
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "PARROT-led_states",
+      "targets": [
+        {
+          "label": "充电时第一灯闪烁",
+          "predicate": "indicates",
+          "subject": [
+            "smart battery",
+            "Smart LiPo battery",
+            "battery"
+          ],
+          "value_contains": [
+            "0 - 25% charged"
+          ],
+          "led_pattern": [
+            "blinking",
+            "off",
+            "off",
+            "off"
+          ],
+          "operating_state": "charging",
+          "evidence": {
+            "page": 23,
+            "text_contains": [
+              "0 - 25% charged"
+            ],
+            "bbox": [
+              187.6,
+              155.45,
+              835.45,
+              399.55
+            ]
+          }
+        },
+        {
+          "label": "充满电时四灯熄灭",
+          "predicate": "indicates",
+          "subject": [
+            "smart battery",
+            "Smart LiPo battery",
+            "battery"
+          ],
+          "value_contains": [
+            "Fully charged"
+          ],
+          "led_pattern": [
+            "off",
+            "off",
+            "off",
+            "off"
+          ],
+          "operating_state": "charging",
+          "evidence": {
+            "page": 23,
+            "text_contains": [
+              "Fully charged"
+            ],
+            "bbox": [
+              187.6,
+              155.45,
+              835.45,
+              399.55
+            ]
+          }
+        },
+        {
+          "label": "通电使用时四灯常亮",
+          "predicate": "indicates",
+          "subject": [
+            "smart battery",
+            "Smart LiPo battery",
+            "battery"
+          ],
+          "value_contains": [
+            "76 - 100% charged"
+          ],
+          "led_pattern": [
+            "steady",
+            "steady",
+            "steady",
+            "steady"
+          ],
+          "operating_state": "powered_on",
+          "evidence": {
+            "page": 23,
+            "text_contains": [
+              "76 - 100% charged"
+            ],
+            "bbox": [
+              128.64,
+              459.23,
+              894.41,
+              648.99
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "negative_associations": [
+    {
+      "id": "N01",
+      "case_id": "DJI-parts",
+      "reason": "云台相机原文配到了手机/遥控器图片，而非编号5飞行器图",
+      "proposal": {
+        "entities": [
+          {
+            "key": "e1",
+            "surface_text": "一体式云台相机",
+            "entity_type": "component",
+            "evidence": [
+              {
+                "page": 9,
+                "text_ids": [
+                  "l8"
+                ],
+                "region_ids": [
+                  "r2"
+                ],
+                "visual_label": "5"
+              }
+            ]
+          }
+        ],
+        "facts": [
+          {
+            "subject": "e0",
+            "predicate": "contains",
+            "object": "e1",
+            "evidence": [
+              {
+                "page": 9,
+                "text_ids": [
+                  "l8"
+                ],
+                "region_ids": [
+                  "r2"
+                ],
+                "visual_label": "5"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "N02",
+      "case_id": "PARROT-procedure",
+      "reason": "microSD插卡步骤错绑下方nano SIM插卡图，正文虽对也不能通过图片审核",
+      "proposal": {
+        "entities": [
+          {
+            "key": "e1",
+            "surface_text": "microSD card",
+            "entity_type": "component",
+            "evidence": [
+              {
+                "page": 19,
+                "text_ids": [
+                  "l3"
+                ],
+                "region_ids": []
+              }
+            ]
+          }
+        ],
+        "facts": [
+          {
+            "subject": "e1",
+            "predicate": "instruction",
+            "value": "Insert the microSD card into the keyed slot.",
+            "evidence": [
+              {
+                "page": 19,
+                "text_ids": [
+                  "l8"
+                ],
+                "region_ids": [
+                  "r1"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "N03",
+      "case_id": "DJI-led_states",
+      "reason": "电量至少88%不能错配为四灯熄灭",
+      "proposal": {
+        "entities": [
+          {
+            "key": "e1",
+            "surface_text": "智能飞行电池",
+            "entity_type": "component",
+            "evidence": [
+              {
+                "page": 28,
+                "text_ids": [
+                  "l3"
+                ],
+                "region_ids": []
+              }
+            ]
+          }
+        ],
+        "facts": [
+          {
+            "subject": "e1",
+            "predicate": "indicates",
+            "value": "电量≥ 88%",
+            "led_pattern": [
+              "off",
+              "off",
+              "off",
+              "off"
+            ],
+            "operating_state": "level_check",
+            "evidence": [
+              {
+                "page": 28,
+                "text_ids": [
+                  "l15"
+                ],
+                "region_ids": [
+                  "r0"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "N04",
+      "case_id": "PARROT-led_states",
+      "reason": "充电状态的Fully charged行是四灯熄灭，不能拿下表通电使用的四灯常亮替代",
+      "proposal": {
+        "entities": [
+          {
+            "key": "e1",
+            "surface_text": "battery",
+            "entity_type": "component",
+            "evidence": [
+              {
+                "page": 23,
+                "text_ids": [
+                  "l6"
+                ],
+                "region_ids": []
+              }
+            ]
+          }
+        ],
+        "facts": [
+          {
+            "subject": "e1",
+            "predicate": "indicates",
+            "value": "Fully charged",
+            "led_pattern": [
+              "steady",
+              "steady",
+              "steady",
+              "steady"
+            ],
+            "operating_state": "charging",
+            "evidence": [
+              {
+                "page": 23,
+                "text_ids": [
+                  "l16"
+                ],
+                "region_ids": [
+                  "r1"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+# Standalone graph target for the current video build pipeline.
+# docker compose --env-file .env.video-graph-next -f docker-compose.neo4j-next.yml up -d
+name: rag-video-graph-next
+
+services:
+  neo4j-next:
+    image: neo4j:5.26-community
+    container_name: intelligence-rag-neo4j-next
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in .env.video-graph-next}
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 512m
+    ports:
+      - "127.0.0.1:7475:7474"
+      - "127.0.0.1:7688:7687"
+    volumes:
+      - neo4j-next-data:/data
+      - neo4j-next-logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  neo4j-next-data:
+  neo4j-next-logs:

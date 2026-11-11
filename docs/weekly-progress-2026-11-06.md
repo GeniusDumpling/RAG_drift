@@ -113,8 +113,8 @@ A、B 两组均完成 **20/20** 个片段，失败与待运行均为 0，使用�
 
 ## 4. 查阅入口
 
-- [最终抽取方案与双组结果](relation-direction-and-recall-2026-11-05.md) · [完整构建管线](video-graph-build-pipeline-2026-11-05.md)
-- [实体评测口径](entity-gold-evaluation.md) · [关系评测口径](relation-gold-evaluation.md)
+- [最终抽取方案与双组结果](knowledge-graph-history.md#relation-direction-and-recall-2026-11-05) · [完整构建管线](knowledge-graph-history.md#video-graph-build-pipeline-2026-11-05)
+- [实体评测口径](knowledge-graph-evaluation.md#实体计分) · [关系评测口径](knowledge-graph-evaluation.md#关系计分)
 - [A组关系原始结果](../data/video_graph_runs/relation-direction-r3-20261105.json) · [B组关系原始结果](../data/video_graph_runs/relation-direction-r3-repeat-20261105.json)
 - [A组实体指标](../data/video_graph_runs/relation-direction-r3-entity-metrics-20261105.json) · [B组实体指标](../data/video_graph_runs/relation-direction-r3-repeat-entity-metrics-20261105.json)
 

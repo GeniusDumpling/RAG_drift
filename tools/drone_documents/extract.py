@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup, Tag
 from . import PIPELINE_VERSION
 from .catalog import Catalog, indexed_path
 from .common import Assets, digest, now, progress, seal_bundle, uid, write_json, write_jsonl
+from .geometry import _merge_boxes
 from .language import (
     FOREIGN_MARKERS,
     HAN,
@@ -86,22 +87,6 @@ def _render(page, assets: Assets, *, clip=None, max_edge=1800) -> str:
     return assets.add(
         pixmap.tobytes("png"), ".png", "image/png", width=pixmap.width, height=pixmap.height
     )
-
-
-def _merge_boxes(boxes: list, page_rect) -> list:
-    merged = []
-    for box in boxes:
-        box = pymupdf.Rect(box) & page_rect
-        if box.width < 25 or box.height < 22 or box.get_area() < 900:
-            continue
-        for previous in merged:
-            intersection = (previous & box).get_area()
-            if intersection / max(1, min(previous.get_area(), box.get_area())) > 0.2:
-                previous |= box
-                break
-        else:
-            merged.append(box)
-    return sorted(merged, key=lambda b: b.get_area(), reverse=True)[:8]
 
 
 def _section(toc: list, page_no: int, title: str) -> str:

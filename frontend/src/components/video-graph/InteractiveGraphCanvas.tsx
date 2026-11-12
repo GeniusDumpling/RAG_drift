@@ -5,9 +5,10 @@ import { DARK_ENTITY_COLORS, DEFAULT_GRAPH_APPEARANCE, ENTITY_LABELS, PREDICATE_
 import type { GraphAppearance } from './presentation';
 import { nodeRelationCounts, parallelEdgeStyles } from './data';
 import { atMinimumZoom, fitDefaultViewport, INITIAL_ZOOM_RANGE } from './viewport';
+import { BrowserGraphCanvas } from './BrowserGraphCanvas';
 
 export type GraphDimension = '2d' | '3d';
-type Props = {
+export type GraphCanvasProps = {
   graph: VideoGraphData; focusId: string; selectedEdge: string; expandingId: string;
   onFocus: (node: VideoGraphNode) => void;
   onExpand: (node: VideoGraphNode) => Promise<void>;
@@ -17,6 +18,7 @@ type Props = {
   onHover?: (node: VideoGraphNode | null) => void;
   dimension?: GraphDimension;
   onUnavailable?: (message: string) => void;
+  expandedIds?: string[];
 };
 function forceLayoutOptions(appearance = DEFAULT_GRAPH_APPEARANCE, is3D = false): LayoutOptions {
   if (is3D) return { type: 'd3-force-3d', preLayout: true, iterations: 180, numDimensions: 3,
@@ -46,7 +48,11 @@ function graphData(data: VideoGraphData, instance?: Graph, is3D = false): GraphD
   };
 }
 
-export function InteractiveGraphCanvas(props: Props) {
+export function InteractiveGraphCanvas(props: GraphCanvasProps) {
+  return props.dimension === '3d' ? <G6GraphCanvas {...props} /> : <BrowserGraphCanvas {...props} />;
+}
+
+function G6GraphCanvas(props: GraphCanvasProps) {
   const is3D = props.dimension === '3d';
   const host = useRef<HTMLDivElement>(null);
   const instance = useRef<Graph | null>(null);
@@ -273,7 +279,8 @@ export function InteractiveGraphCanvas(props: Props) {
           });
           observer.observe(host.current);
         }
-      } catch {
+      } catch (reason) {
+        console.warn('Graph renderer initialization failed', reason);
         if (!disposed) {
           if (is3D && latest.current.onUnavailable) latest.current.onUnavailable('当前设备暂时无法显示 3D 图谱，已切换为 2D，可再次点击 3D 重试。');
           else { setBusy(false); setError('交互画布加载失败，请重新加载页面重试。'); }

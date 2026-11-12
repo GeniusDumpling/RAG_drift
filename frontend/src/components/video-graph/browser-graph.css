@@ -1,0 +1,25 @@
+.browser-graph { position: relative; height: 100%; min-height: 360px; overflow: hidden; background: #fff; }
+.browser-graph-svg { display: block; width: 100%; height: 100%; min-height: 360px; touch-action: none; user-select: none; }
+.browser-graph-svg [data-node-id]:focus, .browser-graph-svg [data-edge-id]:focus { outline: none; }
+.browser-graph-svg [data-node-id]:focus-visible > circle:not([data-pin]) { stroke: #a8c8e4; stroke-width: 3; }
+.browser-graph-svg [data-edge-id]:focus-visible > path:not([stroke="transparent"]) { stroke: #2879bd; }
+.browser-overview { position: absolute; top: 55px; left: 20px; right: 20px; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; max-height: 90px; overflow-y: auto; pointer-events: auto; }
+.browser-overview-heading { color: #6b7580; font-size: 10px; margin-right: 4px; }
+.obsidian-workbench .browser-overview button { min-height: 24px; padding: 3px 8px; border: 1px solid #d9dfe5; border-radius: 12px; background: #fffffff0; color: #455264; font-size: 10px; display: inline-flex; align-items: center; gap: 5px; }
+.browser-overview i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; }
+.browser-overview small { color: #7b838e; font-size: 9px; }
+.browser-style-panel { position: absolute; top: 150px; left: 20px; z-index: 6; width: 235px; padding: 15px; display: grid; gap: 12px; background: #fff; border: 1px solid #dbe0e6; border-radius: 8px; box-shadow: 0 6px 24px #25344920; font-size: 11px; }
+.browser-style-panel label { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.browser-style-panel input[type=color] { padding: 0; width: 50px; height: 26px; }
+.browser-style-panel input[type=range] { width: 120px; }
+.browser-style-panel select { width: 120px; }
+.browser-node-actions { position: absolute; z-index: 4; display: flex; gap: 1px; padding: 3px; border: 1px solid #ccd5df; border-radius: 5px; background: #fff; box-shadow: 0 3px 12px #25344920; }
+.obsidian-workbench .browser-node-actions button { padding: 4px 7px; min-height: 25px; font-size: 10px; color: #3e607f; }
+.browser-context-menu { position: absolute; z-index: 7; width: 175px; padding: 5px; display: grid; gap: 2px; border: 1px solid #d4dce4; border-radius: 5px; background: #fff; box-shadow: 0 6px 24px #25344925; }
+.obsidian-workbench .browser-context-menu button { text-align: left; padding: 6px 10px; color: #34495e; font-size: 11px; }
+.browser-graph-tools { position: absolute; left: 20px; bottom: 57px; z-index: 3; display: flex; flex-wrap: wrap; gap: 5px; max-width: calc(100% - 40px); background: #fffffff0; border: 1px solid #e0e5ea; border-radius: 5px; padding: 4px; }
+.browser-graph-tools label { display: flex; align-items: center; gap: 6px; padding-left: 5px; font-size: 10px; color: #75808b; }
+.browser-graph-tools input { width: 120px; padding: 4px 6px; min-height: 25px; }
+.obsidian-workbench .browser-graph-tools button { font-size: 10px; min-height: 25px; padding: 3px 7px; }
+.browser-export-notice, .browser-empty { position: absolute; top: 45%; left: 20%; right: 20%; text-align: center; color: #62788b; }
+@media (max-width: 680px) { .browser-overview { left: 10px; right: 10px; max-height: 70px; } .browser-graph-tools { left: 10px; bottom: 70px; } .browser-graph-tools input { width: 90px; } }

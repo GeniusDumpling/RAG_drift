@@ -186,6 +186,11 @@ def sync_chunks(
             .order_by(ContentChunk.chunk_index)
         )
     )
+    existing = [
+        chunk
+        for chunk in existing
+        if chunk.chunk_metadata_json.get("chunk_owner") != "ifixit_media"
+    ]
     by_key = {c.chunk_metadata_json.get("logical_chunk_key"): c for c in existing}
     if any(c.chunk_metadata_json.get("chunk_owner") != OWNER for c in existing):
         raise ValueError("refusing to overwrite chunks owned by another pipeline")
@@ -548,6 +553,8 @@ def index_bundle(
             )
         )
         for chunk in chunks:
+            if chunk.chunk_metadata_json.get("chunk_owner") == "ifixit_media":
+                continue
             try:
                 if any(chunk.chunk_metadata_json.get(k) != v for k, v in target.items()):
                     if chunk.vector_point_id:

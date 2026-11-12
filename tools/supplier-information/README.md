@@ -18,7 +18,11 @@ uv run alembic upgrade head
 - `BAIDU_QIANFAN_API_KEY`：百度搜索及自动回退。
 - `DATABASE_URL` / `SYNC_DATABASE_URL`：供应商数据库。
 
-`--provider brave|baidu|auto` 选择搜索源。显式指定时错误直接上报；`auto` 优先 Brave，在认证或限流错误时可回退至已配置的百度。Parrot、Skydio 默认执行英文和中文多条查询并合并去重，而不是仅翻译一个关键词。搜索结果和官方起始来源共同参与采集；`--max-results` 限制最终采集文档数，起始来源优先。
+`--provider brave|baidu|auto` 选择搜索源。`auto` 优先使用已配置的 Brave，在 HTTP 401/403/422/429 时可回退至已配置的百度；Brave 返回 HTTP 402 时也回退百度，包括显式指定 `--provider brave` 的情况。百度返回 HTTP 402 时立即停止本轮搜索及剩余供应商验证，保存已有验证结果、诊断和失败报告，并以非零退出码结束任务；下次定时触发仍可再次尝试。未配置百度凭据时直接上报 Brave 错误。
+
+三个品牌默认每次查询均请求 API 的单次最大网页返回量：Brave `count=20`，百度 `web.top_k=50`；实际返回数可能少于请求值，不额外翻页。Parrot、Skydio 默认执行英文和中文多条查询并合并去重。采集不再截断为 6 份文档，处理所有返回结果和官方起始来源；验证处理当前模式下的全部供应商，并抓取全部返回结果及原始来源。`search.max_results`、`verify.search_limit`、`verify.fetch_limit`、`verify.max_suppliers` 的 `0` 均表示不额外限制。`--max-results`、`--fetch-limit`、`--max-suppliers` 仍可显式缩小本次运行规模。
+
+API 上限参考：[Brave Web Search](https://api-dashboard.search.brave.com/api-reference/web/search/get)、[百度 AI 搜索升级说明](https://qianfan.cloud.baidu.com/qianfandev/topic/686145)。
 
 ## 执行
 

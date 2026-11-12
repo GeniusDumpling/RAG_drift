@@ -25,6 +25,14 @@ class Settings(LLMSettings):
     document_graph_artifacts_dir: Path = Field(
         default=Path("data/document_graph_runs"), alias="DOCUMENT_GRAPH_ARTIFACTS_DIR"
     )
+    document_graph_neo4j_uri: str | None = Field(default=None, alias="DOCUMENT_GRAPH_NEO4J_URI")
+    document_graph_neo4j_user: str = Field(default="neo4j", alias="DOCUMENT_GRAPH_NEO4J_USER")
+    document_graph_neo4j_password: str | None = Field(
+        default=None, alias="DOCUMENT_GRAPH_NEO4J_PASSWORD", repr=False
+    )
+    document_graph_neo4j_database: str = Field(
+        default="neo4j", alias="DOCUMENT_GRAPH_NEO4J_DATABASE"
+    )
     document_artifacts_source_root: Path | None = Field(
         default=None, alias="DOCUMENT_ARTIFACTS_SOURCE_ROOT"
     )
@@ -67,7 +75,7 @@ class Settings(LLMSettings):
         default=8000, ge=100, alias="RERANKER_DOCUMENT_MAX_CHARS"
     )
     answer_max_evidence: int = Field(default=8, ge=1, le=50, alias="ANSWER_MAX_EVIDENCE")
-    answer_graph_enabled: bool = Field(default=True, alias="ANSWER_GRAPH_ENABLED")
+    answer_graph_enabled: bool = Field(default=False, alias="ANSWER_GRAPH_ENABLED")
     answer_graph_top_k: int = Field(default=10, ge=1, le=30, alias="ANSWER_GRAPH_TOP_K")
     answer_graph_timeout_seconds: float = Field(
         default=5, gt=0, le=30, alias="ANSWER_GRAPH_TIMEOUT_SECONDS"
@@ -89,6 +97,13 @@ class Settings(LLMSettings):
     neo4j_user: str = Field(default="neo4j", alias="NEO4J_USER")
     neo4j_password: str | None = Field(default=None, alias="NEO4J_PASSWORD")
     neo4j_database: str = Field(default="neo4j", alias="NEO4J_DATABASE")
+    unified_graph_enabled: bool = Field(default=False, alias="UNIFIED_GRAPH_ENABLED")
+    unified_graph_neo4j_uri: str | None = Field(default=None, alias="UNIFIED_GRAPH_NEO4J_URI")
+    unified_graph_neo4j_user: str = Field(default="neo4j", alias="UNIFIED_GRAPH_NEO4J_USER")
+    unified_graph_neo4j_password: str | None = Field(
+        default=None, alias="UNIFIED_GRAPH_NEO4J_PASSWORD", repr=False
+    )
+    unified_graph_neo4j_database: str = Field(default="neo4j", alias="UNIFIED_GRAPH_NEO4J_DATABASE")
 
     # VLM settings
     vlm_base_url: str = Field(default="https://api.siliconflow.cn/v1", alias="VLM_BASE_URL")

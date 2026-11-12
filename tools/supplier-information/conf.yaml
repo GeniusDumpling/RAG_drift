@@ -12,8 +12,6 @@ brands:
     search:
       provider: auto
       keyword: Parrot drone component suppliers
-      top_k: 6
-      max_results: 6
       fetch_retries: 2
       queries:
         - {q: 'Parrot ANAFI official white paper components suppliers', language: en}
@@ -22,7 +20,6 @@ brands:
       seed_urls:
         - https://www.parrot.com/assets/s3fs-public/2023-02/ANAFI-USA-white-paper-en.pdf
         - https://www.parrot.com/assets/s3fs-public/document/ANAFI%20UKR%20white%20paper.pdf
-    verify: {search_limit: 6, fetch_limit: 3, fetch_delay: 0.5, max_suppliers: 3}
   skydio:
     name: Skydio
     aliases: [Skydio, Skydio Inc, Skydio Inc.]
@@ -30,8 +27,6 @@ brands:
     search:
       provider: auto
       keyword: Skydio drone component suppliers
-      top_k: 6
-      max_results: 6
       fetch_retries: 2
       queries:
         - {q: 'Skydio suppliers', language: en}
@@ -41,7 +36,6 @@ brands:
         - https://www.nidec.com/en/product/news/2024/news0722-01/
         - https://oem.flir.com/about/news/innovating-the-most-sensitive-uncooled-thermal-camera-drone-payload-with-skydio/
         - https://www.skydio.com/x10
-    verify: {search_limit: 6, fetch_limit: 3, fetch_delay: 0.5, max_suppliers: 3}
 
 # 百度/Brave 搜索；英文品牌默认优先使用 Brave。
 search:
@@ -51,7 +45,8 @@ search:
   edition: standard
   search_source: baidu_search_v2
   recency_filter: none           # 网页日期，none(不限) | week(7天) | month(30天) | semiyear(180天) | year(365天)
-  top_k: 50               
+  top_k: 50                     # 百度网页上限 50；Brave 请求自动封顶为 20
+  max_results: 0                # 不截断：采集全部查询结果与起始来源，按 URL 去重
   safe_search: false 
 
   # 资源类型过滤
@@ -93,10 +88,10 @@ llm:
 verify:
   enabled: true                # 是否启用验证环节
   mode: unverified             # unverified=只验证未验证项（增量）| all=重验全部
-  search_limit: 50             # 百度定向搜索取的条数上限（实际只用前 fetch_limit 条）
-  fetch_limit: 50              # 每个供应商抓取全文的条数
+  search_limit: 0              # 0=使用 API 返回的全部搜索结果
+  fetch_limit: 0               # 0=抓取全部搜索结果及原始证据来源，按 URL 去重
   fetch_delay: 0.5             # 每条抓取间隔（秒）
-  max_suppliers: 3             # 0=不限；正整数表示最多验证多少家（用于控制成本）
+  max_suppliers: 0             # 0=验证当前模式下的全部供应商
 
 
 

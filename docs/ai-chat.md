@@ -2,6 +2,8 @@
 
 AI 问答对专业问题先检索知识库，再基于本轮证据生成带编号引用的答案；纯寒暄等消息自然回复。前端使用流式接口，原有 JSON `/answer` 保持可用。
 
+2026-11-12 已发布问答耗时优化：关键词查询按问题选择索引候选或原短路计划，向量与关键词并行，复用完整重复上下文。新增 `generation.first_token_ms`、`generation.timings` 和检索分支耗时；实现、对照、发布与回退见 [耗时优化记录](answer-latency-optimization-2026-11-12.md)。
+
 ## 对话意图与上下文优先级
 
 - 当前用户消息决定本轮任务。历史用于明确承接前文的指代与省略，不能把当前寒暄或新话题强行变成旧型号的问题。
@@ -30,9 +32,19 @@ AI 问答对专业问题先检索知识库，再基于本轮证据生成带编�
 
 检索 trace 的 `ranking_version=phrase-coverage-v1` 标识本次排序规则，`model_phrases` 保存从实际检索问题识别的型号短语。旧视频向量缺少 `item_type` 时允许进入候选，随后仍按 PostgreSQL 的真实类型过滤；新采集视频会写入类型、来源、语言等过滤字段。详细修复与验证见 [检索排序修复记录](retrieval-ranking-fix-2026-10-21.md)。
 
-## 知识图谱接入（2026-11-06）
+## 知识图谱与 RAG 已断开（2026-11-11）
 
-专业问答在混合检索后调用图谱检索能力，`/video-graph/retrieve` 与问答共享 `retrieve_graph_context` 服务，统一查询 Neo4j，再回 PostgreSQL 校验业务切片。图谱模块位于 `app/services/video_graph/`，旧后端选择配置已删除。寒暄分支不查询图谱，普通 `/search` 不改变。
+当前默认及本地 `.env` 均为 `ANSWER_GRAPH_ENABLED=false`。知识问答只执行关键词/向量检索、reranker 和生成；关闭时在问答主流程直接跳过图谱召回和证据合并，不输出 `graph_retrieving` 进度，`generation.graph_retrieval.status=disabled`。`docker-compose.deploy.yml` 显式透传该配置并默认关闭。
+
+独立的 `/video-graph/retrieve`、图谱浏览、构建及存储接口继续可用。以下是保留的可选接入机制，仅显式设置 `ANSWER_GRAPH_ENABLED=true` 后才启用。
+
+检查运行中的 `intelligence-rag-app`（`rag-parrot-note:20261106-v1`）发现：Settings 尚无图谱问答开关，`SearchService.stream_answer` 也没有图谱调用，线上本来未接入；本次无需重启或更换镜像。
+
+验证：问答与生成测试共 34 项通过、9 项因未配置独立 Neo4j 测试实例而跳过；新增 JSON/SSE 测试将图谱召回替换成禁止调用的函数，验证关闭状态下仍正常返回普通 RAG 证据，且没有图谱进度与关系上下文。相关 Ruff 和问答模块类型检查通过。
+
+## 保留的可选图谱接入（2026-11-06）
+
+显式启用后，专业问答在混合检索后调用图谱检索能力，`/video-graph/retrieve` 与问答共享 `retrieve_graph_context` 服务，统一查询 Neo4j，再回 PostgreSQL 校验业务切片。图谱模块位于 `app/services/video_graph/`，旧后端选择配置已删除。寒暄分支不查询图谱，普通 `/search` 不改变。
 
 图谱通过问题中的显式实体别名进行一跳关系召回。返回的证据按当前数据库中的原文切片补齐来源信息，执行与普通检索相同的来源、类型、语言、标签及发布时间筛选，排除 obsolete 切片，并再次核验引句能否在当前切片定位。无原文切片、关系端点不完整或引句已失效的条目不进入回答。
 
@@ -40,9 +52,9 @@ AI 问答对专业问题先检索知识库，再基于本轮证据生成带编�
 
 `supporting_evidence[].graph_evidence` 保存关系 ID、主谓宾、原文引句、陈述状态、适用条件及时间定位 URL。生成上下文及重排文本包含这些关系线索；长引句允许明确标记截断，状态与条件不按头尾裁剪。提示词要求保留 negated/uncertain，不得把关系路径或抽取置信度当作兼容性、因果关系或已核实事实。
 
-配置默认启用：
+配置默认关闭：
 
-- `ANSWER_GRAPH_ENABLED=true`：是否为知识问答补充图谱证据。
+- `ANSWER_GRAPH_ENABLED=false`：默认断开图谱问答；显式改为 `true` 才补充图谱证据。
 - `ANSWER_GRAPH_TOP_K=10`：图谱接口返回的证据条目上限（1–30），去重和过滤后可能更少。
 - `ANSWER_GRAPH_TIMEOUT_SECONDS=5`：图谱召回及原文补齐的总等待上限。
 
@@ -114,7 +126,7 @@ JSON 响应及流式 `done` 事件增加 `generation`：
 
 事件依次包含：
 
-1. `status`：知识问答包含 `retrieving`、`graph_retrieving`、可选的 `reranking`、`generating`；普通对话仅包含 `generating`。
+1. `status`：知识问答包含 `retrieving`、显式启用图谱时的 `graph_retrieving`、可选的 `reranking`、`generating`；普通对话仅包含 `generating`。
 2. `evidence`：检索记录 ID、问答 ID 和本轮支持证据。
 3. `delta`：模型生成的文本增量，形如 `{"text":"内容"}`。
 4. `reset`：出现降级时提供完整替换文本和生成状态。

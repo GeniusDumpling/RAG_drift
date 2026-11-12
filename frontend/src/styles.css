@@ -983,3 +983,11 @@ progress { width: 100%; height: 6px; accent-color: var(--accent); }
   .graph-viewport-controls { flex-wrap: wrap; }
   .graph-entity-inspector select { width: 185px; }
 }
+/* Source-bound repair images stay visible alongside the answer, with full-resolution links. */
+.evidence-images { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; margin: 16px 0; }
+.evidence-images figure { margin: 0; padding: 10px; border: 1px solid var(--border-color, #dce1e8); border-radius: 12px; background: var(--surface, #fff); min-width: 0; }
+.evidence-images img { display: block; width: 100%; height: 220px; object-fit: contain; background: #fff; border-radius: 6px; }
+.evidence-images figcaption { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; margin-top: 10px; font-size: 13px; }
+.evidence-images details { margin-top: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.evidence-images figure:first-child { grid-column: 1 / -1; }
+.evidence-images figure:first-child img { height: auto; max-height: 480px; }

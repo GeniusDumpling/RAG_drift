@@ -16,6 +16,7 @@ import db_ingest
 import requests as requests
 import supplier_config
 from baidu_search import (
+    SearchPaymentRequired,
     fetch_fulltext,
     load_conf,
     search,
@@ -152,18 +153,22 @@ def _verify_supplier(base, api_key, sup, search_conf, llm_conf, verify_conf):
     query = base["query"]
     profile = supplier_config.brand()
     result = search(query, {**search_conf, "language": profile.get("language", "en")})
-    refs = result.get("references", [])[: int(verify_conf.get("search_limit", 20))]
+    refs = result.get("references", [])
+    search_limit = int(verify_conf.get("search_limit", 0))
+    if search_limit > 0:
+        refs = refs[:search_limit]
     base["searched"] = len(refs)
     # Original evidence is retrieved again; search snippets alone never prove a relationship.
     sources = [{"url": url, "title": "Original source"} for url in sup.get("sources", [])]
     sources.extend(refs)
     seen, docs = set(), []
+    fetch_limit = int(verify_conf.get("fetch_limit", 0))
     for ref in sources:
         url = ref.get("url", "")
         if not url or url in seen:
             continue
         seen.add(url)
-        if len(seen) > int(verify_conf.get("fetch_limit", 10)):
+        if fetch_limit > 0 and len(seen) > fetch_limit:
             break
         body = fetch_fulltext(url, retries=int(search_conf.get("fetch_retries", 2)))
         if body:
@@ -291,6 +296,7 @@ def main(confirmed_path: str = "") -> str:
     logger.info(f"待验证供应商（mode={mode}）：{total}/{len(all_targets)} 家")
 
     results = []
+    abort_error = None
     for idx, sup in enumerate(targets, 1):
         logger.info(f"[{idx}/{total}] 验证：{sup['supplier']}")
         try:
@@ -300,6 +306,8 @@ def main(confirmed_path: str = "") -> str:
                 "    %s 验证失败：%s（诊断：%s）", sup["supplier"], e, e.result["diagnostic_path"]
             )
             res = e.result
+            if isinstance(e.__cause__, SearchPaymentRequired):
+                abort_error = e.__cause__
         except Exception as e:
             logger.warning(f"    {sup['supplier']} 验证失败：{e}")
             res = {
@@ -318,6 +326,9 @@ def main(confirmed_path: str = "") -> str:
                 "orig_supply": sup.get("supply", ""),
             }
         results.append(res)
+        if abort_error:
+            logger.error("%s; remaining suppliers will not be processed", abort_error)
+            break
     # 先落审计表，再以审计表同步 Markdown；不能由 Markdown 反向定义验证事实。
     try:
         db_ingest.ingest_supplier_verifications(results)
@@ -338,6 +349,8 @@ def main(confirmed_path: str = "") -> str:
         f"\n依据文档：{os.path.basename(path)}",
         f"验证时间：{datetime.now():%Y-%m-%d %H:%M:%S}",
         f"验证模式：{mode}，待验证供应商数：{total}",
+        f"任务状态：{'failed' if abort_error else 'ok'}，本轮已尝试：{len(results)}/{total}",
+        f"中止原因：{abort_error}" if abort_error else "",
         "",
         "## 验证结果汇总",
         "",
@@ -373,11 +386,19 @@ def main(confirmed_path: str = "") -> str:
         f.write("\n".join(lines))
     with open(out_path.replace(".md", ".json"), "w", encoding="utf-8") as handle:
         json.dump(
-            {"brand": supplier_config.brand()["name"], "results": results},
+            {
+                "brand": supplier_config.brand()["name"],
+                "status": "failed" if abort_error else "ok",
+                "error": str(abort_error) if abort_error else "",
+                "results": results,
+            },
             handle,
             ensure_ascii=False,
             indent=2,
         )
+    if abort_error:
+        logger.error("验证任务因搜索 HTTP 402 中止，部分结果已保存：%s", out_path)
+        raise abort_error
     logger.info(f"验证完成，结果已保存：{out_path}")
     return out_path
 

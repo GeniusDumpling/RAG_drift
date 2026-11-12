@@ -19,6 +19,7 @@ from app.services.video_graph.backfill import (
 )
 from app.services.video_graph.identity import entity_identity, stable_hash
 from app.services.video_graph.material import ENTITY_NAMESPACE, digest, load_material, locate_quote
+from app.services.video_graph.semantics import normalized_name
 from app.services.video_graph.validation import update_coverage, validate_extraction
 
 
@@ -121,6 +122,15 @@ def _stored_source_rows(session, snapshot, content_id, store):
     )
 
 
+def _entity_projection_equal(actual, expected):
+    # Shared identities use normalized_name in their UUID. The stored display
+    # spelling belongs to the first publisher and can differ in case/spacing.
+    return actual.keys() == expected.keys() and all(
+        kind == expected[eid][1] and normalized_name(name) == normalized_name(expected[eid][0])
+        for eid, (name, kind) in actual.items()
+    )
+
+
 def verify_projection(engine, content_id, version, fingerprint, *, store):
     """Read through the same graph/retrieval services as the API; never mutate a projection."""
     from app.services.video_graph.queries import GraphQueries
@@ -173,11 +183,21 @@ def verify_projection(engine, content_id, version, fingerprint, *, store):
         mentions, evidence = _stored_source_rows(session, snapshot, content_id, store)
         checks.update(
             graph_complete=not graph.truncated,
-            entities_equal=nodes == expected_nodes,
+            entities_equal=_entity_projection_equal(nodes, expected_nodes),
             relations_equal=edges == expected_edges,
             mentions_equal=mentions == expected_mentions,
             evidence_equal=evidence == expected_evidence,
         )
+        if getattr(store, "unified", False) is True:
+            from app.services.knowledge_graph.adapters import video_publication
+            from app.services.knowledge_graph.queries import verify
+            from app.services.knowledge_graph.schema import source_key
+
+            checks["unified_projection"] = verify(
+                store,
+                source_key("video", content_id),
+                video_publication(material, snapshot["id"], snapshot["output"], version),
+            )["verified"]
         result["counts"] = dict(
             entities=len(nodes),
             relations=len(edges),

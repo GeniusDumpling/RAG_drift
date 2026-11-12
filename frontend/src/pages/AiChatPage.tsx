@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createChatSession, deleteChatSession, getChatSession, listChatSessions, streamAnswer } from '../api/client';
 import type { ChatSession, ChatSessionDetail, EvidenceObject, GenerationInfo } from '../api/types';
 import { EvidenceCard } from '../components/EvidenceCard';
+import { EvidenceImages } from '../components/EvidenceImages';
 import { formatErrorMessage } from '../utils/errors';
 
 const SESSION_KEY = 'rag-chat-session';
@@ -252,6 +253,9 @@ export function AiChatPage({ initialQuery = '', onOpenContent }: AiChatPageProps
             <div className="chat-message-body">
               <p className="chat-role">{message.role === 'user' ? '你的问题' : answerLabel(message)}</p>
               <p className="chat-message-text">{message.text || (message.state === 'pending' ? stage : '')}</p>
+              {message.role === 'assistant' && message.evidence?.length
+                ? <EvidenceImages evidence={message.evidence}
+                    citedIndices={[...message.text.matchAll(/\[(\d+)\]/g)].map((match) => Number(match[1]))} /> : null}
               {message.generation?.status === 'fallback' ? (
                 <p className="chat-fallback">{message.generation.response_mode === 'conversation'
                   ? '模型暂不可用，已返回简短回复。'

@@ -44,11 +44,21 @@ def target_settings(settings: Settings, env_file: Path | None) -> Settings:
         "NEO4J_PASSWORD": "neo4j_password",
         "NEO4J_DATABASE": "neo4j_database",
     }
-    if set(values) - set(fields):
-        raise ValueError("Neo4j目标配置只允许URI、用户、密码和数据库名")
+    unified = {f"UNIFIED_GRAPH_{key}": f"unified_graph_{field}" for key, field in fields.items()}
+    enabled = values.get("UNIFIED_GRAPH_ENABLED", "").lower() in {"true", "1"}
+    if enabled:
+        fields = unified
+    allowed = set(fields) | ({"UNIFIED_GRAPH_ENABLED"} if enabled else set())
+    if set(values) != allowed:
+        raise ValueError("Neo4j目标配置须为完整独立连接或启用的统一图谱连接，不允许混合")
     if any(not isinstance(values.get(key), str) or not values[key].strip() for key in fields):
         raise ValueError("Neo4j目标配置必须完整提供URI、用户、密码和数据库名")
-    return settings.model_copy(update={field: values[key] for key, field in fields.items()})
+    return settings.model_copy(
+        update={
+            **{field: values[key] for key, field in fields.items()},
+            "unified_graph_enabled": enabled,
+        }
+    )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -97,9 +107,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             )
     for name in ("withdraw", "restore"):
         command = commands.add_parser(name)
-        command.add_argument(
-            "--neo4j-env-file", type=Path, help="选择要撤回或恢复的Neo4j目标"
-        )
+        command.add_argument("--neo4j-env-file", type=Path, help="选择要撤回或恢复的Neo4j目标")
         command.add_argument("--content-id", type=uuid.UUID, required=True)
     args = parser.parse_args(argv)
     if getattr(args, "limit", 1) < 1:

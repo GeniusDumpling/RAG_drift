@@ -1,5 +1,6 @@
 import type { EvidenceObject } from '../api/types';
 import { itemTypeLabel, safeExternalHref } from '../utils/links';
+import { EvidenceImages } from './EvidenceImages';
 
 const MAX_SNIPPET_LENGTH = 300;
 
@@ -76,6 +77,7 @@ export function EvidenceCard({ evidence, onOpenContent }: EvidenceCardProps) {
       </div>
 
       {evidence.thread_summary ? <p className="muted evidence-thread">帖子摘要：{evidence.thread_summary}</p> : null}
+      <EvidenceImages evidence={[evidence]} showCitations={false} />
       {evidence.graph_evidence?.length ? (
         <details>
           <summary>查看图谱关系与原文</summary>

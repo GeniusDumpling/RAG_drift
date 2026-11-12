@@ -5,6 +5,7 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from time import perf_counter
 from typing import Any, Literal
 from typing import cast as typing_cast
 from uuid import UUID
@@ -20,6 +21,7 @@ from app.models.content import Author, ContentChunk, ContentItem
 from app.models.control import SourceSite
 from app.schemas.search import EvidenceObject, SearchFilters
 from app.services.embeddings import EmbeddingService
+from app.services.ifixit_media import device_identity, images_for_chunk, query_devices
 from app.services.query_matching import (
     lexical_terms,
     matches_term,
@@ -81,7 +83,14 @@ class QdrantIndexer:
     failed and finish the crawl run as partial instead of silently losing vector writes.
     """
 
-    def __init__(self, url: str, collection: str, embedding: EmbeddingService) -> None:
+    def __init__(
+        self,
+        url: str,
+        collection: str,
+        embedding: EmbeddingService,
+        *,
+        timeout: int | None = None,
+    ) -> None:
         self.url = url
         self.collection = collection
         self.embedding = embedding
@@ -90,7 +99,9 @@ class QdrantIndexer:
         )
         self._client: QdrantClient | None = None
         if self.backend_name == "qdrant":
-            self._client = QdrantClient(url=url)
+            self._client = (
+                QdrantClient(url=url) if timeout is None else QdrantClient(url=url, timeout=timeout)
+            )
 
     def ensure_collection(self) -> None:
         if self.backend_name == "memory":
@@ -264,6 +275,27 @@ class QdrantIndexer:
         return self._client
 
 
+class _TimedEmbedding:
+    def __init__(self, delegate: EmbeddingService, trace: dict[str, Any]) -> None:
+        self.delegate = delegate
+        self.trace = trace
+
+    @property
+    def model_name(self) -> str:
+        return self.delegate.model_name
+
+    @property
+    def dimension(self) -> int:
+        return self.delegate.dimension
+
+    def embed(self, text: str) -> list[float]:
+        started = perf_counter()
+        try:
+            return self.delegate.embed(text)
+        finally:
+            self.trace["embedding_ms"] = round((perf_counter() - started) * 1000)
+
+
 async def retrieve_evidence(
     session: AsyncSession,
     *,
@@ -278,50 +310,69 @@ async def retrieve_evidence(
     entity_hints: Sequence[str] = (),
     max_per_content: int = 1,
 ) -> RetrievalResult:
-    vector_hits: list[VectorSearchHit] = []
+    started = perf_counter()
     vector_trace: dict[str, Any] = {
-        "attempted": False,
-        "failed": False,
-        "error": None,
-        "hit_count": 0,
+        "attempted": True, "failed": False, "error": None, "hit_count": 0,
     }
-    try:
-        vector_trace["attempted"] = True
-        indexer = QdrantIndexer(
-            url=qdrant_url,
-            collection=qdrant_collection,
-            embedding=embedding,
-        )
-        vector_hits = await asyncio.to_thread(
-            indexer.search_chunks,
-            query_text=optimized_query_text,
-            filters=_vector_filter_payload(filters),
-            top_k=min(max(top_k * 4, 50), 600),
-        )
-        vector_trace["hit_count"] = len(vector_hits)
-    except Exception as exc:  # pragma: no cover - exact Qdrant failures are environment-specific.
-        vector_trace["failed"] = True
-        vector_trace["error"] = str(exc)
-        logger.info("Vector search unavailable; continuing with SQL keyword retrieval: %s", exc)
+    keyword_trace: dict[str, Any] = {}
 
+    def vector_search() -> list[VectorSearchHit]:
+        vector_started = perf_counter()
+        try:
+            indexer = QdrantIndexer(
+                url=qdrant_url, collection=qdrant_collection,
+                embedding=_TimedEmbedding(embedding, vector_trace),
+            )
+            return indexer.search_chunks(
+                query_text=optimized_query_text, filters=_vector_filter_payload(filters),
+                top_k=min(max(top_k * 4, 50), 600),
+            )
+        finally:
+            vector_trace["latency_ms"] = round((perf_counter() - vector_started) * 1000)
+
+    async def vector_branch() -> list[VectorSearchHit]:
+        try:
+            hits = await asyncio.to_thread(vector_search)
+            vector_trace["hit_count"] = len(hits)
+            return hits
+        except Exception as exc:
+            vector_trace.update(failed=True, error=str(exc))
+            logger.info("Vector search unavailable; continuing with SQL keyword retrieval")
+            return []
+
+    async def keyword_branch() -> list[_SearchHit]:
+        keyword_started = perf_counter()
+        try:
+            return await _keyword_search(
+                session, raw_query=raw_query, keyword_terms=keyword_terms,
+                entity_hints=entity_hints, filters=filters, limit=max(top_k * 10, 50),
+            )
+        finally:
+            keyword_trace["latency_ms"] = round((perf_counter() - keyword_started) * 1000)
+
+    # Only the SQL branch uses this AsyncSession. No concurrent session access.
+    vector_task = asyncio.create_task(vector_branch())
+    keyword_task = asyncio.create_task(keyword_branch())
+    try:
+        vector_hits, keyword_hits = await asyncio.gather(vector_task, keyword_task)
+    except BaseException:
+        vector_task.cancel()
+        keyword_task.cancel()
+        await asyncio.gather(vector_task, keyword_task, return_exceptions=True)
+        raise
+    keyword_trace["hit_count"] = len(keyword_hits)
     snippet_terms = _normalized_terms(keyword_terms=keyword_terms, raw_query=raw_query)
-    keyword_hits = await _keyword_search(
-        session,
-        raw_query=raw_query,
-        keyword_terms=keyword_terms,
-        entity_hints=entity_hints,
-        filters=filters,
-        limit=max(top_k * 10, 50),
-    )
     merged_hits = _sort_hits_by_score(
         _merge_hits(vector_hits=vector_hits, keyword_hits=keyword_hits)
     )
+    hydration_started = perf_counter()
     evidence = await _hydrate_and_rank_evidence(
         session,
         hits=merged_hits,
         filters=filters,
         top_k=top_k,
         snippet_terms=snippet_terms,
+        query_text=raw_query,
         max_per_content=max_per_content,
     )
     if filters.item_type == "video_description":
@@ -330,7 +381,10 @@ async def retrieve_evidence(
         evidence=evidence,
         trace={
             "vector": vector_trace,
-            "keyword": {"hit_count": len(keyword_hits)},
+            "keyword": keyword_trace,
+            "latency_ms": round((perf_counter() - started) * 1000),
+            "hydration_ms": round((perf_counter() - hydration_started) * 1000),
+            "execution_version": "indexed-parallel-v1",
             "entity_hints": list(entity_hints),
             "model_phrases": model_phrases(raw_query),
             "ranking_version": "phrase-coverage-v1",
@@ -384,38 +438,85 @@ async def _keyword_search(
     if not terms:
         return []
 
-    term_clauses = []
-    for term in terms:
-        pattern = term_pattern(term)
-        term_clauses.extend(
-            [
-                ContentItem.title.op("~*")(pattern),
-                ContentItem.summary_text.op("~*")(pattern),
-                ContentChunk.display_text.op("~*")(pattern),
-                ContentChunk.embed_text.op("~*")(pattern),
-                sql_cast(ContentItem.tags, String).op("~*")(pattern),
-            ]
-        )
-
-    candidate_limit = _keyword_candidate_limit(limit)
-    keyword_score_expr = _keyword_score_sql_expression(terms, entity_terms=entity_terms)
-    candidates = (
-        select(
-            ContentChunk.id.label("chunk_id"),
-            keyword_score_expr.label("keyword_score"),
-            func.row_number().over(
-                partition_by=ContentItem.id,
-                order_by=(keyword_score_expr.desc(), ContentChunk.chunk_index, ContentChunk.id),
-            ).label("content_rank"),
-        )
-        .join(ContentItem, ContentChunk.content_item_id == ContentItem.id)
-        .where(
+    seed_terms = _keyword_seed_terms(terms, entity_terms=entity_terms)
+    # Broad single-entity queries benefit from the original short-circuit plan.
+    # Use index unions for selective model phrases after safe weak-term pruning.
+    selective = len(seed_terms) < len(terms) and any(w >= 3.0 for w in term_weights(terms))
+    if selective:
+        item_matches = or_(*[
+            _keyword_prefilter(field, term)
+            for term in seed_terms
+            for field in (
+                ContentItem.title, ContentItem.summary_text, sql_cast(ContentItem.tags, String)
+            )
+        ])
+        body_matches = or_(*[
+            _keyword_prefilter(field, term)
+            for term in seed_terms
+            for field in (ContentChunk.display_text, ContentChunk.embed_text)
+        ])
+        # Separate branches allow PostgreSQL to use each field's trigram index;
+        # the former cross-table OR forced a scan of the entire joined corpus.
+        seed_ids = select(ContentChunk.id).where(
             _searchable_chunk_predicate(),
-            *_content_filter_clauses(filters),
-            or_(*term_clauses),
+            ContentChunk.content_item_id.in_(select(ContentItem.id).where(
+                *_content_filter_clauses(filters), item_matches,
+            )),
+        ).union(select(ContentChunk.id).where(_searchable_chunk_predicate(), body_matches))
+        keyword_score_expr = _keyword_score_sql_expression(terms, entity_terms=entity_terms)
+        scored = select(
+            ContentChunk.id.label("chunk_id"), ContentChunk.content_item_id,
+            ContentChunk.chunk_index, keyword_score_expr.label("keyword_score"),
+        ).join(ContentItem, ContentChunk.content_item_id == ContentItem.id).where(
+            ContentChunk.id.in_(seed_ids), *_content_filter_clauses(filters),
+            or_(*[
+                _keyword_match(field, term)
+                for term in terms
+                for field in (ContentItem.title, ContentItem.summary_text,
+                              sql_cast(ContentItem.tags, String),
+                              ContentChunk.display_text, ContentChunk.embed_text)
+            ]),
+        ).cte("keyword_scores").prefix_with("MATERIALIZED")
+        candidate_limit = _keyword_candidate_limit(limit)
+        candidates = select(
+            scored.c.chunk_id, scored.c.keyword_score,
+            func.row_number().over(
+                partition_by=scored.c.content_item_id,
+                order_by=(scored.c.keyword_score.desc(), scored.c.chunk_index, scored.c.chunk_id),
+            ).label("content_rank"),
+        ).subquery()
+    else:
+        term_clauses = []
+        for term in terms:
+            term_clauses.extend(
+                [
+                    _keyword_match(ContentItem.title, term),
+                    _keyword_match(ContentItem.summary_text, term),
+                    _keyword_match(ContentChunk.display_text, term),
+                    _keyword_match(ContentChunk.embed_text, term),
+                    _keyword_match(sql_cast(ContentItem.tags, String), term),
+                ]
+            )
+
+        candidate_limit = _keyword_candidate_limit(limit)
+        keyword_score_expr = _keyword_score_sql_expression(terms, entity_terms=entity_terms)
+        candidates = (
+            select(
+                ContentChunk.id.label("chunk_id"),
+                keyword_score_expr.label("keyword_score"),
+                func.row_number().over(
+                    partition_by=ContentItem.id,
+                    order_by=(keyword_score_expr.desc(), ContentChunk.chunk_index, ContentChunk.id),
+                ).label("content_rank"),
+            )
+            .join(ContentItem, ContentChunk.content_item_id == ContentItem.id)
+            .where(
+                _searchable_chunk_predicate(),
+                *_content_filter_clauses(filters),
+                or_(*term_clauses),
+            )
+            .subquery()
         )
-        .subquery()
-    )
     stmt = (
         select(ContentChunk, ContentItem, candidates.c.keyword_score)
         .options(load_only(
@@ -618,6 +719,45 @@ def _max_optional(left: float | None, right: float | None) -> float | None:
     return max(left, right)
 
 
+def _keyword_match(field: Any, term: str) -> Any:
+    # Contiguous CJK literals have no case/word-boundary variation. LIKE avoids
+    # invoking the regex engine for each long transcript without changing matches.
+    if all("\u3400" <= char <= "\u9fff" for char in term):
+        return field.contains(term, autoescape=True)
+    return field.op("~*")(term_pattern(term))
+
+
+def _keyword_prefilter(field: Any, term: str) -> Any:
+    if all("\u3400" <= char <= "\u9fff" for char in term):
+        return field.contains(term, autoescape=True)
+    # A necessary substring only: exact regex boundaries are checked afterwards.
+    escaped = term.replace("/", "//").replace("%", "/%").replace("_", "/_")
+    return field.ilike("%" + "%".join(escaped.split()) + "%", escape="/")
+
+
+def _keyword_seed_terms(
+    terms: Sequence[str], *, entity_terms: Sequence[str] = ()
+) -> list[str]:
+    """Keep a necessary condition for reaching the existing lexical threshold.
+
+    A term contributes at most weight / max(sum(weights), 1). Excluded terms
+    together must remain strictly below the acceptance threshold. They still
+    participate in final scoring. Entity boosts require retaining every term.
+    """
+    if entity_terms:
+        return list(terms)
+    weights = term_weights(terms)
+    budget = _KEYWORD_MINIMUM_MATCH_SCORE * max(sum(weights), 1.0)
+    excluded: set[int] = set()
+    total = 0.0
+    for index in sorted(range(len(terms)), key=lambda i: (weights[i], i)):
+        if total + weights[index] >= budget - 1e-12:
+            break
+        total += weights[index]
+        excluded.add(index)
+    return [term for index, term in enumerate(terms) if index not in excluded]
+
+
 def _keyword_candidate_limit(limit: int) -> int:
     return min(max(limit * 20, 500), 1000)
 
@@ -628,22 +768,23 @@ def _keyword_score_sql_expression(
     weights = term_weights(terms)
     score_expr: Any = literal(0.0)
     for term, weight in zip(terms, weights, strict=True):
-        pattern = term_pattern(term)
-        score_expr = score_expr + weight * func.greatest(
-            case((ContentItem.title.op("~*")(pattern), 0.50), else_=0.0),
-            case((ContentItem.summary_text.op("~*")(pattern), 0.30), else_=0.0),
-            case((or_(
-                ContentChunk.display_text.op("~*")(pattern),
-                ContentChunk.embed_text.op("~*")(pattern),
-            ), 0.20), else_=0.0),
-            case((sql_cast(ContentItem.tags, String).op("~*")(pattern), 0.10), else_=0.0),
+        # Descending weights make CASE equivalent to GREATEST, while avoiding
+        # long-body regexes once the higher-weight title/summary already matches.
+        score_expr = score_expr + weight * case(
+            (_keyword_match(ContentItem.title, term), 0.50),
+            (_keyword_match(ContentItem.summary_text, term), 0.30),
+            (or_(
+                _keyword_match(ContentChunk.display_text, term),
+                _keyword_match(ContentChunk.embed_text, term),
+            ), 0.20),
+            (_keyword_match(sql_cast(ContentItem.tags, String), term), 0.10),
+            else_=0.0,
         )
     score_expr = score_expr / (0.5 * max(sum(weights), 1.0))
     for term in entity_terms:
-        pattern = term_pattern(term)
         score_expr = score_expr + (
-            case((ContentItem.title.op("~*")(pattern), 0.45), else_=0.0)
-            + case((sql_cast(ContentItem.tags, String).op("~*")(pattern), 0.35), else_=0.0)
+            case((_keyword_match(ContentItem.title, term), 0.45), else_=0.0)
+            + case((_keyword_match(sql_cast(ContentItem.tags, String), term), 0.35), else_=0.0)
         )
     return func.least(score_expr, 1.0)
 
@@ -670,6 +811,7 @@ async def _hydrate_and_rank_evidence(
     top_k: int,
     snippet_terms: Sequence[str],
     max_per_content: int = 1,
+    query_text: str = "",
 ) -> list[EvidenceObject]:
     if not hits:
         return []
@@ -703,10 +845,17 @@ async def _hydrate_and_rank_evidence(
     )
     rows = (await session.execute(stmt)).all()
     row_by_chunk_id = {row[0].id: row for row in rows}
+    repair_ids = {row[1].id for row in rows if row[1].item_type == "repair_guide"}
+    repair_metadata: dict[UUID, dict[str, Any]] = dict((await session.execute(
+        select(ContentItem.id, ContentItem.metadata_json).where(ContentItem.id.in_(repair_ids))
+    )).tuples().all()) if repair_ids else {}
+    wanted_devices = query_devices(query_text, [
+        m.get("ifixit", {}).get("category_raw", "") for m in repair_metadata.values()
+    ]) if query_text else set()
     video_ids = {row[1].id for row in rows if row[1].item_type == "video_description"}
-    descriptions = dict((await session.execute(
+    descriptions: dict[UUID, str] = dict((await session.execute(
         select(ContentItem.id, ContentItem.cleaned_text).where(ContentItem.id.in_(video_ids))
-    )).all()) if video_ids else {}
+    )).tuples().all()) if video_ids else {}
 
     evidence: list[EvidenceObject] = []
     for hit in hits:
@@ -715,6 +864,12 @@ async def _hydrate_and_rank_evidence(
             continue
         content_chunk = typing_cast(ContentChunk, row[0])
         content_item = typing_cast(ContentItem, row[1])
+        if content_item.item_type == "repair_guide" and wanted_devices:
+            category = (
+                repair_metadata.get(content_item.id, {}).get("ifixit", {}).get("category_raw", "")
+            )
+            if device_identity(category) not in wanted_devices:
+                continue
         source_site_name = typing_cast(str, row[2])
         author_name = typing_cast(str | None, row[3])
         thread_summary = typing_cast(str | None, row[4])
@@ -749,6 +904,8 @@ async def _hydrate_and_rank_evidence(
                 thread_summary=thread_summary,
                 video_url=content_item.canonical_url if is_video else None,
                 description_text=descriptions.get(content_item.id) if is_video else None,
+                images=images_for_chunk(content_item, content_chunk,
+                                        metadata=repair_metadata.get(content_item.id, {})),
             )
         )
 

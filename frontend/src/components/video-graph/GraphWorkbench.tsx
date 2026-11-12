@@ -19,6 +19,7 @@ type Props = {
   onFocus: (node: VideoGraphNode) => void; onExpand: (node: VideoGraphNode) => Promise<void>;
   expandingId: string; loading: boolean; error: string; expansionError: string; expansionNotice?: string;
   onRefresh: () => void; evidencePanel: ReactNode;
+  expandedIds?: string[]; onCollapse?: (node: VideoGraphNode) => void;
 };
 
 const format = (value: number | undefined) => value === undefined ? '—' : value.toLocaleString('zh-CN');
@@ -29,7 +30,7 @@ export function GraphWorkbench(props: Props) {
       const saved = localStorage.getItem('video-graph-dimension');
       if (saved === '2d' || saved === '3d') return saved;
     } catch { /* Storage can be disabled by the browser. */ }
-    return window.innerWidth <= 680 ? '2d' : '3d';
+    return '2d';
   });
   const [dimensionNotice, setDimensionNotice] = useState('');
   const [labels3D, setLabels3D] = useState(false);
@@ -38,7 +39,7 @@ export function GraphWorkbench(props: Props) {
   const [selectedId, setSelectedId] = useState('');
   const [hoveredId, setHoveredId] = useState('');
   const [direction, setDirection] = useState<'all' | 'in' | 'out'>('all');
-  const [appearance, setAppearance] = useState<GraphAppearance>({ ...DEFAULT_GRAPH_APPEARANCE });
+  const [appearance, setAppearance] = useState<GraphAppearance>({ ...DEFAULT_GRAPH_APPEARANCE, showArrows: true });
   const [appliedForces, setAppliedForces] = useState({ repulsion: DEFAULT_GRAPH_APPEARANCE.repulsion, linkDistance: DEFAULT_GRAPH_APPEARANCE.linkDistance });
   useEffect(() => {
     const timer = setTimeout(() => setAppliedForces({ repulsion: appearance.repulsion, linkDistance: appearance.linkDistance }), 220);
@@ -79,6 +80,11 @@ export function GraphWorkbench(props: Props) {
     try { localStorage.setItem('video-graph-dimension', value); } catch { /* Optional preference. */ }
   }
   const showLabels = dimension === '3d' ? labels3D : appearance.showLabels;
+  function exploreNode(node: VideoGraphNode) {
+    if (dimension === '2d' && props.expandedIds?.includes(node.id) && props.onCollapse) props.onCollapse(node);
+    else return props.onExpand(node);
+    return Promise.resolve();
+  }
   useEffect(() => {
     if (selectedId && !nodes.some((node) => node.id === selectedId)) setSelectedId('');
   }, [props.graph, selectedId]);
@@ -128,12 +134,12 @@ export function GraphWorkbench(props: Props) {
           selectedEdge={props.selectedEdge?.id ?? ''} expandingId={props.expandingId}
           activeNodeId={selectedId} appearance={{ ...appearance, ...appliedForces, showLabels }} onSelect={selectNode}
           onHover={(node) => setHoveredId(node?.id ?? '')}
-          onFocus={props.onFocus} onExpand={props.onExpand} onEdge={selectEdge} /> : null}
+          onFocus={props.onFocus} onExpand={exploreNode} expandedIds={props.expandedIds} onEdge={selectEdge} /> : null}
         {props.expansionError ? <div className="ow-canvas-notice" role="alert">{props.expansionError}</div> : null}
         {props.expansionNotice ? <div className="ow-canvas-notice" role="status">{props.expansionNotice}</div> : null}
         {props.expandingId ? <div className="ow-canvas-notice" role="status">正在展开邻居，保留已有节点…</div> : null}
         {dimensionNotice ? <div className="ow-canvas-notice" role="status">{dimensionNotice}</div> : null}
-        <div className="ow-stage-hint"><span>{dimension === '3d' ? '拖拽空白旋转' : '拖拽节点'}</span><b>·</b><span>滚轮缩放</span><b>·</b><span>{dimension === '3d' ? 'Shift + 拖拽平移' : '悬停查看关联'}</span><b>·</b><span>双击展开</span></div>
+        <div className="ow-stage-hint"><span>{dimension === '3d' ? '拖拽空白旋转' : '拖拽节点固定位置'}</span><b>·</b><span>滚轮缩放</span><b>·</b><span>{dimension === '3d' ? 'Shift + 拖拽平移' : '右键操作'}</span><b>·</b><span>{dimension === '3d' ? '双击展开' : '双击展开／收起'}</span></div>
       </section>
 
       <aside className="ow-data-panel" aria-label="图谱数据面板" hidden={!panelOpen}>
@@ -168,7 +174,7 @@ export function GraphWorkbench(props: Props) {
             <details className="ow-panel-section ow-force-settings"><summary><GraphIcon name="settings" size={14} />布局引力</summary>
               <label className="ow-slider" htmlFor="graph-repulsion">节点斥力<output>{appearance.repulsion}</output><input id="graph-repulsion" type="range" min="80" max="420" step="10" value={appearance.repulsion} onChange={(event) => configure('repulsion', Number(event.target.value))} /></label>
               <label className="ow-slider" htmlFor="graph-link-distance">连接距离<output>{appearance.linkDistance}</output><input id="graph-link-distance" type="range" min="60" max="180" step="10" value={appearance.linkDistance} onChange={(event) => configure('linkDistance', Number(event.target.value))} /></label>
-              <button className="ow-subtle-button" type="button" onClick={() => setAppearance({ ...DEFAULT_GRAPH_APPEARANCE })}>恢复默认显示</button>
+              <button className="ow-subtle-button" type="button" onClick={() => setAppearance({ ...DEFAULT_GRAPH_APPEARANCE, showArrows: true })}>恢复默认显示</button>
             </details>
           </> : <>
             <section className="ow-panel-section ow-locator"><label>定位实体<select aria-label="定位图谱实体" value={selectedId} onChange={(event) => selectNode(nodes.find((node) => node.id === event.target.value) ?? null)}><option value="">选择或点击图中实体</option>{nodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}</select></label></section>
@@ -176,7 +182,7 @@ export function GraphWorkbench(props: Props) {
               <span className="ow-entity-type"><i style={{ background: DARK_ENTITY_COLORS[selected.entity_type ?? ''] }} />{ENTITY_LABELS[selected.entity_type ?? ''] ?? '实体'}</span>
               <h2>{selected.label}</h2><p>当前视图中的双向关联</p>
               <div className="ow-link-counters"><span><strong>{incoming.length}</strong>入链</span><span><strong>{outgoing.length}</strong>出链</span><span><strong>{new Set(related.map((e) => e.source === selected.id ? e.target : e.source)).size}</strong>邻居</span></div>
-              <div className="ow-node-actions"><button type="button" disabled={!!props.expandingId} onClick={() => void props.onExpand(selected)}><GraphIcon name="expand" size={14} />{props.expandingId === selected.id ? '正在展开…' : '展开邻居'}</button><button type="button" onClick={() => props.onFocus(selected)}>聚焦此实体</button></div>
+              <div className="ow-node-actions"><button type="button" disabled={!!props.expandingId} onClick={() => void exploreNode(selected)}><GraphIcon name="expand" size={14} />{props.expandingId === selected.id ? '正在展开…' : dimension === '2d' && props.expandedIds?.includes(selected.id) ? '收起邻居' : '展开邻居'}</button><button type="button" onClick={() => props.onFocus(selected)}>聚焦此实体</button></div>
               <div className="ow-link-directions" aria-label="关联方向">{([['all', '全部'], ['in', '入链'], ['out', '出链']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={direction === value} onClick={() => setDirection(value)}>{label}</button>)}</div>
               <div className="ow-related-links">{visibleLinks.map((edge) => <button key={edge.id} type="button" onClick={() => selectEdge(edge)}><GraphIcon name="link" size={14} /><span><strong>{labels.get(edge.source === selected.id ? edge.target : edge.source)}</strong><small>{edge.target === selected.id ? '入链' : '出链'} · {PREDICATE_LABELS[edge.predicate] ?? edge.predicate}</small></span><small>{edge.evidence_count}</small></button>)}</div>
               {!visibleLinks.length ? <p className="ow-muted">此范围内没有关联，可展开邻居继续探索。</p> : null}

@@ -177,6 +177,8 @@ def evaluate(bundle, gold, results, negatives=None, *, root=None):
             pending=pending,
         ),
         scope=gold["annotation_scope"],
+        review_status=gold.get("review_status", "unknown"),
+        reviewed_at=gold.get("reviewed_at"),
         human_review_required=gold["human_review_required"],
         source_hash=bundle["source_hash"],
         metrics=dict(
@@ -340,6 +342,12 @@ def write_html(report, bundle, source_root, output):
         + "</td></tr>"
         for n in report["negatives"]
     )
+    if report.get("review_status") == "human_reviewed" and not report["human_review_required"]:
+        review_note = "golden 已完成人工复核"
+        if report.get("reviewed_at"):
+            review_note += "（" + str(report["reviewed_at"]) + "）"
+    else:
+        review_note = "由助手对原始手册初标，尚待人工复核"
     Path(output).write_text(
         '<!doctype html><meta charset="utf-8"><title>手册图文证据对照</title>'
         "<style>body{font:15px/1.5 sans-serif;margin:24px;max-width:1600px}"
@@ -351,7 +359,9 @@ def write_html(report, bundle, source_root, output):
         "figure{margin:10px 0}"
         "figcaption,summary{font-size:12px;color:#555}details{margin:8px 0}"
         "code{color:#254f83}</style>"
-        "<h1>手册图文证据对照</h1><p>由助手对原始手册初标，尚待人工复核。仅评估19个定向目标，不代表全图精确率或F1。</p>"
+        "<h1>手册图文证据对照</h1><p>"
+        + escape(review_note)
+        + f"。仅评估{metrics['targets']}个定向目标，不代表全图精确率或F1。</p>"
         "<p><b>"
         + escape(summary)
         + "</b></p>"

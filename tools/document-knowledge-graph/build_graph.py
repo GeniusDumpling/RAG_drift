@@ -19,6 +19,7 @@ from app.services.document_graph.storage import DocumentGraphStore  # noqa: E402
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--env-file", type=Path, help="文档连接配置；模型配置仍读取项目 .env")
     sub = p.add_subparsers(dest="command", required=True)
     prep = sub.add_parser("prepare")
     prep.add_argument("--selection", type=Path, required=True)
@@ -52,7 +53,11 @@ def main(argv=None):
                 source_hash=b["source_hash"],
             )
         else:
-            settings = Settings()
+            if args.env_file and not args.env_file.is_file():
+                raise ValueError("图谱配置文件不存在，拒绝回退")
+            settings = (
+                Settings(_env_file=(ROOT / ".env", args.env_file)) if args.env_file else Settings()
+            )
             if args.command == "pipeline" and args.dry_run:
                 result = asyncio.run(
                     run_pipeline(

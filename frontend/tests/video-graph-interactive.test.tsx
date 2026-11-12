@@ -11,7 +11,9 @@ vi.mock('../src/components/video-graph/InteractiveGraphCanvas', () => ({
     graph: VideoGraphData; onExpand: (node: VideoGraphNode) => void;
   }) => <div aria-label="交互画布测试替身">
     <span>{graph.nodes.map((node) => node.label).join(',')}</span>
+    <output data-testid="graph-data">{JSON.stringify(graph)}</output>
     <button onClick={() => onExpand(graph.nodes[0])}>展开测试实体</button>
+    {graph.nodes.some(node => node.id === 'RTK') ? <button onClick={() => onExpand(graph.nodes.find(node => node.id === 'RTK')!)}>展开 RTK 分支</button> : null}
   </div>,
 }));
 
@@ -65,6 +67,37 @@ describe('interactive graph exploration', () => {
     await screen.findByText('PX4,GPS');
     resolve(response(next));
     await waitFor(() => expect(screen.queryByText('PX4,GPS,RTK')).not.toBeInTheDocument());
+  });
+
+  it('collapses a neighborhood back to the base graph without requesting data again', async () => {
+    const fetchMock = mockApi();
+    render(<VideoGraphPage onOpenContent={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: '展开测试实体' }));
+    expect(await screen.findByText('PX4,GPS,RTK')).toBeInTheDocument();
+    const requests = fetchMock.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: '展开测试实体' }));
+    expect(await screen.findByText('PX4,GPS')).toBeInTheDocument();
+    expect(fetchMock.mock.calls.length).toBe(requests);
+  });
+
+  it('keeps another expanded branch and all base relationships when collapsing its parent', async () => {
+    const branch: VideoGraphData = { nodes: [node('RTK'), node('GPS'), node('Lidar')],
+      edges: [edge('r3', 'RTK', 'GPS'), edge('r4', 'RTK', 'Lidar')], truncated: false };
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://localhost');
+      return Promise.resolve(response(url.pathname.endsWith('/overview') ? { builds: {} }
+        : url.searchParams.get('entity_id') === 'RTK' ? branch : url.searchParams.has('entity_id') ? next : base));
+    }));
+    render(<VideoGraphPage onOpenContent={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: '展开测试实体' }));
+    fireEvent.click(await screen.findByRole('button', { name: '展开 RTK 分支' }));
+    await screen.findByText('PX4,GPS,RTK,Lidar');
+    fireEvent.click(screen.getByRole('button', { name: '展开测试实体' }));
+    await waitFor(() => {
+      const actual = JSON.parse(screen.getByTestId('graph-data').textContent ?? '{}') as VideoGraphData;
+      expect(actual.edges.map(edge => edge.id)).toEqual(['r1', 'r3', 'r4']);
+      expect(actual.nodes.map(node => node.id)).toEqual(['PX4', 'GPS', 'RTK', 'Lidar']);
+    });
   });
 
   it('enforces graph bounds while avoiding duplicate or dangling edges', () => {

@@ -1,8 +1,9 @@
+import re
 import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.common import OrmBaseModel
 from app.schemas.video_graph import GraphEvidenceRead
@@ -75,6 +76,23 @@ class SearchQueryRead(OrmBaseModel):
     created_at: datetime
 
 
+class ImageEvidence(BaseModel):
+    asset_id: str
+    source_guid: str
+    url: str
+    source_url: str
+    guide_url: str
+    step_order: int | None = None
+    step_title: str | None = None
+    caption: str
+    width: int
+    height: int
+    observation: str | None = None
+    ocr_text: list[str] = Field(default_factory=list)
+    description_generated: bool = False
+    citation_index: int | None = None
+
+
 class EvidenceObject(BaseModel):
     chunk_id: uuid.UUID
     content_item_id: uuid.UUID
@@ -96,6 +114,7 @@ class EvidenceObject(BaseModel):
     thread_summary: str | None
     video_url: str | None = None
     description_text: str | None = None
+    images: list[ImageEvidence] = Field(default_factory=list)
 
 
 class SearchResponse(BaseModel):
@@ -112,6 +131,8 @@ class GenerationInfo(BaseModel):
     reason: str | None = None
     latency_ms: int = 0
     total_latency_ms: int = 0
+    first_token_ms: int | None = None
+    timings: dict[str, int] = Field(default_factory=dict)
     evidence_count: int = 0
     context_chars: int = 0
     context_chunk_ids: list[uuid.UUID] = Field(default_factory=list)
@@ -129,6 +150,21 @@ class AnswerResponse(BaseModel):
     generation: GenerationInfo = Field(default_factory=GenerationInfo)
     session_id: uuid.UUID | None = None
     turn_id: uuid.UUID | None = None
+    images: list[ImageEvidence] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def attach_cited_images(self) -> "AnswerResponse":
+        cited = {int(value) for value in re.findall(r"\[(\d+)\]", self.answer)}
+        images, seen = [], set()
+        for index, evidence in enumerate(self.supporting_evidence, 1):
+            if index not in cited:
+                continue
+            for image in evidence.images:
+                if image.asset_id not in seen:
+                    images.append(image.model_copy(update={"citation_index": index}))
+                    seen.add(image.asset_id)
+        self.images = images
+        return self
 
 
 class ChatSessionRead(OrmBaseModel):

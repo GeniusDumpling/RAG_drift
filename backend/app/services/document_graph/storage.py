@@ -28,10 +28,18 @@ def fact_id(build_id, case_id, fact):
 
 class DocumentGraphStore(Neo4jStore):
     def __init__(self, settings):
-        super().__init__(settings)
+        self.unified = bool(getattr(settings, "unified_graph_enabled", False))
+        super().__init__(
+            settings,
+            config_prefix=("unified_graph_neo4j" if self.unified else "document_graph_neo4j"),
+        )
         self.artifacts_root = Path(settings.document_graph_artifacts_dir).resolve()
 
     def initialize(self):
+        if self.unified:
+            from app.services.knowledge_graph.storage import initialize
+
+            initialize(self.driver, self.database)
         with self.driver.session(database=self.database) as session:
             for label in [
                 "DGManual",
@@ -197,6 +205,21 @@ class DocumentGraphStore(Neo4jStore):
                 self._source_page(tx, build_id, page, bundle)
             for cid, result in output["cases"].items():
                 self._case(tx, build_id, cid, result, bundle)
+            if self.unified:
+                from app.services.knowledge_graph.adapters import document_publication
+                from app.services.knowledge_graph.storage import publish
+
+                publish(
+                    tx,
+                    document_publication(
+                        manual,
+                        bundle,
+                        build_id,
+                        output,
+                        build["policy"],
+                        root=checked_path(self.artifacts_root, build["bundle_key"]),
+                    ),
+                )
             tx.run(
                 "MATCH (s:DGManual {id:$sid}),(b:DGBuild {id:$bid}) "
                 "SET s.active_build_id=$bid,b.status='success',b.output_json=$output,"
@@ -359,6 +382,10 @@ class DocumentGraphStore(Neo4jStore):
     def withdraw(self, source_id, *, restore=False):
         with self.transaction() as tx:
             self.lock(tx, source_id)
+            if self.unified:
+                from app.services.knowledge_graph.storage import set_visibility
+
+                set_visibility(tx, "document", source_id, withdrawn=not restore)
             tx.run(
                 "MATCH (s:DGManual {id:$id}) SET s.withdrawn=$withdrawn",
                 id=source_id,

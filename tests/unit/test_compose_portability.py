@@ -108,3 +108,43 @@ def test_neo4j_overlay_ports_credentials_and_persistence(tmp_path: Path) -> None
     assert graph["environment"]["NEO4J_AUTH"] == "neo4j/graph-test-only"
     assert services["app"]["environment"]["NEO4J_URI"] == "bolt://neo4j:7687"
     assert "VIDEO_GRAPH_BACKEND" not in services["app"]["environment"]
+
+
+def test_document_graph_has_independent_credentials_ports_and_volumes(tmp_path: Path) -> None:
+    if shutil.which("docker") is None:
+        pytest.skip("Docker Compose CLI is required")
+    shutil.copy(ROOT / "docker-compose.document-graph.yml", tmp_path)
+    env_file = tmp_path / ".env.document-graph"
+    env_file.write_text(
+        "DOCUMENT_GRAPH_NEO4J_PASSWORD=document-test-only\nNEO4J_PASSWORD=video-test-only\n"
+    )
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "--env-file",
+            str(env_file),
+            "-f",
+            "docker-compose.document-graph.yml",
+            "config",
+            "--format",
+            "json",
+        ],
+        cwd=tmp_path,
+        env={"PATH": os.environ["PATH"], "HOME": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    config = json.loads(result.stdout)
+    assert config["name"] == "rag-document-graph"
+    assert set(config["services"]) == {"neo4j-document"}
+    graph = config["services"]["neo4j-document"]
+    assert graph["environment"]["NEO4J_AUTH"] == "neo4j/document-test-only"
+    assert {str(p["published"]) for p in graph["ports"]} == {"7476", "7689"}
+    assert all(p["host_ip"] == "127.0.0.1" for p in graph["ports"])
+    assert {v["source"] for v in graph["volumes"]} == {
+        "neo4j-document-data",
+        "neo4j-document-logs",
+    }
+    assert not any(v.get("external") for v in config["volumes"].values())

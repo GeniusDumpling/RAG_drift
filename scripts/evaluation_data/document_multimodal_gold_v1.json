@@ -1,7 +1,8 @@
 {
   "version": "document-multimodal-gold-v1",
-  "review_status": "source_checked_by_assistant",
-  "human_review_required": true,
+  "review_status": "human_reviewed",
+  "human_review_required": false,
+  "reviewed_at": "2026-11-11",
   "annotation_scope": "targeted_fact_and_text_image_link_checks_not_exhaustive_entities_relations",
   "source_hash": "101af98d6585ea8960328f58ca39a8b45674f3d338238bcac5091a279eecf03a",
   "manuals": [

@@ -29,6 +29,9 @@ export function VideoGraphPage({ onOpenContent }: { onOpenContent: (id: string) 
   const [expansionNotice, setExpansionNotice] = useState('');
   const scope = useRef(0);
   const expansionBusy = useRef(false);
+  const baseGraph = useRef<VideoGraphData | null>(null);
+  const expansions = useRef(new Map<string, VideoGraphData>());
+  const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const [overview, setOverview] = useState<VideoGraphOverview | null>(null);
   const [graph, setGraph] = useState<VideoGraphData | null>(null);
   const [query, setQuery] = useState('');
@@ -56,13 +59,14 @@ export function VideoGraphPage({ onOpenContent }: { onOpenContent: (id: string) 
     let ignore = false;
     scope.current += 1;
     expansionBusy.current = false;
+    baseGraph.current = null; expansions.current.clear(); setExpandedIds([]);
     setExpandingId(''); setExpansionError(''); setExpansionNotice('');
     setLoading(true); setError(''); setGraph(null); setSelectedEdge(null); setEvidence(null); setEvidenceOffset(0);
     getVideoGraph({ entity_id: entityId || undefined,
       q: appliedQuery || undefined, entity_type: entityType || undefined, assertion: assertion || undefined,
       hops, max_nodes: limits.initialNodes, max_edges: limits.initialEdges,
       min_component_size: MIN_GRAPH_COMPONENT_SIZE })
-      .then((value) => { if (!ignore) setGraph(value); })
+      .then((value) => { if (!ignore) { baseGraph.current = value; setGraph(value); } })
       .catch((reason: unknown) => { if (!ignore) setError(formatErrorMessage('无法加载知识图谱', reason)); })
       .finally(() => { if (!ignore) setLoading(false); });
     return () => { ignore = true; scope.current += 1; };
@@ -94,6 +98,8 @@ export function VideoGraphPage({ onOpenContent }: { onOpenContent: (id: string) 
         min_component_size: MIN_GRAPH_COMPONENT_SIZE });
       if (scope.current === currentScope && graph) {
         const merged = mergeGraphData(graph, incoming, limits.maxNodes, limits.maxEdges);
+        expansions.current.set(node.id, incoming);
+        setExpandedIds([...expansions.current.keys()]);
         setGraph(merged);
         if (merged.nodes.length >= limits.maxNodes || merged.edges.length >= limits.maxEdges)
           setExpansionNotice(`当前画布最多展示 ${limits.maxNodes} 个节点、${limits.maxEdges} 条关系；可搜索或聚焦实体查看其他内容。`);
@@ -103,6 +109,15 @@ export function VideoGraphPage({ onOpenContent }: { onOpenContent: (id: string) 
     } finally {
       if (scope.current === currentScope) { expansionBusy.current = false; setExpandingId(''); }
     }
+  }
+  function collapseNode(node: VideoGraphNode) {
+    if (expansionBusy.current || !baseGraph.current) return;
+    expansions.current.delete(node.id);
+    let next = baseGraph.current;
+    for (const incoming of expansions.current.values()) next = mergeGraphData(next, incoming, limits.maxNodes, limits.maxEdges);
+    setGraph(next); setExpandedIds([...expansions.current.keys()]);
+    setExpansionNotice('');
+    if (selectedEdge && !next.edges.some(edge => edge.id === selectedEdge.id)) setSelectedEdge(null);
   }
   function selectEdge(edge: VideoGraphEdge) {
     if (edge.kind !== 'relation') return;
@@ -138,7 +153,7 @@ export function VideoGraphPage({ onOpenContent }: { onOpenContent: (id: string) 
     focusId={entityId} onClearFocus={() => { setEntityId(''); setAppliedQuery(''); setQuery(''); setRefresh((value) => value + 1); }}
     selectedEdge={selectedEdge} onEdge={selectEdge} onClearEdge={() => setSelectedEdge(null)}
     onFocus={(node) => { if (node.kind === 'entity') setEntityId(node.id); }} onExpand={expandNode}
-    expandingId={expandingId} loading={loading} error={error} expansionError={expansionError} expansionNotice={expansionNotice}
+    expandingId={expandingId} expandedIds={expandedIds} onCollapse={collapseNode} loading={loading} error={error} expansionError={expansionError} expansionNotice={expansionNotice}
     onRefresh={() => setRefresh((value) => value + 1)}
     evidencePanel={evidencePanel} />
   </section>;

@@ -30,10 +30,10 @@ def store(source):
     if uri != "bolt://localhost:45969":
         raise RuntimeError("refusing to reset non-isolated Neo4j")
     settings = SimpleNamespace(
-        neo4j_uri=uri,
-        neo4j_user="neo4j",
-        neo4j_password="document-pilot-test-password",
-        neo4j_database="neo4j",
+        document_graph_neo4j_uri=uri,
+        document_graph_neo4j_user="neo4j",
+        document_graph_neo4j_password="document-pilot-test-password",
+        document_graph_neo4j_database="neo4j",
         document_graph_artifacts_dir=source[0].parent,
     )
     with DocumentGraphStore(settings) as store:
@@ -205,10 +205,10 @@ async def test_read_only_api_returns_validated_image_bytes(store, source, monkey
     app.include_router(api.router)
     # Keep the real isolated database; only replace connection settings.
     cfg = SimpleNamespace(
-        neo4j_uri="bolt://localhost:45969",
-        neo4j_user="neo4j",
-        neo4j_password="document-pilot-test-password",
-        neo4j_database="neo4j",
+        document_graph_neo4j_uri="bolt://localhost:45969",
+        document_graph_neo4j_user="neo4j",
+        document_graph_neo4j_password="document-pilot-test-password",
+        document_graph_neo4j_database="neo4j",
         document_graph_artifacts_dir=source[0].parent,
     )
     monkeypatch.setattr(api, "get_settings", lambda: cfg)

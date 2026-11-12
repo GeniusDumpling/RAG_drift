@@ -248,6 +248,23 @@ def verify(store, source_id, expected_build_id=None):
     expected["cases"] = {cid: r["review"]["result_hash"] for cid, r in output["cases"].items()}
     actual = read_projection(store, build["id"])
     checks = {key: actual[key] == expected[key] for key in expected}
+    if getattr(store, "unified", False) is True:
+        from app.services.knowledge_graph.adapters import document_publication
+        from app.services.knowledge_graph.queries import verify as verify_shared
+        from app.services.knowledge_graph.schema import source_key
+
+        manual = next(m for m in bundle["manuals"] if m["id"] == source_id)
+        shared = document_publication(
+            manual,
+            bundle,
+            build["id"],
+            output,
+            build["policy"],
+            root=checked_path(store.artifacts_root, build["bundle_key"]),
+        )
+        checks["unified_projection"] = verify_shared(
+            store, source_key("document", source_id), shared
+        )["verified"]
     checks["target_build"] = expected_build_id is None or build["id"] == expected_build_id
     latest = store.status(source_id)
     checks["unchanged"] = bool(

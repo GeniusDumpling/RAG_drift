@@ -8,16 +8,20 @@ from app.core.config import Settings
 
 
 class Neo4jStore:
-    def __init__(self, settings: Settings):
-        if not settings.neo4j_password:
-            raise ValueError("请配置 NEO4J_PASSWORD")
+    def __init__(self, settings: Settings, *, config_prefix: str = "neo4j"):
+        uri = getattr(settings, f"{config_prefix}_uri", None)
+        password = getattr(settings, f"{config_prefix}_password", None)
+        if not uri:
+            raise ValueError(f"请配置 {config_prefix.upper()}_URI")
+        if not password:
+            raise ValueError(f"请配置 {config_prefix.upper()}_PASSWORD")
         self.driver = GraphDatabase.driver(
-            settings.neo4j_uri,
-            auth=(settings.neo4j_user, settings.neo4j_password),
+            uri,
+            auth=(getattr(settings, f"{config_prefix}_user"), password),
             connection_timeout=10,
             max_transaction_retry_time=15,
         )
-        self.database = settings.neo4j_database
+        self.database = getattr(settings, f"{config_prefix}_database")
 
     def close(self):
         self.driver.close()

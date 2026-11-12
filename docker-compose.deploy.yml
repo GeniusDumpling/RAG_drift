@@ -12,6 +12,7 @@ services:
       API_PORT: 8000
       DRONE_DOCUMENTS_DIR: /data/dji-documents
       PARROT_DOCUMENTS_DIR: /data/parrot-documents
+      IFIXIT_MEDIA_DIR: /appdata/ifixit-media
       DOCUMENT_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/drone_documents
       DOCUMENT_QDRANT_URL: http://qdrant:6333
       DOCUMENT_QDRANT_COLLECTION: ${DOCUMENT_QDRANT_COLLECTION:-drone_document_chunks_bge_m3_v1}
@@ -43,6 +44,7 @@ services:
       RERANKER_CANDIDATE_LIMIT: ${RERANKER_CANDIDATE_LIMIT:-20}
       RERANKER_DOCUMENT_MAX_CHARS: ${RERANKER_DOCUMENT_MAX_CHARS:-8000}
       ANSWER_MAX_EVIDENCE: ${ANSWER_MAX_EVIDENCE:-8}
+      ANSWER_GRAPH_ENABLED: ${ANSWER_GRAPH_ENABLED:-false}
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       VLM_API_KEY: ${VLM_API_KEY:-}
       HF_HOME: /models/huggingface
@@ -59,6 +61,7 @@ services:
     volumes:
       - ${DJI_DOCUMENTS_DIR:-./data/DJI无人机文档}:/data/dji-documents:ro
       - ${PARROT_DOCUMENTS_DIR:-./data/Parrot无人机文档}:/data/parrot-documents:ro
+      - ${IFIXIT_MEDIA_HOST_DIR:-./data/ifixit-media}:/appdata/ifixit-media:ro
       - ${DOCUMENT_ARTIFACTS_DIR:-./data/processed/drone-documents}:/data/document-artifacts:ro
       - ${SCHEDULER_BRIDGE_DIR:-./data/scheduler}:/run/rag-scheduler:ro
       - ${MODEL_CACHE_DIR:-./model-cache/huggingface}:/models/huggingface

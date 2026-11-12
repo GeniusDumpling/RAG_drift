@@ -17,6 +17,10 @@ from documents import fetch_document
 logger = logging.getLogger(__name__)
 
 
+class SearchPaymentRequired(requests.HTTPError):
+    """Search billing is blocked; stop the current collection/verification task."""
+
+
 def with_retry(
     max_retries: int = 3,
     base_delay: float = 1.0,
@@ -401,7 +405,7 @@ def search_brave(query: str, conf: dict) -> dict:
         headers={"X-Subscription-Token": key, "Accept": "application/json"},
         params={
             "q": query,
-            "count": min(20, int(conf.get("top_k", 10))),
+            "count": min(20, int(conf.get("top_k", 20))),
             "search_lang": {"zh": "zh-hans"}.get(conf.get("language"), conf.get("language", "en")),
             "extra_snippets": "true",
         },
@@ -434,17 +438,27 @@ def search(query: str, conf: dict) -> dict:
         try:
             return search_brave(query, conf)
         except requests.HTTPError as exc:
-            if not auto or not get_api_key() or exc.response is None:
+            if not get_api_key() or exc.response is None:
                 raise
-            if exc.response.status_code not in {401, 403, 422, 429}:
+            status = exc.response.status_code
+            # Billing failures fall back even when Brave was explicitly selected.
+            if status != 402 and (not auto or status not in {401, 403, 422, 429}):
                 raise
-            logger.warning("Brave HTTP %s; auto mode falls back to Baidu", exc.response.status_code)
+            logger.warning("Brave HTTP %s; falling back to Baidu", status)
             provider = "baidu"
     if provider != "baidu":
         raise ValueError(f"Unknown search provider: {provider}")
     if not get_api_key():
         raise RuntimeError("BAIDU_QIANFAN_API_KEY is not configured")
-    result = search_baidu(query, conf)
+    try:
+        result = search_baidu(query, conf)
+    except requests.HTTPError as exc:
+        if exc.response is not None and exc.response.status_code == 402:
+            raise SearchPaymentRequired(
+                "Baidu search HTTP 402 Payment Required; stopping current task",
+                response=exc.response,
+            ) from exc
+        raise
     for ref in result.get("references", []):
         ref.update(source="baidu", query=query, language=conf.get("language", "zh"))
     return result

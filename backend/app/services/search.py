@@ -120,6 +120,7 @@ class SearchService:
             else:
                 yield {"event": "status", "data": {"stage": "retrieving"}}
                 retrieval_query = request.query
+                rewrite_started = perf_counter()
                 if history:
                     if self.settings.llm_api_key:
                         try:
@@ -139,25 +140,37 @@ class SearchService:
                         retrieval_query = "\n".join([*previous, request.query])
                     if retrieval_query == request.query:
                         history = []
+                generation.timings["rewrite_ms"] = round((perf_counter() - rewrite_started) * 1000)
                 generation.history_used = bool(history)
                 generation.retrieval_query = retrieval_query
+                retrieval_started = perf_counter()
                 query, hits = await self._retrieve(request, retrieval_query=retrieval_query)
-                yield {"event": "status", "data": {"stage": "graph_retrieving"}}
-                graph = await recall_graph_evidence(
-                    self.session, retrieval_query, request.filters, self.settings
+                generation.timings["retrieval_ms"] = round(
+                    (perf_counter() - retrieval_started) * 1000
                 )
-                generation.graph_retrieval = graph.trace
-                hits = merge_graph_evidence(hits, graph.evidence)
+                if self.settings.answer_graph_enabled:
+                    yield {"event": "status", "data": {"stage": "graph_retrieving"}}
+                    graph = await recall_graph_evidence(
+                        self.session, retrieval_query, request.filters, self.settings
+                    )
+                    generation.graph_retrieval = graph.trace
+                    hits = merge_graph_evidence(hits, graph.evidence)
+                else:
+                    generation.graph_retrieval = {"status": "disabled"}
                 if self.settings.reranker_provider != "none":
                     yield {"event": "status", "data": {"stage": "reranking"}}
+                rerank_started = perf_counter()
                 reranked = await rerank_evidence(self.session, retrieval_query, hits, self.settings)
+                generation.timings["rerank_ms"] = round((perf_counter() - rerank_started) * 1000)
                 generation.reranking = reranked.trace
+                context_started = perf_counter()
                 context = await prepare_answer_context(
                     self.session,
                     reranked.evidence,
                     max_evidence=min(request.top_k, self.settings.answer_max_evidence),
                     preserve_order=reranked.trace["status"] == "reranked",
                 )
+                generation.timings["context_ms"] = round((perf_counter() - context_started) * 1000)
             evidence = context.evidence
             generation.evidence_count = len(evidence)
             generation.context_chars = len(context.text)
@@ -193,6 +206,11 @@ class SearchService:
                         )
                     ) as deltas:
                         async for delta in deltas:
+                            if generation.first_token_ms is None:
+                                generation.first_token_ms = round((perf_counter() - started) * 1000)
+                                generation.timings["model_first_token_ms"] = round(
+                                    (perf_counter() - generation_started) * 1000
+                                )
                             text += delta
                             yield {"event": "delta", "data": {"text": delta}}
                     if not text.strip():

@@ -101,3 +101,25 @@ docker compose -p rag_drift \
 [切换计划](../data/releases/web-neo4j-next-20261110/switch-plan.json) · [Web切换验证结果](../data/releases/web-neo4j-next-20261110/switch-verification.json)
 
 当前画布默认过滤小于5个节点的连通子图。本次新库仅4个实体，因此默认画布会隐藏该子图；已验证`min_component_size=0`可回读4节点、3连边，完整查询及证据检索正常。这是现有展示规则，不是切库失败；本次没有修改画布筛选策略。
+
+## 首批100个视频完成与下一批（2026-11-11）
+
+`neo4j-next-batch-20261110.plan.json`固定选择100个视频，目前全部为already_current。重复运行同一清单不会自动扩展到数据库中其余视频，`--retry-failed`也不会强制重新抽取已成功的视频。
+
+此前报告有19个回读失败，涉及31处同一实体的展示名称大小写差异。实体ID、类型、数量、关系、提及和证据均一致。已修复回读比较口径，并只读复核100个视频，现为100/100 verified，报告状态success。此次复核没有调用模型或修改图谱；原报告已另存。
+
+[当前报告](../data/video_graph_runs/neo4j-next-batch-20261110.report.json) · [复核摘要](../data/video_graph_runs/neo4j-next-batch-readback-recheck-20261111.json) · [名称差异审计](../data/video_graph_runs/neo4j-next-batch-label-audit-20261111.json)
+
+下一批使用新的清单与报告文件名；新计划会优先选择尚未完成当前版本的视频：
+
+```bash
+VIDEO_GRAPH_EXTRACTION_EFFORT=none VIDEO_GRAPH_REASONING_EFFORT=none \
+.venv/bin/python tools/video-knowledge-graph/build_graph.py pipeline \
+  --neo4j-env-file .env.video-graph-next \
+  --limit 100 --batch-size 5 \
+  --manifest data/video_graph_runs/neo4j-next-batch-20261111-02.plan.json \
+  --report data/video_graph_runs/neo4j-next-batch-20261111-02.report.json \
+  --retry-failed
+```
+
+中断后复用上面的新文件名续跑；这一批完成后，再换下一组文件名。不要删除旧清单来复用原路径，也不要在续跑中更改提示词、模型和来源。

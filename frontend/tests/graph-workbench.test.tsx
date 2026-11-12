@@ -57,7 +57,7 @@ describe('Obsidian-style graph workbench', () => {
     fireEvent.click(screen.getByLabelText('常显实体名称'));
     fireEvent.click(screen.getByLabelText('显示关系方向'));
     fireEvent.change(screen.getByRole('slider', { name: /节点大小/ }), { target: { value: '1.7' } });
-    expect(JSON.parse(screen.getByTestId('appearance').textContent ?? '{}')).toMatchObject({ showLabels: false, showArrows: true, nodeScale: 1.7 });
+    expect(JSON.parse(screen.getByTestId('appearance').textContent ?? '{}')).toMatchObject({ showLabels: false, showArrows: false, nodeScale: 1.7 });
   });
 
   it('toggles the data panel without creating separate page navigation', () => {
@@ -74,6 +74,8 @@ describe('Obsidian-style graph workbench', () => {
   it('switches dimensions while retaining selection, data and separate label settings', () => {
     const handlers = props();
     render(<GraphWorkbench {...handlers} />);
+    expect(screen.getByTestId('dimension')).toHaveTextContent('2d');
+    fireEvent.click(screen.getByRole('button', { name: '3D', exact: true }));
     expect(screen.getByTestId('dimension')).toHaveTextContent('3d');
     expect(screen.getByLabelText('常显实体名称')).not.toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: '选中 PX4 节点' }));

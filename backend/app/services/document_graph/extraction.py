@@ -112,7 +112,13 @@ has_parameter检查参数名/原文值/单位/对象/测试条件；instruction�
 
 def policy_id(settings=None):
     here = Path(__file__).parent
-    code = stable_hash({p.name: p.read_text() for p in sorted(here.glob("*.py"))})[:16]
+    shared = here.parent / "knowledge_graph"
+    code = stable_hash(
+        {
+            "document": {p.name: p.read_text() for p in sorted(here.glob("*.py"))},
+            "shared": {p.name: p.read_text() for p in sorted(shared.glob("*.py"))},
+        }
+    )[:16]
     if settings is None or not hasattr(settings, "llm_model"):
         return code
     profile = [

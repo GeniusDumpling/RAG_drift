@@ -104,10 +104,11 @@ async def seed(session: AsyncSession) -> list[ContentChunk]:
     return chunks
 
 
-def settings(*, api_key: str | None = None) -> Settings:
+def settings(*, api_key: str | None = None, graph_enabled: bool = False) -> Settings:
     return Settings(
         _env_file=None,
         LLM_PROVIDER="fake",
+        ANSWER_GRAPH_ENABLED=graph_enabled,
         EMBEDDING_API_KEY="test",
         LLM_API_KEY=api_key,
         QDRANT_URL="memory://chat-tests",
@@ -305,7 +306,6 @@ async def test_answer_reranking_preserves_scores_order_and_audit_or_falls_back(
     response = events[-1]["data"]
     assert [e["data"]["stage"] for e in events if e["event"] == "status"] == [
         "retrieving",
-        "graph_retrieving",
         "reranking",
         "generating",
     ]
@@ -745,7 +745,7 @@ async def test_graph_evidence_reaches_answer_and_saved_history(
     graph_store, db_session, monkeypatch
 ):
     chunk = await seed_answer_graph(db_session, graph_store)
-    config = settings(api_key="test")
+    config = settings(api_key="test", graph_enabled=True)
     captured = []
 
     async def model_stream(self, query, evidence, **kwargs):
@@ -779,7 +779,7 @@ async def test_graph_respects_source_lifecycle_and_filters(graph_store, db_sessi
     from app.services.answer_graph import recall_graph_evidence
 
     chunk = await seed_answer_graph(db_session, graph_store)
-    config = settings()
+    config = settings(graph_enabled=True)
     filters = SearchFilters()
     if excluded == "filter":
         filters = SearchFilters(source_site_id=uuid4())
@@ -799,7 +799,9 @@ async def test_graph_duplicates_merge_without_losing_grounding(graph_store, db_s
     from app.services.answer_graph import merge_graph_evidence, recall_graph_evidence
 
     chunk = await seed_answer_graph(db_session, graph_store)
-    graph = await recall_graph_evidence(db_session, "PX4", SearchFilters(), settings())
+    graph = await recall_graph_evidence(
+        db_session, "PX4", SearchFilters(), settings(graph_enabled=True)
+    )
     regular = graph.evidence[0].model_copy(update={"matched_by": "keyword", "graph_evidence": []})
     merged = merge_graph_evidence([regular], graph.evidence)
     assert len(merged) == 1 and merged[0].chunk_id == chunk.id
@@ -826,7 +828,7 @@ async def test_graph_failure_does_not_break_answer_transaction(db_session, monke
             await asyncio.sleep(1)
 
         monkeypatch.setattr("app.services.answer_graph.retrieve_graph_context", slow)
-    config = settings()
+    config = settings(graph_enabled=True)
     config.answer_graph_timeout_seconds = 0.01 if failure == "timeout" else 5
     result = await SearchService(db_session, settings=config).answer(AnswerRequest(query="PX4"))
     assert result.supporting_evidence
@@ -837,7 +839,9 @@ async def test_graph_failure_does_not_break_answer_transaction(db_session, monke
 @pytest.mark.parametrize("route", ["/answer", "/answer/stream"])
 async def test_graph_answer_http_routes(graph_store, db_session, chat_client, monkeypatch, route):
     await seed_answer_graph(db_session, graph_store)
-    config = settings(api_key="test").model_copy(update={"reranker_provider": "none"})
+    config = settings(api_key="test", graph_enabled=True).model_copy(
+        update={"reranker_provider": "none"}
+    )
     monkeypatch.setattr("app.services.search.get_settings", lambda: config)
 
     async def model_stream(self, query, evidence, **kwargs):
@@ -866,6 +870,80 @@ async def test_graph_rejects_quotes_removed_from_current_source(graph_store, db_
     chunk = await seed_answer_graph(db_session, graph_store)
     chunk.display_text = "This is a revised transcript with unrelated information."
     await db_session.commit()
-    result = await recall_graph_evidence(db_session, "PX4", SearchFilters(), settings())
+    result = await recall_graph_evidence(
+        db_session, "PX4", SearchFilters(), settings(graph_enabled=True)
+    )
     assert result.trace["raw_evidence_count"] == 1
     assert result.evidence == []
+
+
+@pytest.mark.parametrize("route", ["/answer", "/answer/stream"])
+async def test_disconnected_rag_never_calls_graph(db_session, chat_client, monkeypatch, route):
+    await seed(db_session)
+    config = settings(api_key="test").model_copy(update={"reranker_provider": "none"})
+    monkeypatch.setattr("app.services.search.get_settings", lambda: config)
+
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("Disconnected RAG must not invoke graph recall")
+
+    async def model_stream(self, query, evidence, **kwargs):
+        assert evidence and all(not item.graph_evidence for item in evidence)
+        assert "图谱关系线索" not in kwargs["context"]
+        yield "PX4 telemetry [1]"
+
+    monkeypatch.setattr("app.services.search.recall_graph_evidence", forbidden)
+    monkeypatch.setattr(LLMAnswerClient, "stream", model_stream)
+    response = await chat_client.post(route, json={"query": "PX4 telemetry"})
+    assert response.status_code == 200
+    if route.endswith("stream"):
+        assert '"stage": "graph_retrieving"' not in response.text
+        result = json.loads(next(block.split("data: ", 1)[1]
+                                 for block in response.text.split("\n\n")
+                                 if block.startswith("event: done")))
+    else:
+        result = response.json()
+    assert result["generation"]["graph_retrieval"]["status"] == "disabled"
+    assert result["supporting_evidence"]
+    assert all(not item["graph_evidence"] for item in result["supporting_evidence"])
+
+
+@pytest.mark.parametrize('max_chars', [6000, 700])
+async def test_context_reuses_only_complete_source_chunks(db_session, max_chars, monkeypatch):
+    chunks = await seed(db_session)
+    from app.schemas.search import ImageEvidence
+
+    def source_images(item, chunk):
+        return [ImageEvidence(
+            asset_id=str(chunk.id), source_guid=str(chunk.id),
+            url=f"/ifixit-media/assets/{chunk.id}",
+            source_url=f"https://manual.test/images/{chunk.id}.jpg",
+            guide_url=item.canonical_url, caption="Source image", width=100, height=100,
+        )]
+
+    monkeypatch.setattr("app.services.answer_context.images_for_chunk", source_images)
+    config = settings()
+    result = await retrieve_evidence(
+        db_session, raw_query='PX4 telemetry', optimized_query_text='PX4 telemetry',
+        keyword_terms=['PX4', 'telemetry'], filters=SearchFilters(), top_k=6,
+        qdrant_url=config.qdrant_url, qdrant_collection=config.qdrant_collection,
+        embedding=SiliconFlowEmbeddingService(model_name='BAAI/bge-m3', api_key='test',
+                                             base_url='https://unused.test'),
+        max_per_content=2,
+    )
+    hits = [e for e in result.evidence if e.content_item_id == chunks[0].content_item_id]
+    assert len(hits) == 2
+    context = await prepare_answer_context(db_session, hits, max_chars=max_chars,
+                                          max_evidence=2, preserve_order=True)
+    assert len(context.text) <= max_chars
+    assert [e.chunk_id for e in context.evidence] == [e.chunk_id for e in hits]
+    if max_chars == 6000:
+        assert '已完整呈现于证据[1]' in context.text
+        for chunk in chunks[:3]:
+            assert context.text.count(chunk.display_text.strip()) == 1
+        assert {image.asset_id for image in context.evidence[1].images} == {
+            str(chunk.id) for chunk in chunks[:3]
+        }
+    else:
+        assert '已完整呈现' not in context.text
+        assert 'PX4 telemetry source 0 chunk 0.' in context.text
+        assert 'PX4 telemetry source 0 chunk 1.' in context.text

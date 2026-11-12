@@ -34,6 +34,10 @@ def now_ms():
 
 
 class GraphStore(Neo4jStore):
+    def __init__(self, settings):
+        self.unified = bool(getattr(settings, "unified_graph_enabled", False))
+        super().__init__(settings, config_prefix="unified_graph_neo4j" if self.unified else "neo4j")
+
     def active_snapshot(self, content_id):
         rows = self.read(
             "MATCH (v:VGVideo {id:$id}) OPTIONAL MATCH (b:VGBuild {id:v.active_build_id}) "
@@ -60,7 +64,39 @@ class GraphStore(Neo4jStore):
         if rows and not rows[0]["ready"]:
             raise ValueError("Neo4j 历史导入尚未完成，请先完成导入和校验")
 
+    def refresh_shared(self, material):
+        """Reproject a reviewed active build after an adapter upgrade, without extraction."""
+        if not self.unified:
+            raise ValueError("需要启用统一图谱")
+        from app.services.knowledge_graph.adapters import video_publication
+        from app.services.knowledge_graph.storage import publish
+
+        with self.transaction() as tx:
+            state = self.lock(tx, material.id)
+            row = tx.run(
+                "MATCH(b:VGBuild {id:$id}) RETURN b", id=state.get("active_build_id")
+            ).single()
+            if (
+                not row
+                or state.get("withdrawn")
+                or state.get("deleted")
+                or row["b"]["status"] != "success"
+                or row["b"]["fingerprint"] != material.fingerprint
+            ):
+                raise ValueError("有效视频材料或版本不匹配，拒绝重投影")
+            build = row["b"]
+            return publish(
+                tx,
+                video_publication(
+                    material, build["id"], decode(build["output_json"]), build["extractor_version"]
+                ),
+            )
+
     def initialize(self):
+        if self.unified:
+            from app.services.knowledge_graph.storage import initialize
+
+            initialize(self.driver, self.database)
         with self.driver.session(database=self.database) as session:
             for label in (*LABELS, "VGMigration"):
                 session.run(
@@ -274,6 +310,12 @@ class GraphStore(Neo4jStore):
                 "MERGE (v:VGVideo {id:$id}) ON CREATE SET v.withdrawn=false", id=str(video_id)
             ).consume()
             state = self.lock(tx, video_id)
+            if self.unified:
+                from app.services.knowledge_graph.storage import set_visibility
+
+                set_visibility(
+                    tx, "video", video_id, withdrawn=not restore, clear_active=not restore
+                )
             tx.run(
                 "MATCH (v:VGVideo {id:$id}) SET v.withdrawn=$withdrawn, v.deleted=$deleted",
                 id=str(video_id),
@@ -347,6 +389,16 @@ class GraphStore(Neo4jStore):
             elif status != "failed":
                 output.pop("retained_active_build_id", None)
                 self.publish(tx, material, str(build_id), output)
+                if self.unified:
+                    from app.services.knowledge_graph.adapters import video_publication
+                    from app.services.knowledge_graph.storage import publish
+
+                    publish(
+                        tx,
+                        video_publication(
+                            material, str(build_id), output, build["extractor_version"]
+                        ),
+                    )
                 output["published_chunk_ids"] = sorted(passed)
                 output["published_coverage"] = dict(coverage)
                 tx.run(

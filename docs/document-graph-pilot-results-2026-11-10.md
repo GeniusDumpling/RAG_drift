@@ -22,7 +22,13 @@
 
 [对照表与原图](../data/document_graph_runs/pilot-20261110/release-comparison.html) 默认展示名称、事实、原文和图片，坐标及完整字段可展开；[机器报告](../data/document_graph_runs/pilot-20261110/release-comparison.json) 保留全部指标。原页和裁剪见[来源预览](../data/document_graph_runs/pilot-20261110/source-preview.html)。
 
-[`document_multimodal_gold_v1.json`](../scripts/evaluation_data/document_multimodal_gold_v1.json) 的答案在调试期间未改动，SHA-256 为 `9732f2eb10c1e93b1f265eaaa86046ed6bec0e4a8d11710eeecd968c04444aab`。该集由助手对原始手册初标，**尚待人工复核**；它参与了开发调试，不能据此推断未见文档的效果，也不用于报告全量实体/关系精确率或 F1。
+[`document_multimodal_gold_v1.json`](../scripts/evaluation_data/document_multimodal_gold_v1.json) 的答案在调试期间未改动；2026-11-10初标快照的 SHA-256 为 `9732f2eb10c1e93b1f265eaaa86046ed6bec0e4a8d11710eeecd968c04444aab`。该集由助手对原始手册初标，初次评测时尚待人工复核。它参与了开发调试，不能据此推断未见文档的效果，也不用于报告全量实体/关系精确率或 F1。
+
+## 2026-11-11 人工复核确认
+
+用户已确认复核完成，v1 标记为 `human_reviewed`。19个目标与4个负例的标注内容与初标一致，因此保留 v1，仅更新复核状态和日期。全文 SHA-256 随元数据更新为 `1887c82ca9b6798f62e53134d50624eb6fb02c027e134379c353da0f8a31bacc`；[复核记录](../data/document_graph_runs/reviewed-20261111/review-receipt.json) 保留前后哈希及标注内容校验。
+
+使用既有抽取结果重新评分，未调用模型：19/19目标、13/13图文关联目标、4/4错配负例通过。见[复核后对照表](../data/document_graph_runs/reviewed-20261111/comparison.html)和[机器报告](../data/document_graph_runs/reviewed-20261111/comparison.json)。初次构建的报告与审计保留为历史记录。
 
 ## 实际 Neo4j 验证
 

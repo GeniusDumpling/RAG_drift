@@ -17,6 +17,61 @@ from app.services.video_graph.identity import stable_hash
 pytestmark = pytest.mark.no_db
 
 
+def test_document_connection_uses_only_document_settings(monkeypatch, tmp_path):
+    from unittest.mock import Mock
+
+    from app.services.document_graph.storage import DocumentGraphStore
+    from app.services.graph_storage import GraphDatabase
+
+    driver = Mock()
+    monkeypatch.setattr(GraphDatabase, "driver", driver)
+    settings = SimpleNamespace(
+        neo4j_uri="bolt://video:7687",
+        neo4j_user="video-user",
+        neo4j_password="video-secret",
+        neo4j_database="video-db",
+        document_graph_neo4j_uri="bolt://documents:7687",
+        document_graph_neo4j_user="document-user",
+        document_graph_neo4j_password="document-secret",
+        document_graph_neo4j_database="document-db",
+        document_graph_artifacts_dir=tmp_path,
+    )
+    with DocumentGraphStore(settings) as store:
+        assert store.database == "document-db"
+    driver.assert_called_once_with(
+        "bolt://documents:7687",
+        auth=("document-user", "document-secret"),
+        connection_timeout=10,
+        max_transaction_retry_time=15,
+    )
+
+
+@pytest.mark.parametrize("missing", ["uri", "password"])
+def test_document_connection_never_falls_back_to_video(monkeypatch, tmp_path, missing):
+    from unittest.mock import Mock
+
+    from app.services.document_graph.storage import DocumentGraphStore
+    from app.services.graph_storage import GraphDatabase
+
+    driver = Mock()
+    monkeypatch.setattr(GraphDatabase, "driver", driver)
+    values = dict(
+        neo4j_uri="bolt://video:7687",
+        neo4j_user="neo4j",
+        neo4j_password="video-secret",
+        neo4j_database="neo4j",
+        document_graph_neo4j_uri="bolt://documents:7687",
+        document_graph_neo4j_user="neo4j",
+        document_graph_neo4j_password="document-secret",
+        document_graph_neo4j_database="neo4j",
+        document_graph_artifacts_dir=tmp_path,
+    )
+    values[f"document_graph_neo4j_{missing}"] = None
+    with pytest.raises(ValueError, match=f"DOCUMENT_GRAPH_NEO4J_{missing.upper()}"):
+        DocumentGraphStore(SimpleNamespace(**values))
+    driver.assert_not_called()
+
+
 @pytest.fixture
 def source(tmp_path):
     root = tmp_path / "source"

@@ -1,0 +1,30 @@
+# Standalone document graph; does not attach to or modify video graph services/volumes.
+# docker compose --env-file .env.document-graph -f docker-compose.document-graph.yml up -d
+name: rag-document-graph
+
+services:
+  neo4j-document:
+    image: neo4j:5.26-community
+    container_name: intelligence-rag-neo4j-document
+    environment:
+      NEO4J_AUTH: neo4j/${DOCUMENT_GRAPH_NEO4J_PASSWORD:?Set DOCUMENT_GRAPH_NEO4J_PASSWORD in .env.document-graph}
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 512m
+    ports:
+      - "127.0.0.1:7476:7474"
+      - "127.0.0.1:7689:7687"
+    volumes:
+      - neo4j-document-data:/data
+      - neo4j-document-logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  neo4j-document-data:
+  neo4j-document-logs:

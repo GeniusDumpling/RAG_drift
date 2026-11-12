@@ -240,6 +240,23 @@ export type ChatTurn = {
 
 export type ChatSessionDetail = { session: ChatSession; turns: ChatTurn[] };
 
+export type ImageEvidence = {
+  asset_id: string;
+  source_guid: string;
+  url: string;
+  source_url: string;
+  guide_url: string;
+  step_order: number | null;
+  step_title: string | null;
+  caption: string;
+  width: number;
+  height: number;
+  observation?: string | null;
+  ocr_text?: string[];
+  description_generated?: boolean;
+  citation_index?: number | null;
+};
+
 export type EvidenceObject = {
   chunk_id: UUID;
   content_item_id: UUID;
@@ -265,6 +282,7 @@ export type EvidenceObject = {
   thread_summary: string | null;
   video_url: string | null;
   description_text: string | null;
+  images?: ImageEvidence[];
 };
 
 export type SearchResponse = {
@@ -276,6 +294,7 @@ export type AnswerResponse = {
   query: SearchQueryRead;
   answer: string;
   supporting_evidence: EvidenceObject[];
+  images?: ImageEvidence[];
   generation?: GenerationInfo;
   session_id?: UUID | null;
   turn_id?: UUID | null;

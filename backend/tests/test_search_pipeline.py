@@ -407,6 +407,7 @@ async def test_search_persists_optimization_before_retrieval_failure(
         raise RuntimeError("retrieval exploded after optimization")
 
     monkeypatch.setattr(search_service_module, "retrieve_evidence", fail_after_optimization)
+    monkeypatch.setattr(search_service_module, "should_skip_optimization", lambda _: False)
 
     with pytest.raises(RuntimeError, match="retrieval exploded"):
         await SearchService(db_session, settings=Settings(LLM_PROVIDER="fake")).search(

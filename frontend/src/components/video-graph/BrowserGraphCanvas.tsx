@@ -1,11 +1,20 @@
 import { useEffect, useLayoutEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } from 'd3-force';
+import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY } from 'd3-force';
 import type { Simulation, SimulationNodeDatum, SimulationLinkDatum } from 'd3-force';
 import type { VideoGraphNode } from '../../api/types';
 import type { GraphCanvasProps } from './InteractiveGraphCanvas';
 import { nodeRelationCounts, parallelEdgeStyles } from './data';
-import { DEFAULT_GRAPH_APPEARANCE, ENTITY_COLORS, ENTITY_LABELS, PREDICATE_LABELS } from './presentation';
+import {
+  classifyEdgeSemantics,
+  DEFAULT_GRAPH_APPEARANCE,
+  ENTITY_COLORS,
+  ENTITY_LABELS,
+  entityLayerIndex,
+  formatEdgeCaption,
+  ONTOLOGY_LAYERS,
+  PREDICATE_LABELS,
+} from './presentation';
 import { browserNodeRadius } from './browser-geometry';
 import { BrowserMotion } from './browser-motion';
 import './browser-graph.css';
@@ -14,16 +23,20 @@ type Node = SimulationNodeDatum & { id: string; x: number; y: number; radius: nu
 type View = { x: number; y: number; k: number };
 type Style = { color?: string; scale?: number; caption?: 'name' | 'type' | 'id' | 'none' };
 type Hidden = { nodes: Set<string>; edges: Set<string> };
+type LaneGuide = { index: number; label: string; summary: string; x: number; width: number; top: number; bottom: number; labelScale: number };
 
 export function BrowserGraphCanvas(props: GraphCanvasProps) {
   const appearance = props.appearance ?? DEFAULT_GRAPH_APPEARANCE;
+  const layoutMode = appearance.layoutMode ?? 'force';
   const uid = useId().replace(/:/g, '');
   const svg = useRef<SVGSVGElement>(null);
   const nodesRef = useRef<Node[]>([]);
   const nodeCache = useRef(new Map<string, Node>());
   const simulation = useRef<Simulation<Node, undefined>>();
+  const previousLayoutMode = useRef(layoutMode);
   const frame = useRef(0);
   const [sceneNodes, setSceneNodes] = useState<Node[]>([]);
+  const [lanes, setLanes] = useState<LaneGuide[]>([]);
   const [, updateControls] = useState(0);
   const world = useRef<SVGGElement>(null);
   const motion = useRef<BrowserMotion>();
@@ -42,8 +55,6 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
   const history = useRef<Hidden[]>([]);
   const [styles, setStyles] = useState<Record<string, Style>>({});
   const [styleKey, setStyleKey] = useState('');
-  const [find, setFind] = useState('');
-  const [notice, setNotice] = useState('');
   const drag = useRef<{ id?: string; x: number; y: number; nodeX?: number; nodeY?: number; moved: boolean; view: View; pointer: number; capture: Element }>();
   const moved = useRef(false);
   const counts = useMemo(() => nodeRelationCounts(props.graph.edges), [props.graph]);
@@ -53,8 +64,10 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
     return props.graph.edges.filter(e => !hidden.edges.has(e.id) && ids.has(e.source) && ids.has(e.target));
   }, [props.graph, hidden, visibleNodes]);
   const curves = useMemo(() => parallelEdgeStyles(edges), [edges]);
+  const edgeSemantics = useMemo(() => new Map(edges.map(edge => [edge.id, classifyEdgeSemantics(edge)])), [edges]);
   const nodeScales = JSON.stringify(Object.entries(styles).filter(([key, value]) => key.startsWith('node:') && value.scale !== undefined).map(([key, value]) => [key, value.scale]));
   const active = hovered || selectedId;
+  const pathFocus = props.highlightedPath && props.highlightedPath.nodeIds.size > 0 ? props.highlightedPath : null;
   const neighbors = new Set([active, ...edges.filter(e => e.source === active || e.target === active).flatMap(e => [e.source, e.target])]);
 
   function scheduleDraw(geometry = true) {
@@ -72,8 +85,11 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
   function fit() {
     const nodes = nodesRef.current;
     if (!nodes.length) return;
-    const left = Math.min(...nodes.map(n => n.x - n.radius)), right = Math.max(...nodes.map(n => n.x + n.radius));
-    const top = Math.min(...nodes.map(n => n.y - n.radius - 60)), bottom = Math.max(...nodes.map(n => n.y + n.radius));
+    const lanePadX = layoutMode === 'layered' ? 90 : 0;
+    const left = Math.min(...nodes.map(n => n.x - n.radius)) - lanePadX;
+    const right = Math.max(...nodes.map(n => n.x + n.radius)) + lanePadX;
+    const top = Math.min(...nodes.map(n => n.y - n.radius - (layoutMode === 'layered' ? 120 : 60)));
+    const bottom = Math.max(...nodes.map(n => n.y + n.radius)) + (layoutMode === 'layered' ? 40 : 0);
     const k = Math.min(1.5, (size.width - 110) / Math.max(1, right - left), (size.height - 150) / Math.max(1, bottom - top));
     setView({ k: Math.max(0.05, k), x: size.width / 2 - (left + right) / 2 * k, y: size.height / 2 - (top + bottom) / 2 * k });
   }
@@ -97,36 +113,166 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
     element.addEventListener('wheel', wheel, { passive: false });
     return () => { observer.disconnect(); element.removeEventListener('wheel', wheel); };
   }, []);
+
   useEffect(() => {
     const previous = nodeCache.current;
+    const modeChanged = previousLayoutMode.current !== layoutMode;
+    previousLayoutMode.current = layoutMode;
+
     const nodes = visibleNodes.map((item, i): Node => {
       const old = previous.get(item.id);
       const neighborId = props.graph.edges.find(e => e.source === item.id && previous.has(e.target) || e.target === item.id && previous.has(e.source));
       const anchor = neighborId ? previous.get(neighborId.source === item.id ? neighborId.target : neighborId.source) : undefined;
-      return { ...old, id: item.id, item, x: old?.x ?? (anchor?.x ?? 0) + Math.cos(i * 2.4) * 100,
+      return {
+        ...old,
+        id: item.id,
+        item,
+        x: old?.x ?? (anchor?.x ?? 0) + Math.cos(i * 2.4) * 100,
         y: old?.y ?? (anchor?.y ?? 0) + Math.sin(i * 2.4) * 100,
-        radius: browserNodeRadius(counts.get(item.id) ?? 0, appearance.nodeScale * (styles['node:' + item.entity_type]?.scale ?? 1)) };
+        radius: browserNodeRadius(counts.get(item.id) ?? 0, appearance.nodeScale * (styles['node:' + item.entity_type]?.scale ?? 1)),
+      };
     });
+
+    const layerTargets = new Map<string, { x: number; y: number }>();
+    const layerBounds = new Map<string, { left: number; right: number; top: number; bottom: number }>();
+    const nextLanes: LaneGuide[] = [];
+    if (layoutMode === 'layered' && nodes.length) {
+      const buckets = new Map<number, Node[]>();
+      for (const node of nodes) {
+        const layerIdx = entityLayerIndex(node.item.entity_type, node.item.kind);
+        const list = buckets.get(layerIdx) ?? [];
+        list.push(node);
+        buckets.set(layerIdx, list);
+      }
+      const activeLayerIndices = [...buckets.keys()].sort((a, b) => a - b);
+      const layerPlans = activeLayerIndices.map((layerIdx) => {
+        const colNodes = buckets.get(layerIdx)!;
+        colNodes.sort((a, b) => (counts.get(b.id) ?? 0) - (counts.get(a.id) ?? 0) || a.id.localeCompare(b.id));
+        const count = colNodes.length;
+        const maxRadius = Math.max(22, ...colNodes.map(n => n.radius));
+        const subCols = count <= 6 ? 1 : count <= 16 ? 2 : count <= 36 ? 3 : count <= 64 ? 4 : Math.min(6, Math.ceil(Math.sqrt(count / 3)));
+        const rows = Math.ceil(count / subCols);
+        const subColGap = Math.max(140, maxRadius * 2 + 52);
+        const stepY = Math.max(116, maxRadius * 2 + 48);
+        const padX = maxRadius + 46;
+        const padY = maxRadius + 46;
+        const bandWidth = Math.max(220, (subCols - 1) * subColGap + padX * 2);
+        const staggerY = subCols > 1 ? stepY * 0.24 : 0;
+        const height = Math.max(220, (rows - 1) * stepY + staggerY + padY * 2);
+        return { layerIdx, colNodes, subCols, rows, subColGap, stepY, padX, padY, staggerY, bandWidth, height };
+      });
+      const maxHeight = Math.max(...layerPlans.map(p => p.height));
+      const interLayerGap = Math.max(420, Math.round(maxHeight * 0.30));
+      const totalWidth = layerPlans.reduce((sum, p) => sum + p.bandWidth, 0) + Math.max(0, layerPlans.length - 1) * interLayerGap;
+      const labelScale = Math.max(1, Math.min(2.6, Math.max(totalWidth / 1400, maxHeight / 780)));
+
+      let cursorX = -totalWidth / 2;
+      for (const plan of layerPlans) {
+        const centerX = cursorX + plan.bandWidth / 2;
+        cursorX += plan.bandWidth + interLayerGap;
+        const contentSpanY = (plan.rows - 1) * plan.stepY + plan.staggerY;
+        const startY = -contentSpanY / 2;
+        const boxLeft = centerX - plan.bandWidth / 2;
+        const boxRight = centerX + plan.bandWidth / 2;
+        const boxTop = startY - plan.padY;
+        const boxBottom = startY + contentSpanY + plan.padY;
+
+        plan.colNodes.forEach((node, idx) => {
+          const row = Math.floor(idx / plan.subCols);
+          const colInRow = idx % plan.subCols;
+          const itemsInRow = row === plan.rows - 1 ? plan.colNodes.length - row * plan.subCols : plan.subCols;
+          const xOffset = (colInRow - (itemsInRow - 1) / 2) * plan.subColGap;
+          const yStagger = (colInRow % 2 === 1 && itemsInRow > 1 ? plan.staggerY : 0);
+          const x = centerX + xOffset;
+          const y = startY + row * plan.stepY + yStagger;
+          layerTargets.set(node.id, { x, y });
+          layerBounds.set(node.id, { left: boxLeft, right: boxRight, top: boxTop, bottom: boxBottom });
+          if (modeChanged || !previous.has(node.id)) {
+            if (node.fx == null) { node.x = x; node.y = y; }
+          }
+        });
+        const meta = ONTOLOGY_LAYERS.find(layer => layer.index === plan.layerIdx) ?? ONTOLOGY_LAYERS[1];
+        nextLanes.push({
+          index: plan.layerIdx,
+          label: meta.label,
+          summary: meta.summary,
+          x: centerX,
+          width: plan.bandWidth,
+          top: boxTop,
+          bottom: boxBottom,
+          labelScale,
+        });
+      }
+    }
+    setLanes(nextLanes);
     nodesRef.current = nodes;
     setSceneNodes(nodes);
     for (const node of nodes) nodeCache.current.set(node.id, node);
+
     simulation.current?.stop();
     const links: SimulationLinkDatum<Node>[] = edges.filter(e => e.source !== e.target).map(e => ({ source: e.source, target: e.target }));
     const sim = forceSimulation(nodes).stop()
-      .force('link', forceLink<Node, SimulationLinkDatum<Node>>(links).id(n => n.id).distance(link => {
-        const a = link.source as Node, b = link.target as Node;
-        return a.radius + b.radius + appearance.linkDistance;
-      }).strength(0.15))
-      .force('charge', forceManyBody<Node>().strength(-appearance.repulsion * 3))
-      .force('collide', forceCollide<Node>().radius(n => n.radius + 16).iterations(3))
-      .force('center', forceCenter(0, 0).strength(0.03));
+      .force('collide', forceCollide<Node>().radius(n => n.radius + 14).iterations(3));
+
+    if (layoutMode === 'layered') {
+      sim
+        .force('link', forceLink<Node, SimulationLinkDatum<Node>>(links).id(n => n.id).distance(link => {
+          const a = link.source as Node, b = link.target as Node;
+          return a.radius + b.radius + appearance.linkDistance;
+        }).strength(0.02))
+        .force('charge', forceManyBody<Node>().strength(-appearance.repulsion * 0.25))
+        .force('layerX', forceX<Node>(n => layerTargets.get(n.id)?.x ?? 0).strength(0.15))
+        .force('layerY', forceY<Node>(n => layerTargets.get(n.id)?.y ?? 0).strength(0.12))
+        .force('contain', (alpha: number) => {
+          const pull = Math.min(0.35, alpha * 0.45);
+          for (const node of nodes) {
+            if (node.fx != null) continue;
+            const bounds = layerBounds.get(node.id);
+            const target = layerTargets.get(node.id);
+            if (!bounds || !target) continue;
+            // Only apply box containment once a node has arrived near its layer;
+            // during cross-layer lens transitions let forceX/forceY glide it smoothly.
+            if (Math.abs(node.x - target.x) > (bounds.right - bounds.left) * 0.65) continue;
+            const margin = node.radius + 10;
+            const minX = bounds.left + margin, maxX = bounds.right - margin;
+            const minY = bounds.top + margin, maxY = bounds.bottom - margin;
+            if (node.x < minX) { node.x += (minX - node.x) * pull; node.vx = Math.max(0, node.vx ?? 0); }
+            else if (node.x > maxX) { node.x -= (node.x - maxX) * pull; node.vx = Math.min(0, node.vx ?? 0); }
+            if (node.y < minY) { node.y += (minY - node.y) * pull; node.vy = Math.max(0, node.vy ?? 0); }
+            else if (node.y > maxY) { node.y -= (node.y - maxY) * pull; node.vy = Math.min(0, node.vy ?? 0); }
+          }
+        });
+    } else {
+      sim
+        .force('link', forceLink<Node, SimulationLinkDatum<Node>>(links).id(n => n.id).distance(link => {
+          const a = link.source as Node, b = link.target as Node;
+          return a.radius + b.radius + appearance.linkDistance;
+        }).strength(0.15))
+        .force('charge', forceManyBody<Node>().strength(-appearance.repulsion * 3))
+        .force('center', forceCenter(0, 0).strength(0.03));
+    }
+
     const firstLayout = !simulation.current;
     simulation.current = sim;
-    if (firstLayout) { sim.tick(160); fit(); }
-    sim.on('tick', scheduleDraw).alpha(firstLayout ? 0.08 : 0.25).restart();
+    if (firstLayout || modeChanged) {
+      sim.tick(160);
+      if (layoutMode === 'layered') {
+        for (const node of nodes) {
+          if (node.fx != null) continue;
+          const bounds = layerBounds.get(node.id);
+          if (!bounds) continue;
+          const margin = node.radius + 10;
+          node.x = Math.max(bounds.left + margin, Math.min(bounds.right - margin, node.x));
+          node.y = Math.max(bounds.top + margin, Math.min(bounds.bottom - margin, node.y));
+        }
+      }
+      fit();
+    }
+    sim.on('tick', scheduleDraw).alpha(firstLayout ? 0.08 : modeChanged ? 0.14 : 0.25).restart();
     scheduleDraw();
     return () => { sim.stop(); cancelAnimationFrame(frame.current); frame.current = 0; };
-  }, [props.graph, hidden, appearance.nodeScale, appearance.repulsion, appearance.linkDistance, nodeScales]);
+  }, [props.graph, hidden, appearance.nodeScale, appearance.repulsion, appearance.linkDistance, layoutMode, nodeScales]);
+
   // Resizing the data panel preserves the observed graph center and scale.
   const previousSize = useRef(size);
   useEffect(() => {
@@ -179,27 +325,6 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
       y: Math.min(size.height - 230, Math.max(65, event.clientY - box.top)), node, edge });
   }
   function style(key: string, patch: Style) { setStyles(s => ({ ...s, [key]: { ...s[key], ...patch } })); }
-  async function download(format: 'svg' | 'png') {
-    try {
-      paintRef.current(true);
-      const copy = svg.current!.cloneNode(true) as SVGSVGElement;
-      copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-      copy.setAttribute('width', String(size.width)); copy.setAttribute('height', String(size.height));
-      copy.querySelectorAll('.browser-node-actions').forEach(n => n.remove());
-      const blob = new Blob([new XMLSerializer().serializeToString(copy)], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      let output = url;
-      try {
-        if (format === 'png') {
-          const image = new Image(); image.src = url; await image.decode();
-          const canvas = document.createElement('canvas'); canvas.width = size.width * 2; canvas.height = size.height * 2;
-          const context = canvas.getContext('2d'); if (!context) throw Error('Canvas unavailable');
-          context.drawImage(image, 0, 0, canvas.width, canvas.height); output = canvas.toDataURL('image/png');
-        }
-        const link = document.createElement('a'); link.download = 'knowledge-graph.' + format; link.href = output; link.click();
-      } finally { URL.revokeObjectURL(url); }
-    } catch { setNotice('导出失败，请重试。'); }
-  }
   paintRef.current = (geometry) => {
     motion.current?.paint(viewRef.current, geometry);
     const selected = byId.get(selectedId);
@@ -218,21 +343,32 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
       const element = nodeElements.get(node.id); if (!element) return [];
       const config = styles['node:' + node.item.entity_type] ?? {};
       const label = config.caption === 'none' ? '' : config.caption === 'type' ? ENTITY_LABELS[node.item.entity_type ?? ''] ?? '实体' : config.caption === 'id' ? node.id : node.item.label;
-      return [{ node, element, label, enabled: appearance.showLabels, emphasized: node.id === selectedId || node.id === hovered }];
+      return [{ node, element, label, enabled: appearance.showLabels, emphasized: node.id === selectedId || node.id === hovered || Boolean(pathFocus?.nodeIds.has(node.id)) }];
     });
     motion.current.edges = edges.flatMap(edge => {
       const element = edgeElements.get(edge.id), source = byId.get(edge.source), target = byId.get(edge.target);
       if (!element || !source || !target) return [];
       const config = styles['edge:' + edge.predicate] ?? {}, curve = curves.get(edge.id);
-      const label = config.caption === 'none' ? '' : config.caption === 'id' ? edge.id : config.caption === 'type' ? edge.predicate : PREDICATE_LABELS[edge.predicate] ?? edge.predicate;
-      return [{ element, source, target, label, offset: curve?.curveOffset ?? 0, loop: ((curve?.loopDist ?? 35) - 35) / 24, emphasized: edge.id === props.selectedEdge || edge.id === hoveredEdge }];
+      const semantics = edgeSemantics.get(edge.id) ?? classifyEdgeSemantics(edge);
+      const baseLabel = PREDICATE_LABELS[edge.predicate] ?? edge.predicate;
+      const label = config.caption === 'none' ? '' : config.caption === 'id' ? edge.id : config.caption === 'type' ? edge.predicate : formatEdgeCaption(baseLabel, semantics);
+      return [{
+        element,
+        source,
+        target,
+        label,
+        offset: curve?.curveOffset ?? 0,
+        loop: ((curve?.loopDist ?? 35) - 35) / 24,
+        emphasized: edge.id === hoveredEdge || edge.id === props.selectedEdge || Boolean(pathFocus?.edgeIds.has(edge.id)),
+        showLabel: Boolean(appearance.showRelationLabels),
+        defaultColor: semantics.status === 'asserted' ? '#5c6470' : semantics.strokeColor,
+      }];
     });
     paintRef.current(true);
   });
   const selected = byId.get(selectedId);
   const menuNode = menu?.node ? byId.get(menu.node) : null;
   const types = [...new Set(visibleNodes.map(n => n.entity_type ?? 'video'))];
-  const predicates = [...new Set(edges.map(e => e.predicate))];
   const styleValue = styles[styleKey] ?? {};
   const expanded = props.expandedIds?.includes(selectedId);
   function actions(node: Node) {
@@ -245,8 +381,6 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
       <span className="browser-overview-heading">节点 <b>{nodes.length}</b></span>
       {types.map(type => <button type="button" key={type} aria-label={`设置${ENTITY_LABELS[type] ?? type}节点样式`} onClick={() => setStyleKey(styleKey === 'node:' + type ? '' : 'node:' + type)} style={{ borderColor: styles['node:' + type]?.color ?? ENTITY_COLORS[type] ?? '#a5abb6' }}>
         <i style={{ background: styles['node:' + type]?.color ?? ENTITY_COLORS[type] ?? '#a5abb6' }} />{ENTITY_LABELS[type] ?? type} <small>{visibleNodes.filter(n => (n.entity_type ?? 'video') === type).length}</small></button>)}
-      <span className="browser-overview-heading">关系 <b>{edges.length}</b></span>
-      {predicates.map(type => <button type="button" key={type} onClick={() => setStyleKey(styleKey === 'edge:' + type ? '' : 'edge:' + type)}>{PREDICATE_LABELS[type] ?? type} <small>{edges.filter(e => e.predicate === type).length}</small></button>)}
     </div>
     {styleKey ? <div className="browser-style-panel" aria-label="类型样式设置"><strong>{styleKey.startsWith('node:') ? '节点样式' : '关系样式'}</strong>
       <label>颜色<input type="color" value={styleValue.color ?? (styleKey.startsWith('node:') ? ENTITY_COLORS[styleKey.slice(5)] ?? '#a5abb6' : '#8b929b')} onChange={e => style(styleKey, { color: e.target.value })} /></label>
@@ -254,41 +388,62 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
       <label>显示文字<select value={styleValue.caption ?? 'name'} onChange={e => style(styleKey, { caption: e.target.value as Style['caption'] })}>
         <option value="name">名称</option><option value="type">类型</option><option value="id">ID</option><option value="none">不显示</option></select></label>
       <button type="button" onClick={() => setStyleKey('')}>关闭样式设置</button></div> : null}
-    <svg ref={svg} className="browser-graph-svg" data-ready="true" data-dimension="2d" aria-label="可拖拽的二维知识图谱" role="group"
+    <svg ref={svg} className="browser-graph-svg" data-ready="true" data-dimension="2d" data-layout={layoutMode} aria-label="可拖拽的二维知识图谱" role="group"
       onPointerDown={e => begin(e)} onPointerMove={move} onPointerUp={e => { if (drag.current?.id && drag.current.moved) updateControls(value => value + 1); drag.current?.capture.releasePointerCapture(e.pointerId); drag.current = undefined; }}
       onPointerCancel={() => { drag.current = undefined; }} onClick={() => { if (!moved.current) select(null); }} onContextMenu={e => context(e)}>
       <rect width="100%" height="100%" fill="#ffffff" />
       <defs><marker id={`${uid}-arrow`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="context-stroke" /></marker></defs>
       <g ref={world}>
+        {layoutMode === 'layered' ? lanes.map(lane => {
+          const pillW = 136 * lane.labelScale;
+          const pillH = 30 * lane.labelScale;
+          const pillY = lane.top - pillH - 12 * lane.labelScale;
+          return <g key={lane.index} className="browser-layer-lane" data-layer-index={lane.index} pointerEvents="none">
+            <rect x={lane.x - lane.width / 2} y={lane.top} width={lane.width} height={lane.bottom - lane.top} rx={20} fill="#faf8fc" fillOpacity="0.65" stroke="#e4dced" strokeDasharray="6 6" strokeWidth={1.5 * lane.labelScale} />
+            <rect x={lane.x - pillW / 2} y={pillY} width={pillW} height={pillH} rx={pillH / 2} fill="#f4eff9" stroke="#d5c6e4" strokeWidth={lane.labelScale} />
+            <text x={lane.x} y={pillY + pillH * 0.64} textAnchor="middle" fill="#684e80" fontSize={12 * lane.labelScale} fontWeight="600">{lane.label}</text>
+          </g>;
+        }) : null}
         {edges.map(edge => {
           const a = byId.get(edge.source), b = byId.get(edge.target); if (!a || !b) return null;
           const config = styles['edge:' + edge.predicate] ?? {};
-          const label = config.caption === 'none' ? '' : config.caption === 'id' ? edge.id : config.caption === 'type' ? edge.predicate : PREDICATE_LABELS[edge.predicate] ?? edge.predicate;
+          const semantics = edgeSemantics.get(edge.id) ?? classifyEdgeSemantics(edge);
+          const baseLabel = PREDICATE_LABELS[edge.predicate] ?? edge.predicate;
+          const label = config.caption === 'none' ? '' : config.caption === 'id' ? edge.id : config.caption === 'type' ? edge.predicate : formatEdgeCaption(baseLabel, semantics);
           const chosen = props.selectedEdge === edge.id;
-          const color = chosen ? '#2879bd' : config.color ?? '#9199a3';
-          return <g key={edge.id} data-edge-id={edge.id} role="button" tabIndex={0} aria-label={`${a.item.label} ${label} ${b.item.label}`}
-            opacity={active && !neighbors.has(edge.source) && !neighbors.has(edge.target) ? 0.2 : 1}
+          const inPath = Boolean(pathFocus?.edgeIds.has(edge.id));
+          const color = chosen ? '#2879bd' : inPath ? '#7b529d' : config.color ?? semantics.strokeColor;
+          const dimForPath = pathFocus && !inPath && !chosen;
+          const dimForHover = active && !neighbors.has(edge.source) && !neighbors.has(edge.target);
+          const evidenceBoost = 1.4 + Math.min(1.2, Math.log2(1 + Math.max(0, edge.evidence_count)) * 0.35);
+          return <g key={edge.id} data-edge-id={edge.id} data-assertion-status={semantics.status} data-qualifier-count={semantics.qualifierCount}
+            role="button" tabIndex={0} aria-label={`${a.item.label} ${label} ${b.item.label}`}
+            opacity={dimForPath ? 0.14 : dimForHover ? 0.2 : 1}
             onClick={e => { e.stopPropagation(); if (!moved.current) props.onEdge(edge); }} onContextMenu={e => context(e, undefined, edge.id)}
             onPointerEnter={() => { if (!drag.current) setHoveredEdge(edge.id); }} onPointerLeave={() => setHoveredEdge('')}
             onKeyDown={e => { if (e.key === 'Enter') props.onEdge(edge); }} style={{ cursor: 'pointer' }}>
+            <title>{`${a.item.label} → ${baseLabel} → ${b.item.label} · ${edge.evidence_count} 条证据 · ${semantics.statusLabel}${semantics.qualifierCount ? ` · 含 ${semantics.qualifierCount} 项条件` : ''}`}</title>
             <path stroke="transparent" strokeWidth="18" fill="none" />
-            <path stroke={color} strokeWidth={(chosen ? 3 : 1.5) * appearance.linkScale * (config.scale ?? 1)} fill="none" markerEnd={appearance.showArrows ? `url(#${uid}-arrow)` : undefined} />
-
+            <path stroke={color} strokeDasharray={semantics.strokeDasharray}
+              strokeWidth={(chosen || inPath ? 3 : evidenceBoost) * appearance.linkScale * (config.scale ?? 1)}
+              fill="none" markerEnd={appearance.showArrows ? `url(#${uid}-arrow)` : undefined} />
           </g>;
         })}
         {nodes.map(node => {
           const config = styles['node:' + node.item.entity_type] ?? {};
           const color = config.color ?? ENTITY_COLORS[node.item.entity_type ?? 'video'] ?? '#8795aa';
-          const label = config.caption === 'none' ? '' : config.caption === 'type' ? ENTITY_LABELS[node.item.entity_type ?? ''] ?? '实体' : config.caption === 'id' ? node.id : node.item.label;
-          const match = !find || node.item.label.toLocaleLowerCase().includes(find.toLocaleLowerCase());
           const chosen = node.id === selectedId;
+          const inPath = Boolean(pathFocus?.nodeIds.has(node.id));
+          const dimForPath = pathFocus && !inPath && !chosen && node.id !== hovered;
+          const dimForHover = active && !neighbors.has(node.id);
           return <g key={node.id} data-node-id={node.id} data-relation-count={counts.get(node.id) ?? 0}
-            role="button" tabIndex={0} aria-label={`实体 ${node.item.label}`} style={{ cursor: 'grab' }} opacity={!match || active && !neighbors.has(node.id) ? 0.22 : 1}
+            role="button" tabIndex={0} aria-label={`实体 ${node.item.label}`} style={{ cursor: 'grab' }}
+            opacity={dimForPath ? 0.16 : dimForHover ? 0.22 : 1}
             onPointerDown={e => begin(e, node)} onClick={e => { e.stopPropagation(); if (!moved.current) select(node); }} onDoubleClick={e => { e.stopPropagation(); void props.onExpand(node.item); }}
             onContextMenu={e => context(e, node.id)} onPointerEnter={() => { if (!drag.current) { setHovered(node.id); props.onHover?.(node.item); } }}
             onPointerLeave={() => { setHovered(''); props.onHover?.(null); }} onKeyDown={e => { if (e.key === 'Enter') select(node); }}>
             <title>{node.item.label} · {counts.get(node.id) ?? 0} 条关系{node.fx != null ? ' · 已固定' : ''}</title>
-            {(chosen || node.id === hovered) ? <circle r={node.radius + 6} fill="none" stroke="#a8c8e4" strokeWidth={chosen ? 6 : 3} /> : null}
+            {(chosen || node.id === hovered || inPath) ? <circle r={node.radius + 6} fill="none" stroke={inPath && !chosen ? '#b99ae3' : '#a8c8e4'} strokeWidth={chosen ? 6 : 3} /> : null}
             <circle r={node.radius} fill={color} stroke="#ffffff" strokeWidth="2" />
             <circle data-pin="true" cx={node.radius * 0.7} cy={-node.radius * 0.7} r="4" fill="#253b50" stroke="#fff" strokeWidth="1.5" />
           </g>;
@@ -302,15 +457,12 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
       <button type="button" onClick={() => { history.current.push(hidden); setHidden({ nodes: new Set(), edges: new Set() }); setMenu(null); }}>显示已隐藏元素</button>
       <button type="button" onClick={() => setMenu(null)}>关闭菜单</button>
     </div> : null}
-    <div className="browser-graph-tools"><label>查找<input aria-label="在当前画布查找" value={find} onChange={e => setFind(e.target.value)} placeholder="高亮实体…" /></label>
-      <button type="button" disabled={!history.current.length} onClick={undo}>撤销隐藏</button>
-      <button type="button" onClick={() => void download('svg')}>导出 SVG</button><button type="button" onClick={() => void download('png')}>导出 PNG</button>
-    </div>
+    {history.current.length ? <div className="browser-graph-tools"><button type="button" onClick={undo}>撤销隐藏</button></div> : null}
     <div className="interactive-graph-controls"><div className="graph-viewport-controls">
       <button type="button" aria-label="放大图谱" onClick={() => zoom(1.25)}>＋</button><button type="button" aria-label="缩小图谱" onClick={() => zoom(0.8)}>−</button>
       <button type="button" onClick={fit}>适应画布</button><button type="button" onClick={() => simulation.current?.alpha(0.8).restart()}>重新布局</button>
+      <button type="button" onClick={props.onGlobal}>全局图谱</button>
     </div></div>
-    {notice ? <p className="browser-export-notice" role="alert">{notice}</p> : null}
     {!nodes.length ? <p className="browser-empty">当前元素已隐藏，可撤销隐藏或刷新图谱。</p> : null}
     <span className="sr-only">{expanded ? '选中节点已展开' : ''}</span>
   </div>;

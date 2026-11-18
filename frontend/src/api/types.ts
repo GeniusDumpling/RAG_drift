@@ -2,7 +2,7 @@ export type UUID = string;
 export type ISODateTime = string;
 export type JsonObject = Record<string, unknown>;
 
-export type DroneBrand = 'dji' | 'parrot';
+export type DroneBrand = 'dji' | 'parrot' | 'autel' | 'hubsan' | 'skydio';
 
 export type DroneSummary = {
   slug: string;
@@ -278,6 +278,16 @@ export type EvidenceObject = {
     id: UUID; relation_id: UUID; subject: string; predicate: string; object: string;
     quote: string; assertion: 'asserted' | 'uncertain' | 'negated';
     qualifiers: Record<string, string>; video_url: string;
+  }>;
+  forum_graph_evidence?: Array<{
+    id: string; fact_id: string; source_id: string; content_item_id: UUID;
+    post_id: number; post_number: number; author: string; post_url: string; quote: string;
+    case_id: string | null; claim_id: string | null;
+    role: 'claim' | 'context' | 'feedback'; act: string;
+    assertion: 'asserted' | 'uncertain' | 'negated';
+    subject: string; predicate: string; object: string | null; value: string | null;
+    qualifiers: Record<string, unknown>; outcome: string | null;
+    combined_operations: boolean; accepted_answer: boolean;
   }>;
   thread_summary: string | null;
   video_url: string | null;

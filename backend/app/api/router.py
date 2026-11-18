@@ -6,6 +6,7 @@ from app.api import (
     document_graph,
     document_library,
     drones,
+    forum_graph,
     health,
     ifixit_media,
     knowledge_graph,
@@ -26,6 +27,7 @@ api_router.include_router(search.router)
 api_router.include_router(database.router)
 api_router.include_router(document_library.router)
 api_router.include_router(document_graph.router)
+api_router.include_router(forum_graph.router)
 api_router.include_router(knowledge_graph.router)
 api_router.include_router(drones.router)
 api_router.include_router(literature.router)

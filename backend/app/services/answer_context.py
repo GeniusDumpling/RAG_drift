@@ -32,10 +32,18 @@ async def prepare_answer_context(
     selected: list[EvidenceObject] = []
     counts: dict[UUID, int] = {}
     seen_chunks: set[UUID] = set()
-    allowances = [max_per_content] if preserve_order else range(1, max_per_content + 1)
+    maximum = (
+        max(max_per_content, 3)
+        if any(e.forum_graph_evidence for e in evidence)
+        else max_per_content
+    )
+    allowances = [maximum] if preserve_order else range(1, maximum + 1)
     for allowance in allowances:
         for item in evidence:
-            if item.chunk_id in seen_chunks or counts.get(item.content_item_id, 0) >= allowance:
+            item_limit = max(max_per_content, 3) if item.forum_graph_evidence else max_per_content
+            if item.chunk_id in seen_chunks or counts.get(item.content_item_id, 0) >= min(
+                allowance, item_limit
+            ):
                 continue
             selected.append(item)
             seen_chunks.add(item.chunk_id)
@@ -118,7 +126,8 @@ async def prepare_answer_context(
         body = hit.display_text.strip()
         reference = (
             f"此切片原文已完整呈现于证据[{rendered_chunks[hit.id]}]。"
-            if hit.id in rendered_chunks else ""
+            if hit.id in rendered_chunks
+            else ""
         )
         if reference and len(graph_text) + len(reference) <= budget:
             text = graph_text + reference
@@ -132,6 +141,13 @@ async def prepare_answer_context(
                 neighbor.content_item_id != hit.content_item_id
                 or abs(neighbor.chunk_index - hit.chunk_index) != 1
             ):
+                continue
+            if hit.chunk_metadata_json.get("forum_item_layout") == "topic-v1" and (
+                neighbor.chunk_metadata_json.get("post_id")
+                != hit.chunk_metadata_json.get("post_id")
+            ):
+                # Another floor has its own author/link; never append it under
+                # the current floor's citation merely because chunk indices touch.
                 continue
             addition = neighbor.display_text.strip()
             if neighbor.id in rendered_chunks:

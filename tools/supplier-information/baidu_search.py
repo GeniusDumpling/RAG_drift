@@ -395,35 +395,73 @@ def search_baidu(query: str, conf: dict) -> dict:
     return response.json()
 
 
+def _is_excluded_url(url: str, exclude_domains: list) -> bool:
+    if not exclude_domains:
+        return False
+    host = re.sub(r"^https?://", "", url.strip(), flags=re.I).split("/", 1)[0].split(":", 1)[0]
+    host = host.casefold()
+    if not host:
+        return False
+    for pattern in exclude_domains:
+        dom = str(pattern).strip().lstrip("*.").casefold()
+        if dom and (host == dom or host.endswith("." + dom)):
+            return True
+    return False
+
+
+def _filter_excluded_references(result: dict, conf: dict) -> dict:
+    exclude_domains = conf.get("exclude_domains") or []
+    if not exclude_domains:
+        return result
+    refs = result.get("references", [])
+    filtered = [r for r in refs if not _is_excluded_url(r.get("url", ""), exclude_domains)]
+    if len(filtered) != len(refs):
+        logger.info("过滤排除域名结果：%d -> %d 条", len(refs), len(filtered))
+    return {**result, "references": filtered}
+
+
 @with_retry()
-def search_brave(query: str, conf: dict) -> dict:
-    key = os.environ.get("BRAVE_SEARCH_API_KEY", "").strip()
+def search_exa(query: str, conf: dict) -> dict:
+    key = os.environ.get("EXA_API_KEY", "").strip().strip('"').strip("'")
     if not key:
-        raise RuntimeError("BRAVE_SEARCH_API_KEY is not configured")
-    response = requests.get(
-        "https://api.search.brave.com/res/v1/web/search",
-        headers={"X-Subscription-Token": key, "Accept": "application/json"},
-        params={
-            "q": query,
-            "count": min(20, int(conf.get("top_k", 20))),
-            "search_lang": {"zh": "zh-hans"}.get(conf.get("language"), conf.get("language", "en")),
-            "extra_snippets": "true",
+        raise RuntimeError("EXA_API_KEY is not configured")
+    num_results = min(100, int(conf.get("exa_num_results") or min(20, int(conf.get("top_k", 20)))))
+    payload = {
+        "query": query,
+        "type": conf.get("exa_type", "auto"),
+        "numResults": num_results,
+        "contents": {"highlights": True},
+    }
+    exclude_domains = [
+        str(d).strip() for d in (conf.get("exclude_domains") or []) if str(d).strip()
+    ]
+    if exclude_domains:
+        payload["excludeDomains"] = exclude_domains
+    response = requests.post(
+        "https://api.exa.ai/search",
+        headers={
+            "x-api-key": key,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
         },
+        json=payload,
         timeout=conf.get("timeout", 30),
     )
     response.raise_for_status()
     return {
         "references": [
             {
-                "title": r.get("title", ""),
+                "title": r.get("title") or "",
                 "url": r["url"],
-                "content": "\n".join([r.get("description", ""), *r.get("extra_snippets", [])]),
-                "date": r.get("page_age", ""),
-                "source": "brave",
+                "content": "\n".join(
+                    part for part in [r.get("text") or "", *(r.get("highlights") or [])] if part
+                ),
+                "date": r.get("publishedDate") or "",
+                "source": "exa",
                 "query": query,
                 "language": conf.get("language", "en"),
             }
-            for r in response.json().get("web", {}).get("results", [])
+            for r in response.json().get("results", [])
             if r.get("url")
         ]
     }
@@ -433,18 +471,18 @@ def search(query: str, conf: dict) -> dict:
     provider = conf.get("provider", "baidu")
     auto = provider == "auto"
     if provider == "auto":
-        provider = "brave" if os.environ.get("BRAVE_SEARCH_API_KEY") else "baidu"
-    if provider == "brave":
+        provider = "exa" if os.environ.get("EXA_API_KEY") else "baidu"
+    if provider == "exa":
         try:
-            return search_brave(query, conf)
+            return _filter_excluded_references(search_exa(query, conf), conf)
         except requests.HTTPError as exc:
             if not get_api_key() or exc.response is None:
                 raise
             status = exc.response.status_code
-            # Billing failures fall back even when Brave was explicitly selected.
+            # Billing failures fall back even when Exa was explicitly selected.
             if status != 402 and (not auto or status not in {401, 403, 422, 429}):
                 raise
-            logger.warning("Brave HTTP %s; falling back to Baidu", status)
+            logger.warning("Exa HTTP %s; falling back to Baidu", status)
             provider = "baidu"
     if provider != "baidu":
         raise ValueError(f"Unknown search provider: {provider}")
@@ -461,7 +499,7 @@ def search(query: str, conf: dict) -> dict:
         raise
     for ref in result.get("references", []):
         ref.update(source="baidu", query=query, language=conf.get("language", "zh"))
-    return result
+    return _filter_excluded_references(result, conf)
 
 
 def collect_references(conf):

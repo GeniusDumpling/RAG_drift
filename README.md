@@ -6,7 +6,7 @@
 
 系统整体采集与大模型分析流程、各子项进展：见 [系统总述与进展](docs/system-overview-and-progress.md)。
 
-最近一周进展：见 [项目进展周报（2026-10-24—2026-10-30）](docs/weekly-progress-2026-10-30.md)；[上一期周报](docs/weekly-progress-2026-10-22.md)。
+最近一周进展：见 [项目进展周报（2026-11-07—2026-11-13）](docs/weekly-progress-2026-11-13.md)；[上一期周报](docs/weekly-progress-2026-11-06.md)。
 
 部署指南分两个版本：[在 Linux 服务器上部署](docs/deploy-linux-server.md) 与 [在 WSL 中部署](docs/deploy-wsl.md)。
 包含目标机代理/端口配置、五类定时任务、持久化、镜像发布及验证步骤；采集任务通过容器运行，无需宿主机 Python 环境。已有部署的升级先按指南核对数据卷和备份。
@@ -328,11 +328,19 @@ curl -fsS -X POST http://localhost:8000/answer \
 
 ## 无人机信息
 
-前端「工作空间 → 无人机信息」支持切换 DJI 大疆和 Parrot，展示各品牌本地收集的型号与技术参数，支持型号搜索、用途分类、参数分组和参数内容搜索。切换品牌时重置旧筛选并取消旧请求。页面保留官方来源、资料版本、更新日期、已知采集时间和参数适用条件，以及索引中的资料缺失说明。
+前端「工作空间 → 无人机信息」支持切换 DJI 大疆、Parrot、Autel 道通、Hubsan 哈博森和 Skydio，展示各品牌本地收集的型号与技术参数，支持型号搜索、用途分类、参数分组和参数内容搜索。切换品牌时重置旧筛选并取消旧请求。页面保留官方来源、资料版本、更新日期、已知采集时间和参数适用条件，以及索引中的资料缺失说明。
 
 后端分别读取 `data/DJI无人机文档`、`data/Parrot无人机文档` 下的 `技术参数索引.csv` 和各型号的 `技术参数.html`，无需导入数据库。`GET /drones`、`GET /drones/{slug}` 默认返回 DJI；添加 `?brand=parrot` 读取 Parrot，`brand=dji` 也支持；未知品牌返回 422，某个品牌目录不可用只影响该品牌。更新目录中的索引和文件后，重新加载页面即可读取新内容。Parrot 参数目录可通过 `.venv/bin/python -m tools.parrot_documents build-specs` 从本地采集资料生成，详见 [Parrot 文档工具](tools/parrot_documents/README.md)。
 
-本地运行通过 `DRONE_DOCUMENTS_DIR` 指定 DJI 目录、`PARROT_DOCUMENTS_DIR` 指定 Parrot 目录。Docker Compose 将宿主机 `DJI_DOCUMENTS_DIR`（默认 `./data/DJI无人机文档`）挂载至 `/data/dji-documents`，将 `PARROT_DOCUMENTS_DIR`（默认 `./data/Parrot无人机文档`）挂载至 `/data/parrot-documents`，均为只读；资料不打包进镜像。部署前应将两份资料目录同步至宿主机，并重新构建和启动应用：
+Autel 官方资料采集工具位于 [tools/autel_documents](tools/autel_documents/README.md)。运行 `.venv/bin/python -m tools.autel_documents collect` 可将中英文官方手册、产品网页和可识别的技术参数保存到 `data/Autel无人机文档`，支持续采、哈希校验及失败清单。随后运行 `.venv/bin/python -m tools.autel_documents build-catalog` 生成前端读取的 `机型参数目录`，去除重复路由、独立配件和软件，按官网明确标记区分 V2/V3 和 Dragonfish Standard/Pro。当前目录有 19 个型号或系列、2,493 项参数。`GET /drones?brand=autel` 和 `GET /drones/{slug}?brand=autel` 读取该目录。原始采集结果见 [Autel 采集记录](docs/autel-collection-2026-11-12.md)。
+
+Hubsan 和 Skydio 分别使用 [Hubsan 采集工具](tools/hubsan_documents/README.md) 与 [Skydio 采集工具](tools/skydio_documents/README.md)：`.venv/bin/python -m tools.hubsan_documents collect`、`.venv/bin/python -m tools.skydio_documents collect` 完成公开官方资料归档及型号目录生成。前者兼容历史 ZIP 手册，并将图片规格的核对转录绑定原图哈希；后者归档支持中心公开 API、手册和官网规格，区分 Skydio 2／2+、X2D INTL／ATO。原始资料保存于 `data/Hubsan无人机文档`、`data/Skydio无人机文档`，前端只读取各自 `机型参数目录`。接口使用 `brand=hubsan`、`brand=skydio`，每个品牌的数据和错误互相隔离。
+
+本地运行时 `HUBSAN_DOCUMENTS_DIR`、`SKYDIO_DOCUMENTS_DIR` 指向对应资料根目录；Docker Compose 默认将两份宿主机目录只读挂载至 `/data/hubsan-documents`、`/data/skydio-documents`。部署前同步全部五个品牌资料目录。没有对应参数来源的型号保留在采集目录的缺失清单中，不从其他机型推算。
+
+当前 Hubsan 目录有 59 个型号、1,147 项参数；Skydio 有 9 个型号或配置、656 项参数。来源、缺失项见 [Hubsan／Skydio 采集记录](docs/hubsan-skydio-collection-2026-11-13.md)，发布及回退见 [部署记录](docs/hubsan-skydio-ui-deployment-2026-11-13.md)。
+
+本地运行通过 `DRONE_DOCUMENTS_DIR` 指定 DJI 目录、`PARROT_DOCUMENTS_DIR` 指定 Parrot 目录。Docker Compose 将宿主机 `DJI_DOCUMENTS_DIR`（默认 `./data/DJI无人机文档`）挂载至 `/data/dji-documents`，将 `PARROT_DOCUMENTS_DIR`（默认 `./data/Parrot无人机文档`）挂载至 `/data/parrot-documents`，并将 `AUTEL_DOCUMENTS_DIR`（默认 `./data/Autel无人机文档`）挂载至 `/data/autel-documents`，均为只读；本地运行时 `AUTEL_DOCUMENTS_DIR` 同样指向原始资料根目录。资料不打包进镜像。同步资料目录后重新构建和启动应用：
 
 ```bash
 docker compose -f docker-compose.deploy.yml up -d --build app

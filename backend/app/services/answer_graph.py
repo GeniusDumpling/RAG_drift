@@ -52,26 +52,39 @@ async def recall_graph_evidence(
                     if edge.source not in nodes or edge.target not in nodes:
                         continue
                     if entry.chunk_id not in grounded:
-                        hits.append(_SearchHit(
-                            entry.chunk_id, entry.content_item_id, 1.0, "graph"
-                        ))
+                        hits.append(_SearchHit(entry.chunk_id, entry.content_item_id, 1.0, "graph"))
                         grounded[entry.chunk_id] = []
-                    grounded[entry.chunk_id].append(GraphAnswerEvidence(
-                        **entry.model_dump(), subject=nodes[edge.source],
-                        predicate=edge.predicate, object=nodes[edge.target],
-                    ))
-                evidence = await _hydrate_and_rank_evidence(
-                    session, hits=hits, filters=filters, top_k=settings.answer_graph_top_k,
-                    snippet_terms=(), max_per_content=2,
-                )
-                texts = dict((await session.execute(
-                    select(ContentChunk.id, ContentChunk.display_text).where(
-                        ContentChunk.id.in_([item.chunk_id for item in evidence])
+                    grounded[entry.chunk_id].append(
+                        GraphAnswerEvidence(
+                            **entry.model_dump(),
+                            subject=nodes[edge.source],
+                            predicate=edge.predicate,
+                            object=nodes[edge.target],
+                        )
                     )
-                )).tuples().all())
+                evidence = await _hydrate_and_rank_evidence(
+                    session,
+                    hits=hits,
+                    filters=filters,
+                    top_k=settings.answer_graph_top_k,
+                    snippet_terms=(),
+                    max_per_content=2,
+                )
+                texts = dict(
+                    (
+                        await session.execute(
+                            select(ContentChunk.id, ContentChunk.display_text).where(
+                                ContentChunk.id.in_([item.chunk_id for item in evidence])
+                            )
+                        )
+                    )
+                    .tuples()
+                    .all()
+                )
                 for item in evidence:
                     item.graph_evidence = [
-                        entry for entry in grounded[item.chunk_id]
+                        entry
+                        for entry in grounded[item.chunk_id]
                         if entry.content_item_id == item.content_item_id
                         and source_span(texts[item.chunk_id], entry.quote) is not None
                     ][:3]
@@ -86,6 +99,14 @@ async def recall_graph_evidence(
             # Keep credentials, source text and provider error bodies out of logs.
             evidence = []
             trace.update(status="fallback", reason=type(exc).__name__)
+    if settings.answer_graph_enabled and getattr(settings, "forum_graph_enabled", False):
+        from app.services.forum_graph.answer import recall as recall_forum
+
+        forum, forum_trace = await recall_forum(session, query, filters, settings)
+        trace["forum"] = forum_trace
+        evidence = merge_graph_evidence(evidence, forum)
+        if forum:
+            trace["status"] = "retrieved"
     trace.update(evidence_count=len(evidence), latency_ms=round((perf_counter() - started) * 1000))
     return GraphRecall(evidence, trace)
 
@@ -108,5 +129,6 @@ def merge_graph_evidence(
                 graph_item = graph_by_id.get(item.chunk_id)
                 if graph_item is not None:
                     candidate.graph_evidence = graph_item.graph_evidence
+                    candidate.forum_graph_evidence = graph_item.forum_graph_evidence
                 merged[item.chunk_id] = candidate
     return list(merged.values())

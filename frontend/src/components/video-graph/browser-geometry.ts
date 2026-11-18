@@ -1,4 +1,6 @@
 export type Point = { x: number; y: number; radius: number };
+export const NODE_LABEL_FONT_SIZE = 13;
+export const RELATION_LABEL_FONT_SIZE = 12;
 
 /** Clip relationships at the circumference, keeping parallel/reversed relationships separate. */
 export function browserRelationship(source: Point, target: Point, offset: number, loopIndex = 0) {
@@ -31,8 +33,8 @@ export function browserNodeRadius(count: number, scale = 1) {
 
 /** Wrap CJK and Latin captions inside the circle, rather than outside the node. */
 export function browserCaption(text: string, radius: number): string[] {
-  const budget = Math.max(2, Math.floor(radius * 1.55 / 6));
-  const maxLines = Math.max(1, Math.min(3, Math.floor((radius * 2 - 4) / 13)));
+  const budget = Math.max(2, Math.floor(radius * 1.55 / (NODE_LABEL_FONT_SIZE * 0.55)));
+  const maxLines = Math.max(1, Math.min(3, Math.floor((radius * 2 - 4) / (NODE_LABEL_FONT_SIZE + 2))));
   const lines: string[] = [];
   let line = '', width = 0;
   for (const char of text) {

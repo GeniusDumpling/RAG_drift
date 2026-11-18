@@ -1,13 +1,15 @@
 /* 无人机信息页：复用全局设计令牌（styles.css） */
-.drone-page-title { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.drone-page-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; }
 
 .drone-brand-switch {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: 4px;
   flex-shrink: 0;
   padding: 4px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 26px;
   background: var(--surface);
 }
 .drone-brand-switch button {
@@ -24,6 +26,12 @@
   background: var(--accent-soft);
   color: var(--accent-hover);
   font-weight: 600;
+}
+.drone-brand-switch button:hover:not(:disabled),
+.drone-brand-switch button:active:not(:disabled) {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
 }
 .drone-model-count { font-size: 0.75rem; color: var(--text-tertiary); font-weight: 400; }
 .drone-source-meta { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 0.75rem; color: var(--text-secondary); }

@@ -177,7 +177,8 @@ class SearchService:
             generation.context_chunk_ids = context.chunk_ids
             if generation.graph_retrieval:
                 generation.graph_retrieval["selected_chunk_ids"] = [
-                    str(item.chunk_id) for item in evidence if item.graph_evidence
+                    str(item.chunk_id) for item in evidence
+                    if item.graph_evidence or item.forum_graph_evidence
                 ]
             yield {
                 "event": "evidence",

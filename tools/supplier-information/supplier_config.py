@@ -70,20 +70,30 @@ def confirmed_path():
     return str(index_dir() / "confirmed_relations.md")
 
 
+def _normalize_buyer_token(value):
+    return re.sub(r"[^\w]", "", value.casefold())
+
+
 def matches_buyer(value):
     # Token boundaries avoid matching e.g. "Parrot distributor" as the buyer itself.
-    normalized = re.sub(r"[^\w]", "", value.casefold())
-    return normalized in {
-        re.sub(r"[^\w]", "", name.casefold())
+    allowed = {
+        token
         for name in [brand()["name"], *brand().get("aliases", [])]
+        if (token := _normalize_buyer_token(name))
     }
+    if _normalize_buyer_token(value) in allowed:
+        return True
+    parts = [part.strip() for part in re.split(r"[()（）/\[\]]+", value) if part.strip()]
+    return len(parts) >= 2 and all(_normalize_buyer_token(part) in allowed for part in parts)
 
 
 def cli(description, verification=False):
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--brand", help="Brand id from conf.yaml: dji, parrot, skydio")
+    parser.add_argument(
+        "--brand", help="Brand id from conf.yaml: dji, parrot, autel, hubsan, skydio"
+    )
     parser.add_argument("--config", help="Alternate YAML configuration path")
-    parser.add_argument("--provider", choices=["auto", "baidu", "brave"])
+    parser.add_argument("--provider", choices=["auto", "baidu", "exa"])
     parser.add_argument("--max-results", type=int, help="Maximum source documents for this run")
     parser.add_argument("--force", action="store_true", help="Reprocess known URLs")
     if verification:

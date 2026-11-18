@@ -26,7 +26,7 @@ describe('motion labels', () => {
     expect(group.querySelector('text')).toBeNull();
     motion.nodes[0].emphasized = true;
     motion.paint({ x: 0, y: 0, k: 0.1 }, false);
-    expect(group.querySelector('text')?.getAttribute('font-size')).toBe('100');
+    expect(group.querySelector('text')?.getAttribute('font-size')).toBe('120');
     expect(group.querySelector('text')?.textContent).toBe('Alpha');
     motion.edges = [{ source: node, target: { ...node, id: 'b', x: 200 }, element: document.createElementNS(ns, 'g'), label: 'uses', offset: 0, loop: 0, emphasized: false }];
     motion.paint({ x: 0, y: 0, k: 0.1 }, true);

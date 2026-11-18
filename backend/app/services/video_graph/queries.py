@@ -140,8 +140,9 @@ class GraphQueries:
             if not matches:
                 return GraphData(nodes=list(nodes.values()), edges=[])
             add(matches[0]["e"])
+        # Type filters select the roots; their neighbors can have any entity type.
         frontier = [row["e"]["id"] for row in matches]
-        for _ in range(hops if entity_id or q.strip() else 1):
+        for _ in range(hops if entity_id or q.strip() or entity_type else 1):
             if not frontier:
                 break
             # Query relation pairs and aggregate only evidence from active builds.
@@ -149,7 +150,6 @@ class GraphQueries:
                 EVIDENCE + "WHERE ($assertion IS NULL OR ev.assertion=$assertion) "
                 "MATCH (r)-[:SUBJECT]->(s:VGEntity),(r)-[:OBJECT]->(o:VGEntity) "
                 "WHERE (s.id IN $frontier OR o.id IN $frontier) "
-                "AND ($kind IS NULL OR (s.entity_type=$kind AND o.entity_type=$kind)) "
                 "RETURN r,s,o,count(ev) AS count, "
                 'sum(CASE WHEN ev.assertion="asserted" THEN 1 ELSE 0 END) AS asserted, '
                 'sum(CASE WHEN ev.assertion="uncertain" THEN 1 ELSE 0 END) AS uncertain, '
@@ -158,7 +158,6 @@ class GraphQueries:
                 content_id=cid,
                 assertion=assertion,
                 frontier=frontier,
-                kind=entity_type,
             )
             new_frontier = set()
             for row in rows:

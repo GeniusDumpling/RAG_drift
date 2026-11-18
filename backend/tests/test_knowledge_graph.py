@@ -152,7 +152,9 @@ def stores(source):
         unified_graph_enabled=True,
         unified_graph_neo4j_uri=uri,
         unified_graph_neo4j_user="neo4j",
-        unified_graph_neo4j_password="unified-graph-test-password",
+        unified_graph_neo4j_password=os.getenv(
+            "KNOWLEDGE_GRAPH_TEST_NEO4J_PASSWORD", "unified-graph-test-password"
+        ),
         unified_graph_neo4j_database="neo4j",
         document_graph_artifacts_dir=source[0].parent,
     )
@@ -247,14 +249,16 @@ def test_shared_facts_deduplicate_and_contradictions_keep_provenance(stores):
     with stores.shared.transaction() as tx:
         publish(tx, publication())
         publish(tx, publication("document"))
-        publish(tx, publication("forum", "reply", "negated"))
+        # Extensibility of the shared protocol; actual forum publications also
+        # require native/current-source validation (covered by test_forum_graph).
+        publish(tx, publication("test_extension", "reply", "negated"))
     result = queries.retrieve(stores.shared)
     assert len(result["items"]) == 2
     assert sorted(len(f["sources"]) for f in result["items"]) == [1, 2]
     first = queries.retrieve(stores.shared, limit=1)
     second = queries.retrieve(stores.shared, limit=1, offset=1)
     assert first["items"][0]["id"] != second["items"][0]["id"]
-    assert len(queries.retrieve(stores.shared, source_type="forum")["items"]) == 1
+    assert len(queries.retrieve(stores.shared, source_type="test_extension")["items"]) == 1
 
 
 def test_republication_hides_old_revision_and_is_idempotent(stores):

@@ -12,6 +12,9 @@ services:
       API_PORT: 8000
       DRONE_DOCUMENTS_DIR: /data/dji-documents
       PARROT_DOCUMENTS_DIR: /data/parrot-documents
+      AUTEL_DOCUMENTS_DIR: /data/autel-documents
+      HUBSAN_DOCUMENTS_DIR: /data/hubsan-documents
+      SKYDIO_DOCUMENTS_DIR: /data/skydio-documents
       IFIXIT_MEDIA_DIR: /appdata/ifixit-media
       DOCUMENT_DATABASE_URL: postgresql+psycopg://intelligence:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/drone_documents
       DOCUMENT_QDRANT_URL: http://qdrant:6333
@@ -61,6 +64,9 @@ services:
     volumes:
       - ${DJI_DOCUMENTS_DIR:-./data/DJI无人机文档}:/data/dji-documents:ro
       - ${PARROT_DOCUMENTS_DIR:-./data/Parrot无人机文档}:/data/parrot-documents:ro
+      - ${AUTEL_DOCUMENTS_DIR:-./data/Autel无人机文档}:/data/autel-documents:ro
+      - ${HUBSAN_DOCUMENTS_DIR:-./data/Hubsan无人机文档}:/data/hubsan-documents:ro
+      - ${SKYDIO_DOCUMENTS_DIR:-./data/Skydio无人机文档}:/data/skydio-documents:ro
       - ${IFIXIT_MEDIA_HOST_DIR:-./data/ifixit-media}:/appdata/ifixit-media:ro
       - ${DOCUMENT_ARTIFACTS_DIR:-./data/processed/drone-documents}:/data/document-artifacts:ro
       - ${SCHEDULER_BRIDGE_DIR:-./data/scheduler}:/run/rag-scheduler:ro

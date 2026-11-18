@@ -1,16 +1,19 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { searchVideoGraphEntities } from '../src/api/client';
 import { GraphWorkbench } from '../src/components/video-graph/GraphWorkbench';
 import type { VideoGraphData, VideoGraphNode } from '../src/api/types';
 import type { GraphAppearance } from '../src/components/video-graph/presentation';
 
+vi.mock('../src/api/client', () => ({ searchVideoGraphEntities: vi.fn(async () => ({ items: [{ id: 'PX4', name: 'PX4', entity_type: 'software' }], total: 1, limit: 50, offset: 0 })) }));
+
 vi.mock('../src/components/video-graph/InteractiveGraphCanvas', () => ({
-  InteractiveGraphCanvas: ({ graph, appearance, onSelect, dimension, onUnavailable }: {
+  InteractiveGraphCanvas: ({ graph, appearance, onSelect, dimension, onUnavailable, onGlobal }: {
     graph: VideoGraphData; appearance: GraphAppearance; onSelect: (node: VideoGraphNode) => void;
-    dimension: '2d' | '3d'; onUnavailable: (message: string) => void;
+    onGlobal: () => void; dimension: '2d' | '3d'; onUnavailable: (message: string) => void;
   }) => <div><button onClick={() => onSelect(graph.nodes[0])}>选中 PX4 节点</button>
-    <output data-testid="appearance">{JSON.stringify(appearance)}</output><output data-testid="dimension">{dimension}</output>
+    <button onClick={onGlobal}>全局图谱</button><output data-testid="appearance">{JSON.stringify(appearance)}</output><output data-testid="dimension">{dimension}</output>
     <button onClick={() => onUnavailable('3D 暂时不可用，已切换为 2D。')}>模拟三维不可用</button></div>,
 }));
 const node = (id: string): VideoGraphNode => ({ id, label: id, kind: 'entity', entity_type: 'software', content_item_id: null });
@@ -23,7 +26,7 @@ function props() {
     graph: { nodes: ['PX4', 'GPS', 'RTK'].map(node), edges, truncated: false },
     overview: { videos: 10, active_videos: 6, entities: 100, relations: 120, evidence: 300, builds: {} },
     query: '', onQuery: vi.fn(), onSearch: vi.fn(), entityType: '', onEntityType: vi.fn(),
-    assertion: '', onAssertion: vi.fn(), hops: 1, onHops: vi.fn(), focusId: '', onClearFocus: vi.fn(),
+    hops: 1, onHops: vi.fn(), focusId: '', onClearFocus: vi.fn(),
     selectedEdge: null, onEdge: vi.fn(), onClearEdge: vi.fn(), onFocus: vi.fn(),
     onExpand: vi.fn(async () => {}), expandingId: '', loading: false, error: '', expansionError: '',
     onRefresh: vi.fn(), evidencePanel: <blockquote>PX4 uses GPS.</blockquote>,
@@ -53,7 +56,7 @@ describe('Obsidian-style graph workbench', () => {
     render(<GraphWorkbench {...props()} />);
     fireEvent.click(screen.getByRole('button', { name: '2D', exact: true }));
     expect(screen.getByLabelText('全局有效图谱统计')).toHaveTextContent('实体100');
-    expect(document.querySelector('.ow-statusbar')).toHaveTextContent('3 个节点');
+    expect(document.querySelector('.ow-statusbar')).toBeNull();
     fireEvent.click(screen.getByLabelText('常显实体名称'));
     fireEvent.click(screen.getByLabelText('显示关系方向'));
     fireEvent.change(screen.getByRole('slider', { name: /节点大小/ }), { target: { value: '1.7' } });
@@ -82,7 +85,7 @@ describe('Obsidian-style graph workbench', () => {
     fireEvent.click(screen.getByRole('button', { name: '2D', exact: true }));
     expect(screen.getByTestId('dimension')).toHaveTextContent('2d');
     expect(document.querySelector('.ow-entity-details')).toHaveTextContent('PX4');
-    expect(document.querySelector('.ow-statusbar')).toHaveTextContent('3 个节点');
+    expect(document.querySelector('.ow-statusbar')).toBeNull();
     fireEvent.click(screen.getByRole('tab', { name: '数据总览' }));
     expect(screen.getByLabelText('常显实体名称')).toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: '3D', exact: true }));
@@ -107,6 +110,71 @@ describe('Obsidian-style graph workbench', () => {
     fireEvent.click(screen.getByRole('button', { name: '模拟三维不可用' }));
     expect(screen.getByTestId('dimension')).toHaveTextContent('2d');
     expect(screen.getByText('3D 暂时不可用，已切换为 2D。')).toHaveAttribute('role', 'status');
-    expect(document.querySelector('.ow-statusbar')).toHaveTextContent('3 个节点');
+    expect(document.querySelector('.ow-statusbar')).toBeNull();
   });
+  it('removes overview clutter while keeping repulsion configurable', async () => {
+    const { container } = render(<GraphWorkbench {...props()} />);
+    expect(container.querySelector('.ow-panel-bottom')).toBeNull();
+    expect(screen.queryByText('当前视图分组')).not.toBeInTheDocument();
+    expect(screen.queryByText(/优先展示关联密集/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('陈述状态')).not.toBeInTheDocument();
+    expect(screen.queryByRole('slider', { name: /连接距离/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('布局引力'));
+    fireEvent.change(screen.getByRole('slider', { name: /节点斥力/ }), { target: { value: '300' } });
+    await waitFor(() => expect(JSON.parse(screen.getByTestId('appearance').textContent ?? '{}').repulsion).toBe(300));
+  });
+
+  it('searches in details and lists matching entities only after submission', async () => {
+    const handlers = props();
+    const { rerender, container } = render(<GraphWorkbench {...handlers} />);
+    expect(container.querySelector('.ow-toolbar input')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: '关联详情' }));
+    expect(screen.queryByRole('combobox', { name: '定位图谱实体' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('关系列表')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('实体搜索结果')).not.toBeInTheDocument();
+    rerender(<GraphWorkbench {...handlers} query="PX" />);
+    expect(screen.queryByLabelText('实体搜索结果')).not.toBeInTheDocument();
+    fireEvent.submit(screen.getByRole('form', { name: '图谱搜索' }));
+    expect(handlers.onSearch).toHaveBeenCalledOnce();
+    const results = await screen.findByLabelText('实体搜索结果');
+    expect(within(results).queryByRole('button', { name: /GPS/ })).not.toBeInTheDocument();
+    fireEvent.click(within(results).getByRole('button', { name: /PX4/ }));
+    expect(container.querySelector('.ow-entity-details h2')).toHaveTextContent('PX4');
+    expect(screen.getByLabelText('实体名称')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '清空搜索输入' }));
+    expect(handlers.onClearFocus).toHaveBeenCalled();
+    expect(screen.queryByLabelText('实体搜索结果')).not.toBeInTheDocument();
+  });
+
+  it('opens details and focuses search with slash when the panel is closed', () => {
+    render(<GraphWorkbench {...props()} />);
+    fireEvent.click(screen.getByRole('button', { name: '收起数据面板' }));
+    fireEvent.keyDown(window, { key: '/' });
+    expect(screen.getByLabelText('图谱数据面板')).toBeVisible();
+    expect(screen.getByRole('tab', { name: '关联详情' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText('实体名称')).toHaveFocus();
+  });
+
+  it('uses backend alias matches and can show an entity outside the loaded graph', async () => {
+    vi.mocked(searchVideoGraphEntities).mockResolvedValueOnce({ items: [{ id: 'external', name: 'Flight Controller', entity_type: 'component' }], total: 1, limit: 50, offset: 0 });
+    const { container } = render(<GraphWorkbench {...props()} query="飞控别名" />);
+    fireEvent.click(screen.getByRole('tab', { name: '关联详情' }));
+    fireEvent.submit(screen.getByRole('form', { name: '图谱搜索' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Flight Controller/ }));
+    expect(container.querySelector('.ow-entity-details h2')).toHaveTextContent('Flight Controller');
+  });
+
+  it('resets search, selection and every scope filter from the canvas global button', () => {
+    const handlers = props();
+    render(<GraphWorkbench {...handlers} query="PX4" focusId="PX4" entityType="software" hops={2} />);
+    fireEvent.click(screen.getByRole('button', { name: '选中 PX4 节点' }));
+    fireEvent.click(screen.getByRole('button', { name: '全局图谱', exact: true }));
+    expect(handlers.onQuery).toHaveBeenCalledWith('');
+    expect(handlers.onEntityType).toHaveBeenCalledWith('');
+    expect(handlers.onHops).toHaveBeenCalledWith(1);
+    expect(handlers.onClearFocus).toHaveBeenCalledOnce();
+    expect(document.querySelector('.ow-entity-details')).toBeNull();
+    expect(screen.queryByRole('button', { name: '打开实体搜索' })).not.toBeInTheDocument();
+  });
+
 });

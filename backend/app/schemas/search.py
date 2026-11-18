@@ -15,6 +15,31 @@ class GraphAnswerEvidence(GraphEvidenceRead):
     object: str
 
 
+class ForumGraphAnswerEvidence(BaseModel):
+    id: str
+    fact_id: str
+    source_id: str
+    content_item_id: uuid.UUID
+    post_id: int
+    post_number: int
+    author: str
+    post_url: str
+    quote: str
+    case_id: str | None = None
+    claim_id: str | None = None
+    role: Literal["claim", "context", "feedback"]
+    act: str
+    assertion: Literal["asserted", "uncertain", "negated"]
+    subject: str
+    predicate: str
+    object: str | None = None
+    value: str | None = None
+    qualifiers: dict[str, Any] = Field(default_factory=dict)
+    outcome: str | None = None
+    combined_operations: bool = False
+    accepted_answer: bool = False
+
+
 class SearchFilters(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -111,6 +136,7 @@ class EvidenceObject(BaseModel):
     rerank_score: float | None = None
     matched_by: Literal["vector", "keyword", "hybrid", "graph"]
     graph_evidence: list[GraphAnswerEvidence] = Field(default_factory=list)
+    forum_graph_evidence: list[ForumGraphAnswerEvidence] = Field(default_factory=list)
     thread_summary: str | None
     video_url: str | None = None
     description_text: str | None = None

@@ -1,4 +1,4 @@
-"""Select connected, richly linked subgraphs before applying display budgets."""
+"""Select the largest connected component before applying display budgets."""
 
 import heapq
 from collections import defaultdict
@@ -17,7 +17,8 @@ def connected_display_graph(
 ) -> GraphData:
     """Use distinct neighbors for ranking; parallel claims cannot inflate connectivity.
 
-    Grow each component from its most interconnected core. Reserve a spanning tree
+    Choose the largest component by node count, then grow from its interconnected core.
+    Reserve a spanning tree
     before filling remaining edge capacity, so limiting edges cannot strand nodes.
     This only selects a view; evidence and the underlying graph remain untouched.
     """
@@ -61,13 +62,9 @@ def connected_display_graph(
                 stack.append(neighbor)
         if len(component) >= min_component_size:
             components.append(component)
-    components.sort(key=lambda component: (
-        -max(cores[key] for key in component),
-        -sum(cores[key] >= 2 for key in component),
-        -sum(len(neighbors[key]) for key in component),
-        -len(component),
-        min(component),
-    ))
+    # Select before applying budgets; a smaller dense graph must not replace the main one.
+    # Ties are resolved by entity ID so database row order cannot change the chosen graph.
+    components = sorted(components, key=lambda component: (-len(component), min(component)))[:1]
 
     chosen: dict[str, None] = {}
     spanning: dict[str, GraphEdge] = {}

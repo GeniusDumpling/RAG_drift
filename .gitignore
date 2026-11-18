@@ -29,6 +29,7 @@ coverage/
 
 # 前端依赖与编译缓存
 node_modules/
+.vite/
 *.tsbuildinfo
 
 # 本地工具状态与编辑器临时文件

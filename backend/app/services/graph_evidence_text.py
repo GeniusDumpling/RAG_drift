@@ -24,4 +24,23 @@ def graph_evidence_text(item: EvidenceObject, budget: int) -> str:
         if len(block) <= budget:
             blocks.append(block)
             budget -= len(block)
+    for entry in item.forum_graph_evidence:
+        statement = (
+            "案例背景（不作为其他楼层操作建议的直接证据）"
+            if entry.role == "context"
+            else f"{entry.subject} — {entry.predicate} — {entry.object or entry.value or ''}"
+        )
+        prefix = (
+            f"论坛图谱证据（{entry.role}）: {statement}\n"
+            f"发言行为: {entry.act}; 陈述: {entry.assertion}（来源陈述，不是通用验证结论）\n"
+            f"场景与条件: {json.dumps(entry.qualifiers, ensure_ascii=False)}\n"
+            f"反馈: {entry.outcome or '尚无明确验证反馈'}; 联合操作: {entry.combined_operations}\n"
+            f"作者/楼层: {entry.author} / {entry.post_number}; 原文: {entry.post_url}\n引句: "
+        )
+        if len(prefix) + 40 > budget:
+            continue
+        quote = entry.quote[: budget - len(prefix) - 1]
+        block = prefix + quote + "\n"
+        blocks.append(block)
+        budget -= len(block)
     return "".join(blocks)

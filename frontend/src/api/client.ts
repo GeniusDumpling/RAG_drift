@@ -57,6 +57,10 @@ export function getVideoGraphOverview(): Promise<VideoGraphOverview> {
   return request('/video-graph/overview');
 }
 
+export function searchVideoGraphEntities(q: string, entity_type?: string): Promise<Page<{ id: string; name: string; entity_type: string }>> {
+  return request(buildPath('/video-graph/entities', { q, entity_type, limit: 50, offset: 0 }));
+}
+
 export type VideoGraphParams = {
   q?: string; entity_id?: UUID; content_item_id?: UUID; entity_type?: string;
   assertion?: string; hops?: number; max_nodes?: number; max_edges?: number; full?: boolean;

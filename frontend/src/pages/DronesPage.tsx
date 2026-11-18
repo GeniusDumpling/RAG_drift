@@ -9,7 +9,18 @@ import './DronesPage.css';
 const BRANDS: { id: DroneBrand; name: string }[] = [
   { id: 'dji', name: 'DJI 大疆' },
   { id: 'parrot', name: 'Parrot' },
+  { id: 'autel', name: 'Autel 道通' },
+  { id: 'hubsan', name: 'Hubsan 哈博森' },
+  { id: 'skydio', name: 'Skydio' },
 ];
+
+const SEARCH_PLACEHOLDERS: Record<DroneBrand, string> = {
+  dji: '搜索型号，如 Mavic、T50',
+  parrot: '搜索型号，如 ANAFI、UKR',
+  autel: '搜索型号，如 EVO、Dragonfish',
+  hubsan: '搜索型号，如 ZINO、黑鹰、ACE',
+  skydio: '搜索型号，如 X10、X2、R1',
+};
 
 type CatalogState = { brand: DroneBrand; data?: DroneCatalog; error?: string };
 type DetailState = { brand: DroneBrand; slug: string; data?: DroneDetail; error?: string };
@@ -127,7 +138,7 @@ export function DronesPage() {
               <div className="drone-model-controls">
                 <h2>无人机型号 <span className="drone-model-count">{models.length} / {catalog.total}</span></h2>
                 <label className="sr-only" htmlFor="drone-model-search">搜索无人机型号</label>
-                <input id="drone-model-search" type="search" placeholder={brand === 'parrot' ? '搜索型号，如 ANAFI、UKR' : '搜索型号，如 Mavic、T50'} value={query} onChange={(event) => setQuery(event.target.value)} />
+                <input id="drone-model-search" type="search" placeholder={SEARCH_PLACEHOLDERS[brand]} value={query} onChange={(event) => setQuery(event.target.value)} />
                 <label className="sr-only" htmlFor="drone-category">无人机类型</label>
                 <select id="drone-category" value={category} onChange={(event) => setCategory(event.target.value)}>
                   <option value="">全部类型</option>

@@ -148,6 +148,7 @@ def retrieve(
     predicate=None,
     limit=20,
     offset=0,
+    validate_forum=True,
 ):
     if not 1 <= limit <= 100 or offset < 0:
         raise ValueError("limit 须为 1 到 100，offset 不能为负")
@@ -158,9 +159,6 @@ def retrieve(
         and not s["withdrawn"]
         and (source_id is None or source_id == s["id"])
     ]
-    checks = [verify(store, s["id"]) for s in selected]
-    if any(not c["verified"] for c in checks):
-        raise ValueError("统一图谱回读校验失败，拒绝返回失配证据")
     params = dict(
         type=source_type,
         sid=source_id,
@@ -187,6 +185,35 @@ def retrieve(
         "ORDER BY f.id,src.id",
         **params,
     )
+    # A targeted query validates the sources it will actually return. An
+    # unrelated topic being updated must not take all forum recall offline.
+    # Explicit-source and unfiltered inspection still verify the complete scope,
+    # including builds with missing endpoints or no facts.
+    candidate_ids = {row["src"]["id"] for row in rows}
+    checked = (
+        selected
+        if source_id or not normalized(query)
+        else [s for s in selected if s["id"] in candidate_ids]
+    )
+    if not candidate_ids <= {s["id"] for s in checked}:
+        raise ValueError("查询期间来源集合已变化")
+    if any(not verify(store, s["id"])["verified"] for s in checked):
+        raise ValueError("统一图谱回读校验失败，拒绝返回失配证据")
+    forum_sources = [s for s in checked if s["source_type"] == "forum"]
+    if validate_forum and forum_sources:
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import Session
+
+        from app.services.forum_graph.queries import verify as verify_forum
+
+        engine = create_engine(store.settings.sync_database_url, pool_pre_ping=True)
+        try:
+            with Session(engine) as source:
+                for row in forum_sources:
+                    if not verify_forum(store, source, row["id"])["verified"]:
+                        raise ValueError("论坛来源已变化或证据损坏")
+        finally:
+            engine.dispose()
     items = {}
     for row in rows:
         f = row["f"]
@@ -213,16 +240,13 @@ def retrieve(
                 evidence=[dict(id=e["id"], **json.loads(e["data_json"])) for e in row["evidence"]],
             )
         )
-    # Detect a concurrent withdraw/republication across every selected source.
+    # Detect a concurrent withdraw/republication of every checked source.
     current = {s["id"]: s for s in sources(store, source_type)}
-    if {
-        s["id"]
-        for s in current.values()
-        if s["active_build_id"]
-        and not s["withdrawn"]
-        and (source_id is None or source_id == s["id"])
-    } != {s["id"] for s in selected}:
-        raise ValueError("查询期间来源集合已变化")
-    if any(current[s["id"]]["active_build_id"] != s["active_build_id"] for s in selected):
+    if any(
+        s["id"] not in current
+        or current[s["id"]]["withdrawn"]
+        or current[s["id"]]["active_build_id"] != s["active_build_id"]
+        for s in checked
+    ):
         raise ValueError("查询期间有效构建已变化")
     return dict(items=list(items.values()), limit=limit, offset=offset)

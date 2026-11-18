@@ -36,6 +36,16 @@ const anafiDetail: DroneDetail = { ...anafi, groups: [
   ] },
 ] };
 const parrotCatalog = { items: [anafi], total: 1, parameter_count: 2, partial_count: 0 };
+const autelDetail: DroneDetail = {
+  ...anafiDetail, slug: 'evo-max-4t-v2', name: 'EVO Max 4T V2', manufacturer: 'Autel',
+  official_version: null, updated_at: null,
+  source_url: 'https://www.autelrobotics.cn/productdetail/evo-max-4t/',
+  groups: [{ name: '无人机', parameters: [
+    { name: '整机重量', value: '1665 克（含电池、云台和螺旋桨）' },
+    { name: '最大起飞重量', value: '非欧盟地区：1999 克\n欧盟地区 C2：1890克' },
+  ] }],
+};
+const autelCatalog = { items: [autelDetail], total: 1, parameter_count: 2, partial_count: 0 };
 
 function json(body: unknown) { return new Response(JSON.stringify(body), { status: 200 }); }
 function mockCatalog() {
@@ -54,6 +64,68 @@ function mockCatalog() {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('DronesPage', () => {
+  it.each([
+    ['hubsan', 'Hubsan 哈博森', 'Hubsan', '黑鹰4号', '712.7克\n含电池；常温、低海拔、无风环境。'],
+    ['skydio', 'Skydio', 'Skydio', 'Skydio X10', 'Connect SL: 2.11 kg\nConnect SL + 5G: 2.16 kg'],
+  ])('loads %s with scoped model requests and preserves source conditions', async (brand, label, manufacturer, name, value) => {
+    const detail = { ...mavicDetail, manufacturer, name, groups: [
+      { name: 'Aircraft', parameters: [{ name: 'Weight', value }] },
+    ] };
+    const fetchMock = mockCatalog();
+    const original = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input) => {
+      const url = new URL(String(input), 'http://localhost');
+      if (url.searchParams.get('brand') !== brand) return original(input);
+      return Promise.resolve(json(url.pathname === '/drones'
+        ? { items: [detail], total: 1, parameter_count: 1, partial_count: 0 } : detail));
+    });
+    render(<DronesPage />);
+    await screen.findByText('6654 毫安时');
+    fireEvent.change(screen.getByLabelText('搜索无人机型号'), { target: { value: 'mavic' } });
+    fireEvent.change(screen.getByLabelText('搜索技术参数'), { target: { value: '容量' } });
+    fireEvent.click(screen.getByRole('button', { name: label, exact: true }));
+    expect(await screen.findByRole('heading', { name, exact: true })).toBeInTheDocument();
+    expect(screen.getByLabelText('搜索无人机型号')).toHaveValue('');
+    expect(screen.getByLabelText('搜索技术参数')).toHaveValue('');
+    expect(screen.getByText(value.replace(/\n/g, ' '))).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '查看官方来源 ↗' })).toHaveAttribute('href', detail.source_url);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes(`/drones/${detail.slug}?brand=${brand}`))).toBe(true);
+    expect(screen.queryByText('6654 毫安时')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'DJI 大疆', exact: true }));
+    expect(await screen.findByText('6654 毫安时')).toBeInTheDocument();
+  });
+
+  it('switches across three brands and preserves Autel model conditions and source', async () => {
+    const fetchMock = mockCatalog();
+    const original = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input) => {
+      const url = new URL(String(input), 'http://localhost');
+      const brand = url.searchParams.get('brand');
+      if (brand === 'autel') return Promise.resolve(json(
+        url.pathname === '/drones' ? autelCatalog : autelDetail,
+      ));
+      if (brand === 'parrot') return Promise.resolve(json(
+        url.pathname === '/drones' ? parrotCatalog : anafiDetail,
+      ));
+      return original(input);
+    });
+    render(<DronesPage />);
+    await screen.findByText('6654 毫安时');
+    fireEvent.change(screen.getByLabelText('搜索无人机型号'), { target: { value: 'mavic' } });
+    fireEvent.change(screen.getByLabelText('搜索技术参数'), { target: { value: '电池' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Autel 道通', exact: true }));
+    expect(await screen.findByRole('heading', { name: autelDetail.name })).toBeInTheDocument();
+    expect(screen.getByLabelText('搜索无人机型号')).toHaveValue('');
+    expect(screen.getByLabelText('搜索技术参数')).toHaveValue('');
+    expect(screen.getByText(/非欧盟地区：1999 克/)).toHaveTextContent('欧盟地区 C2：1890克');
+    expect(screen.getByRole('link', { name: '查看官方来源 ↗' })).toHaveAttribute('href', autelDetail.source_url);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/drones/evo-max-4t-v2?brand=autel'))).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Parrot', exact: true }));
+    await screen.findByText('38 min at 6 m/s airspeed');
+    expect(screen.queryByText('1665 克（含电池、云台和螺旋桨）')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'DJI 大疆', exact: true }));
+    expect(await screen.findByText('6654 毫安时')).toBeInTheDocument();
+  });
   it('opens from the workspace and displays local model parameters and source', async () => {
     mockCatalog();
     render(<App />);

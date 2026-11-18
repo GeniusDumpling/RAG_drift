@@ -41,6 +41,25 @@ def test_brand_config_isolation_and_default():
     supplier_config.configure("skydio")
     assert not supplier_config.matches_buyer("Parrot")
     assert supplier_config.matches_buyer("SKYDIO, INC.")
+    for brand_id, expected_name, alias, non_match in (
+        ("autel", "道通", "Autel Robotics", "道通经销商"),
+        ("hubsan", "哈博森", "深圳市哈博森科技有限公司", "Hubsan reseller"),
+    ):
+        supplier_config.configure(brand_id)
+        assert supplier_config.brand()["name"] == expected_name
+        assert "大疆" not in baidu_search.load_conf()["search"]["instruction"]
+        assert supplier_config.index_dir().parts[-2:] == (brand_id, "_index")
+        assert supplier_config.matches_buyer(alias)
+        assert not supplier_config.matches_buyer(non_match)
+        assert not supplier_config.matches_buyer("大疆")
+    supplier_config.configure("autel")
+    assert supplier_config.matches_buyer("Autel Robotics（道通）")
+    assert supplier_config.matches_buyer("道通（Autel Robotics）")
+    assert supplier_config.matches_buyer("道通 / Autel")
+    assert not supplier_config.matches_buyer("道通（经销商）")
+    assert not supplier_config.matches_buyer("道通（大疆）")
+    supplier_config.configure("parrot")
+    assert not supplier_config.matches_buyer("Parrot (reseller)")
 
 
 def test_known_urls_are_independent_per_brand(tmp_path, monkeypatch):
@@ -123,7 +142,7 @@ def test_html_table_preserves_rowspan_and_cell_links():
     assert "| X10 | FLIR |" in documents.markdown_table(rows)
 
 
-def test_brave_english_query_and_normalized_result(monkeypatch):
+def test_exa_english_query_and_normalized_result(monkeypatch):
     seen = {}
 
     class Response:
@@ -132,30 +151,53 @@ def test_brave_english_query_and_normalized_result(monkeypatch):
 
         def json(self):
             return {
-                "web": {
-                    "results": [
-                        {
-                            "title": "Nidec",
-                            "url": "https://nidec.test/news",
-                            "description": "Skydio X10",
-                            "extra_snippets": ["motors"],
-                            "page_age": "2024-07-22",
-                        }
-                    ]
-                }
+                "results": [
+                    {
+                        "title": "Nidec",
+                        "url": "https://nidec.test/news",
+                        "text": "Skydio X10",
+                        "highlights": ["motors"],
+                        "publishedDate": "2024-07-22",
+                    }
+                ]
             }
 
-    def get(url, **kwargs):
-        seen.update(kwargs)
+    def post(url, **kwargs):
+        seen.update({"url": url, **kwargs})
         return Response()
 
-    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "test-key")
-    monkeypatch.setattr(baidu_search.requests, "get", get)
-    result = baidu_search.search("Skydio suppliers", {"provider": "brave", "language": "en"})
-    assert seen["params"]["search_lang"] == "en"
-    assert seen["headers"]["X-Subscription-Token"] == "test-key"
+    monkeypatch.setenv("EXA_API_KEY", "test-key")
+    monkeypatch.setattr(baidu_search.requests, "post", post)
+    result = baidu_search.search(
+        "Skydio suppliers",
+        {"provider": "exa", "language": "en", "exclude_domains": ["mp.weixin.qq.com"]},
+    )
+    assert seen["url"] == "https://api.exa.ai/search"
+    assert seen["json"]["excludeDomains"] == ["mp.weixin.qq.com"]
+    assert seen["headers"]["x-api-key"] == "test-key"
     assert result["references"][0]["date"] == "2024-07-22"
-    assert result["references"][0]["source"] == "brave"
+    assert result["references"][0]["source"] == "exa"
+
+
+def test_baidu_search_filters_excluded_domains(monkeypatch):
+    monkeypatch.setattr(baidu_search, "get_api_key", lambda: "test-baidu-key")
+    monkeypatch.setattr(
+        baidu_search,
+        "search_baidu",
+        lambda *args: {
+            "references": [
+                {"url": "https://mp.weixin.qq.com/s/abc", "title": "wx"},
+                {"url": "https://www.douyin.com/video/1", "title": "dy"},
+                {"url": "https://www.autelrobotics.com/news/white-paper/", "title": "wp"},
+            ]
+        },
+    )
+    result = baidu_search.search(
+        "Autel", {"provider": "baidu", "exclude_domains": ["mp.weixin.qq.com", "douyin.com"]}
+    )
+    assert [r["url"] for r in result["references"]] == [
+        "https://www.autelrobotics.com/news/white-paper/"
+    ]
 
 
 def test_grounding_unknown_year_and_cross_brand_filter(tmp_path):
@@ -242,7 +284,7 @@ def test_missing_metadata_is_not_inferred_from_current_date_or_copyright():
     assert years == [2024]
 
 
-def test_auto_search_falls_back_but_explicit_brave_preserves_error(monkeypatch):
+def test_auto_search_falls_back_but_explicit_exa_preserves_error(monkeypatch):
     import requests
 
     response = requests.Response()
@@ -251,8 +293,8 @@ def test_auto_search_falls_back_but_explicit_brave_preserves_error(monkeypatch):
     def invalid(*args):
         raise requests.HTTPError("invalid token", response=response)
 
-    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "invalid-test-key")
-    monkeypatch.setattr(baidu_search, "search_brave", invalid)
+    monkeypatch.setenv("EXA_API_KEY", "invalid-test-key")
+    monkeypatch.setattr(baidu_search, "search_exa", invalid)
     monkeypatch.setattr(baidu_search, "get_api_key", lambda: "test-baidu-key")
     monkeypatch.setattr(
         baidu_search,
@@ -262,7 +304,7 @@ def test_auto_search_falls_back_but_explicit_brave_preserves_error(monkeypatch):
     refs = baidu_search.search("Parrot components", {"provider": "auto"})["references"]
     assert refs[0]["source"] == "baidu"
     with pytest.raises(requests.HTTPError):
-        baidu_search.search("Parrot components", {"provider": "brave"})
+        baidu_search.search("Parrot components", {"provider": "exa"})
 
 
 def test_brand_confirmed_index_roundtrip_filters_other_buyer(tmp_path, monkeypatch):

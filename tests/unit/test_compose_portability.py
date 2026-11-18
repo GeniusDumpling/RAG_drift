@@ -67,12 +67,21 @@ def test_compose_environment_and_isolation(tmp_path: Path, proxy: str) -> None:
     assert all(p["host_ip"] == "127.0.0.1" for p in services["qdrant"]["ports"])
     assert services["app"]["ports"][0]["host_ip"] == "127.0.0.1"
     assert any(v["target"] == "/data/video" for v in jobs["volumes"])
-    for brand, directory in [("dji", "DJI无人机文档"), ("parrot", "Parrot无人机文档")]:
+    for brand, directory in [
+        ("dji", "DJI无人机文档"),
+        ("parrot", "Parrot无人机文档"),
+        ("autel", "Autel无人机文档"),
+        ("hubsan", "Hubsan无人机文档"),
+        ("skydio", "Skydio无人机文档"),
+    ]:
         target = f"/data/{brand}-documents"
         mount = next(v for v in services["app"]["volumes"] if v["target"] == target)
         assert mount["read_only"] is True
         assert mount["source"].endswith(directory)
     assert services["app"]["environment"]["PARROT_DOCUMENTS_DIR"] == "/data/parrot-documents"
+    assert services["app"]["environment"]["AUTEL_DOCUMENTS_DIR"] == "/data/autel-documents"
+    assert services["app"]["environment"]["HUBSAN_DOCUMENTS_DIR"] == "/data/hubsan-documents"
+    assert services["app"]["environment"]["SKYDIO_DOCUMENTS_DIR"] == "/data/skydio-documents"
 
 
 def test_neo4j_overlay_ports_credentials_and_persistence(tmp_path: Path) -> None:

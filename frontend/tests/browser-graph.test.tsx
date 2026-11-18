@@ -10,7 +10,7 @@ const graph: VideoGraphData = {
     id, source, target, predicate: 'uses', kind: 'relation', evidence_count: 1, assertions: {}, qualifiers: {},
   })), truncated: false,
 };
-const handlers = () => ({ graph, focusId: '', selectedEdge: '', expandingId: '', onFocus: vi.fn(), onExpand: vi.fn(async () => {}), onEdge: vi.fn(), onSelect: vi.fn() });
+const handlers = () => ({ graph, focusId: '', selectedEdge: '', expandingId: '', onGlobal: vi.fn(), onFocus: vi.fn(), onExpand: vi.fn(async () => {}), onEdge: vi.fn(), onSelect: vi.fn() });
 beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} }); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -19,6 +19,12 @@ describe('Browser 2D exploration', () => {
     const { container } = render(<BrowserGraphCanvas {...handlers()} />);
     await screen.findByRole('button', { name: '实体 Alpha' });
     expect(container.querySelectorAll('[data-edge-id]')).toHaveLength(4);
+    const types = screen.getByLabelText('图谱类型与样式');
+    expect(within(types).queryByText('关系')).not.toBeInTheDocument();
+    expect(within(types).queryByRole('button', { name: /使用/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '导出 SVG' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '导出 PNG' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('在当前画布查找')).not.toBeInTheDocument();
     expect(within(screen.getByRole('button', { name: '实体 Alpha' })).getByText('Alpha')).toBeInTheDocument();
     const sizes = [...container.querySelectorAll('[data-node-id]')].map(n => Number(n.querySelector('circle')?.getAttribute('r')));
     expect(sizes[0]).toBeGreaterThan(sizes[2]);
@@ -58,4 +64,12 @@ describe('Browser 2D exploration', () => {
     expect(container.querySelector('[data-edge-id="a"]')).toBeNull();
     expect(container.querySelectorAll('[data-node-id]')).toHaveLength(3);
   });
+  it('places global graph after relayout and invokes the global reset handler', async () => {
+    const props = handlers(); render(<BrowserGraphCanvas {...props} />);
+    await screen.findByRole('button', { name: '实体 Alpha' });
+    const button = screen.getByRole('button', { name: '全局图谱', exact: true });
+    expect(button.previousElementSibling).toHaveTextContent('重新布局');
+    fireEvent.click(button); expect(props.onGlobal).toHaveBeenCalledOnce();
+  });
+
 });

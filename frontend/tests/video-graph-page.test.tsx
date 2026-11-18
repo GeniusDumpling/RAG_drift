@@ -96,6 +96,40 @@ describe('VideoGraphPage', () => {
     expect(screen.queryByLabelText('交互画布测试替身')).not.toBeInTheDocument();
   });
 
+  it('loads complete type neighborhoods at one hop and allows focusing a different-type neighbor', async () => {
+    const fetchMock = mockApi();
+    render(<VideoGraphPage onOpenContent={vi.fn()} />);
+    await screen.findByRole('button', { name: 'GPS', exact: true });
+    expect(screen.queryByLabelText('陈述状态')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('展开层数'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('实体类型'), { target: { value: 'product' } });
+    const lastGraph = () => new URL(String(fetchMock.mock.calls.filter(([input]) => String(input).includes('/graph?')).at(-1)?.[0]), 'http://localhost');
+    await waitFor(() => expect(lastGraph().searchParams.get('entity_type')).toBe('product'));
+    expect(lastGraph().searchParams.get('hops')).toBe('1');
+    expect(lastGraph().searchParams.get('full')).toBe('true');
+    expect(lastGraph().searchParams.get('min_component_size')).toBe('5');
+    expect(lastGraph().searchParams.has('assertion')).toBe(false);
+    fireEvent.change(screen.getByLabelText('展开层数'), { target: { value: '2' } });
+    await waitFor(() => expect(lastGraph().searchParams.get('hops')).toBe('2'));
+    fireEvent.click(await screen.findByRole('button', { name: 'GPS', exact: true }));
+    await waitFor(() => expect(lastGraph().searchParams.get('entity_id')).toBe('gps'));
+    expect(lastGraph().searchParams.has('entity_type')).toBe(false);
+    expect(lastGraph().searchParams.get('hops')).toBe('1');
+    fireEvent.change(screen.getByLabelText('实体类型'), { target: { value: '' } });
+    await waitFor(() => expect(lastGraph().searchParams.has('full')).toBe(false));
+    expect(lastGraph().searchParams.has('entity_id')).toBe(false);
+    expect(lastGraph().searchParams.get('max_nodes')).toBe('300');
+    expect(lastGraph().searchParams.get('min_component_size')).toBe('5');
+  });
+
+  it('explains small-component exclusion in an empty category view', async () => {
+    mockApi({ summaryOnly: true });
+    render(<VideoGraphPage onOpenContent={vi.fn()} />);
+    await screen.findByText('没有符合展示条件的图谱');
+    fireEvent.change(screen.getByLabelText('实体类型'), { target: { value: 'product' } });
+    expect(await screen.findByText(/至少 5 个节点/)).toBeInTheDocument();
+  });
+
   it('surfaces migration errors instead of showing a successful empty graph', async () => {
     mockApi({ error: true });
     render(<VideoGraphPage onOpenContent={vi.fn()} />);

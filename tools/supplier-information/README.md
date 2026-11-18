@@ -1,6 +1,6 @@
 # 无人机供应商抽取与验证
 
-默认品牌仍为大疆；通过 `--brand dji|parrot|skydio` 切换。品牌名、别名、检索语言、官方起始来源以及每次采集/验证数量在 `conf.yaml` 的 `brands` 下配置。
+默认品牌仍为大疆；通过 `--brand dji|parrot|autel|hubsan|skydio` 切换。品牌名、别名、检索语言、官方起始来源以及每次采集/验证数量在 `conf.yaml` 的 `brands` 下配置。
 
 ## 安装与数据库
 
@@ -14,15 +14,15 @@ uv run alembic upgrade head
 凭据读取项目根目录 `.env`：
 
 - `BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`：沿用项目统一 LLM 配置。
-- `BRAVE_SEARCH_API_KEY`：英文品牌优先使用的 Brave Web Search。
+- `EXA_API_KEY`：非大疆品牌默认优先使用的 Exa Search。
 - `BAIDU_QIANFAN_API_KEY`：百度搜索及自动回退。
 - `DATABASE_URL` / `SYNC_DATABASE_URL`：供应商数据库。
 
-`--provider brave|baidu|auto` 选择搜索源。`auto` 优先使用已配置的 Brave，在 HTTP 401/403/422/429 时可回退至已配置的百度；Brave 返回 HTTP 402 时也回退百度，包括显式指定 `--provider brave` 的情况。百度返回 HTTP 402 时立即停止本轮搜索及剩余供应商验证，保存已有验证结果、诊断和失败报告，并以非零退出码结束任务；下次定时触发仍可再次尝试。未配置百度凭据时直接上报 Brave 错误。
+`--provider exa|baidu|auto` 选择搜索源。`auto` 优先使用已配置的 Exa，在 HTTP 401/403/422/429 时可回退至已配置的百度；Exa 返回 HTTP 402 时也回退百度，包括显式指定 `--provider exa` 的情况。百度返回 HTTP 402 时立即停止本轮搜索及剩余供应商验证，保存已有验证结果、诊断和失败报告，并以非零退出码结束任务；下次定时触发仍可再次尝试。未配置百度凭据时直接上报 Exa 错误。
 
-三个品牌默认每次查询均请求 API 的单次最大网页返回量：Brave `count=20`，百度 `web.top_k=50`；实际返回数可能少于请求值，不额外翻页。Parrot、Skydio 默认执行英文和中文多条查询并合并去重。采集不再截断为 6 份文档，处理所有返回结果和官方起始来源；验证处理当前模式下的全部供应商，并抓取全部返回结果及原始来源。`search.max_results`、`verify.search_limit`、`verify.fetch_limit`、`verify.max_suppliers` 的 `0` 均表示不额外限制。`--max-results`、`--fetch-limit`、`--max-suppliers` 仍可显式缩小本次运行规模。
+默认每次查询请求配置上限：Exa 默认 `numResults=20`（可通过 `exa_num_results` 调整，API 上限 100），百度 `web.top_k=50`；实际返回数可能少于请求值，不额外翻页。非大疆品牌默认执行中英文多条查询并合并去重，并通过 `exclude_domains` 排除微信验证墙/短视频/招聘/批发等噪声域名。采集不再截断为 6 份文档，处理所有返回结果和官方起始来源；验证处理当前模式下的全部供应商，并抓取全部返回结果及原始来源。`search.max_results`、`verify.search_limit`、`verify.fetch_limit`、`verify.max_suppliers` 的 `0` 均表示不额外限制。`--max-results`、`--fetch-limit`、`--max-suppliers` 仍可显式缩小本次运行规模。
 
-API 上限参考：[Brave Web Search](https://api-dashboard.search.brave.com/api-reference/web/search/get)、[百度 AI 搜索升级说明](https://qianfan.cloud.baidu.com/qianfandev/topic/686145)。
+API 上限参考：[Exa Search API](https://docs.exa.ai/reference/search)、[百度 AI 搜索升级说明](https://qianfan.cloud.baidu.com/qianfandev/topic/686145)。
 
 ## 执行
 
@@ -30,8 +30,8 @@ API 上限参考：[Brave Web Search](https://api-dashboard.search.brave.com/api
 
 ```bash
 # 小样本：1 份 Parrot 官方白皮书，以及 3 份 Skydio 官方资料
-.venv/bin/python tools/supplier-information/pipeline.py --brand parrot --provider brave --max-results 1
-.venv/bin/python tools/supplier-information/pipeline.py --brand skydio --provider brave --max-results 3
+.venv/bin/python tools/supplier-information/pipeline.py --brand parrot --provider exa --max-results 1
+.venv/bin/python tools/supplier-information/pipeline.py --brand skydio --provider exa --max-results 3
 
 # 各验证最多 2 家；原始来源和新搜索结果都用于验证
 .venv/bin/python tools/supplier-information/supplier_verify.py --brand parrot --max-suppliers 2 --fetch-limit 2

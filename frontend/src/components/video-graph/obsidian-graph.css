@@ -8,7 +8,7 @@
   --ow-bg: #ffffff; --ow-panel: #ffffff; --ow-border: #e5e2ea;
   --ow-field: #f7f6fa; --ow-muted: #80818f; --ow-text: #4d465b;
   --ow-accent: #8b68b2; --ow-bright: #45364f;
-  display: grid; grid-template-rows: 58px minmax(0, 1fr) 28px;
+  display: grid; grid-template-rows: 54px auto minmax(0, 1fr);
   height: 100%; width: 100%; overflow: hidden; background: var(--ow-bg);
   border: 0; border-radius: 0; box-shadow: none; container-type: inline-size;
   color: var(--ow-text); font-family: var(--font-sans); color-scheme: light;
@@ -60,7 +60,7 @@
 .graph-3d-tooltip small { display: block; margin-top: 4px; color: #bfb0d0; font-size: 10px; }
 .ow-graph-stage .interactive-graph-controls { position: absolute; z-index: 4; right: 20px; bottom: 20px; border: 0; padding: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 7px; background: transparent; }
 .ow-graph-stage .graph-viewport-controls { gap: 2px; border: 1px solid #d9d2e3; border-radius: 6px; background: #fffffff2; padding: 3px; box-shadow: 0 2px 10px #0002; }
-.ow-graph-stage .graph-viewport-controls button { min-height: 27px; background: transparent; border: none; color: #7a6a8a; padding: 0 9px; font-size: 10px; }
+.ow-graph-stage .graph-viewport-controls button { min-height: 27px; background: transparent; border: none; color: #7a6a8a; padding: 0 9px; font-size: 12px; }
 .ow-graph-stage .graph-viewport-controls button:nth-child(-n+2) { width: 28px; font-size: 16px; padding: 0; }
 .ow-graph-stage .graph-interaction-footer { display: none; }
 .ow-graph-stage .graph-loading-overlay { top: 64px; background: #f8f4fce8; border-color: #dacde5; color: #826b98; font-size: 11px; }
@@ -182,7 +182,7 @@
   .ow-statusbar > div:last-child { display: none; }
 }
 @media (max-width: 680px) {
-  .obsidian-workbench { grid-template-rows: 52px minmax(0, 1fr) 26px; }
+  .obsidian-workbench { grid-template-rows: 50px auto minmax(0, 1fr); }
   .ow-toolbar { padding: 0 12px; gap: 8px; }
   .ow-breadcrumb { min-width: 0; gap: 7px; }
   .ow-breadcrumb > span { display: none; }
@@ -220,4 +220,77 @@
   .ow-stage-hint { left: 16px; bottom: 17px; font-size: 9px; gap: 5px; }
   .ow-stage-hint span:last-child, .ow-stage-hint b:last-of-type { display: none; }
   .ow-graph-stage .interactive-graph-controls { right: 12px; bottom: 40px; }
+}
+
+/* Search lives alongside the selected entity/relation details. */
+.ow-entity-search .ow-detail-search { width: 100%; margin: 0; height: auto; min-height: 34px; gap: 6px; }
+.ow-detail-search button[type=submit] { flex-shrink: 0; padding: 0 5px; }
+.ow-entity-results { display: grid; gap: 5px; margin-top: 10px; max-height: 220px; overflow-y: auto; }
+.obsidian-workbench .ow-entity-results button { justify-content: space-between; text-align: left; padding: 6px 8px; border-color: #e7e1ec; }
+.ow-entity-results span { overflow-wrap: anywhere; }
+.ow-entity-results small { font-size: 10px; color: #867b90; flex-shrink: 0; }
+
+/* Knowledge lenses, layout switches, ontology schema and path exploration. */
+.ow-toolbar-switches { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ow-lens-strip { display: flex; align-items: center; gap: 10px; padding: 7px 25px; border-bottom: 1px solid #ece8f1; background: #fbfafd; min-height: 40px; flex-wrap: wrap; }
+.ow-lens-heading { display: inline-flex; align-items: center; gap: 5px; color: #6e5c82; font-size: 11px; font-weight: 500; flex-shrink: 0; }
+.ow-lens-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.obsidian-workbench .ow-lens-pills button { min-height: 25px; padding: 0 10px; border: 1px solid #e2dce9; border-radius: 999px; background: #ffffff; color: #665b75; font-size: 11px; gap: 5px; }
+.obsidian-workbench .ow-lens-pills button small { font-size: 10px; color: #8c8299; font-variant-numeric: tabular-nums; }
+.obsidian-workbench .ow-lens-pills button[aria-pressed=true] { background: #f2ebf9; border-color: #c8b2df; color: #6d4793; font-weight: 500; }
+.obsidian-workbench .ow-lens-pills button[aria-pressed=true] small { color: #7b529d; }
+.ow-lens-desc { margin-left: auto; color: #7e758c; font-size: 11px; }
+
+.ow-semantic-strip { position: absolute; left: 25px; bottom: 48px; z-index: 2; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 4px 10px; border: 1px solid #e6e0ed; border-radius: 999px; background: #ffffffeb; color: #675d75; font-size: 10px; pointer-events: none; }
+.ow-semantic-strip > span, .ow-schema-legend > span { display: inline-flex; align-items: center; gap: 4px; }
+.ow-semantic-strip i, .ow-schema-legend i { display: inline-block; width: 14px; height: 0; border-top: 2px solid #848c98; }
+.ow-semantic-strip i.is-dashed, .ow-schema-legend i.is-dashed { border-top-style: dashed; border-top-color: #6d7e96; }
+.ow-semantic-strip i.is-negated, .ow-schema-legend i.is-negated { border-top-style: dotted; border-top-color: #c9515a; }
+.ow-semantic-strip i.is-disputed, .ow-schema-legend i.is-disputed { border-top-style: dashed; border-top-color: #c97a2b; }
+
+.ow-schema-layers { display: grid; gap: 10px; }
+.ow-schema-layer { padding: 9px 10px; border: 1px solid #eae4f0; border-radius: 6px; background: #fbfafd; }
+.ow-schema-layer-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.ow-schema-layer-head strong { font-size: 11px; color: #5f4b73; font-weight: 600; }
+.ow-schema-layer-head small { font-size: 10px; color: #847a91; }
+.ow-schema-chain { margin: 4px 0 8px; font-size: 10px; color: #766c85; line-height: 1.5; }
+.ow-schema-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.obsidian-workbench .ow-schema-chips button { min-height: 22px; padding: 2px 7px; border: 1px solid #e2dce9; border-radius: 999px; background: #ffffff; color: #5f536e; font-size: 10px; gap: 4px; }
+.obsidian-workbench .ow-schema-chips button > i { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.obsidian-workbench .ow-schema-chips button > small { color: #857b93; font-size: 9px; }
+.obsidian-workbench .ow-schema-chips button.is-active { background: #efe6f8; border-color: #bfa5da; color: #67428d; }
+.ow-schema-legend { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed #e6e0ed; font-size: 10px; color: #70667e; }
+
+.ow-path-explorer { margin: 0 0 14px; padding: 10px; border: 1px solid #e8e2ef; border-radius: 6px; background: #faf8fc; display: grid; gap: 8px; }
+.ow-path-picker { display: grid; gap: 5px; font-size: 10px; color: #6f627e; }
+.ow-path-picker select { width: 100%; max-width: 100%; }
+.ow-path-chain { display: grid; gap: 6px; }
+.ow-path-chain-head { display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: #685080; }
+.obsidian-workbench .ow-path-step { width: 100%; min-height: 0; padding: 6px 8px; border: 1px solid #e4dceb; border-radius: 5px; background: #ffffff; display: grid; gap: 2px; justify-items: start; text-align: left; }
+.ow-path-step span { font-size: 11px; color: #554269; font-weight: 500; overflow-wrap: anywhere; }
+.ow-path-step small { font-size: 10px; color: #7d5c9b; }
+
+.ow-assertion-pill, .ow-qualifier-pill { display: inline-flex; align-items: center; margin-left: 5px; padding: 1px 5px; border-radius: 4px; font-style: normal; font-size: 9px; line-height: 1.4; }
+.ow-assertion-pill.is-asserted { background: #eef4f1; color: #3d6d58; }
+.ow-assertion-pill.is-uncertain { background: #eef2f6; color: #4c627d; }
+.ow-assertion-pill.is-negated { background: #fbecef; color: #a73842; }
+.ow-assertion-pill.is-disputed { background: #fdf3e7; color: #a35d15; }
+.ow-qualifier-pill { background: #f2eef8; color: #6b4f8c; }
+
+.ow-relation-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ow-assertion-breakdown { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ow-assertion-breakdown span { padding: 2px 7px; border-radius: 999px; font-size: 10px; }
+.ow-assertion-breakdown .is-asserted { background: #eef4f1; color: #3d6d58; }
+.ow-assertion-breakdown .is-uncertain { background: #eef2f6; color: #4c627d; }
+.ow-assertion-breakdown .is-negated { background: #fbecef; color: #a73842; }
+.ow-dispute-note { margin-top: 10px !important; padding: 7px 9px; border-radius: 5px; background: #fdf3e7; color: #8c4f12 !important; font-size: 10px !important; line-height: 1.6; }
+.ow-qualifiers-box { margin-top: 12px; padding: 8px 10px; border: 1px solid #e9e3f0; border-radius: 5px; background: #faf8fc; }
+.ow-qualifiers-box strong { display: block; font-size: 10px; color: #6e5983; font-weight: 600; margin-bottom: 4px; }
+.ow-qualifiers-box dl { margin: 0 !important; }
+.video-graph-evidence-qualifiers { color: #6b4f8c !important; background: #f4effa; padding: 3px 7px; border-radius: 4px; display: inline-block; }
+
+@media (max-width: 900px) {
+  .ow-lens-strip { padding: 6px 12px; }
+  .ow-lens-desc { display: none; }
+  .ow-semantic-strip { left: 16px; bottom: 40px; }
 }

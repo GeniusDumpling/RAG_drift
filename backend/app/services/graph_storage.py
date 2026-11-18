@@ -9,6 +9,7 @@ from app.core.config import Settings
 
 class Neo4jStore:
     def __init__(self, settings: Settings, *, config_prefix: str = "neo4j"):
+        self.settings = settings
         uri = getattr(settings, f"{config_prefix}_uri", None)
         password = getattr(settings, f"{config_prefix}_password", None)
         if not uri:

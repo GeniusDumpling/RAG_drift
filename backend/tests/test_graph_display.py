@@ -1,7 +1,6 @@
 """Display selection must favor connectivity without changing stored claims."""
 
 import random
-from collections import Counter
 from itertools import combinations
 
 import pytest
@@ -57,13 +56,13 @@ def test_filters_tiny_components_before_they_can_consume_the_budget():
     assert selected.truncated
 
 
-def test_dense_core_wins_over_a_larger_but_sparsely_connected_component():
+def test_largest_component_wins_over_a_smaller_dense_component_before_applying_budgets():
     clique = list(combinations([f"dense{i}" for i in range(5)], 2))
     chain = [(f"sparse{i}", f"sparse{i+1}") for i in range(80)]
     graph = graph_for([*clique, *chain])
     selected = connected_display_graph(graph, max_nodes=5, max_edges=10)
-    assert all(node.id.startswith("dense") for node in selected.nodes)
-    assert len(selected.edges) == 10
+    assert all(node.id.startswith("sparse") for node in selected.nodes)
+    assert len(selected.nodes) == 5 and len(selected.edges) == 4
 
 
 def test_hub_neighborhood_wins_over_unconnected_pairs_with_more_evidence():
@@ -109,11 +108,12 @@ def test_claims_are_preserved_and_selection_does_not_depend_on_database_row_orde
     assert component_sizes(selected) == [8]
 
 
-def test_keeps_multiple_substantial_components_without_filling_a_tiny_remainder():
+def test_keeps_only_one_component_even_when_budget_can_fit_several():
     graph = graph_for([(f"{group}{i}", f"{group}{i+1}")
                        for group in ["a", "b", "c"] for i in range(5)])
     selected = connected_display_graph(graph, max_nodes=14, max_edges=12)
-    assert Counter(component_sizes(selected)) == {6: 2}
+    assert component_sizes(selected) == [6]
+    assert all(node.id.startswith('a') for node in selected.nodes)
     assert selected.truncated
 
 
@@ -124,12 +124,34 @@ def test_empty_or_only_tiny_candidates_return_an_empty_view(graph):
     assert not selected.nodes and not selected.edges
 
 
-def test_unbounded_selection_retains_all_eligible_components():
+def test_unbounded_selection_keeps_only_the_largest_component():
     graph = graph_for([(f"{group}{i}", f"{group}{i+1}")
                        for group in ["a", "b"] for i in range(5)])
     selected = connected_display_graph(graph, max_nodes=None, max_edges=None)
-    assert len(selected.nodes) == 12 and len(selected.edges) == 10
-    assert not selected.truncated
+    assert len(selected.nodes) == 6 and len(selected.edges) == 5
+    assert selected.truncated
+
+
+@pytest.mark.parametrize("max_nodes,max_edges", [(None, None), (10, 9), (300, 500)])
+def test_hides_fifteen_and_twenty_node_components_alongside_main_graph(max_nodes, max_edges):
+    main = [(f"main{i}", f"main{i+1}") for i in range(40)]
+    smaller = list(combinations([f"dense{i}" for i in range(20)], 2))
+    smaller += [(f"other{i}", f"other{i+1}") for i in range(14)]
+    graph = graph_for([*main, *smaller], isolated=['alone'])
+    selected = connected_display_graph(graph, max_nodes=max_nodes, max_edges=max_edges)
+    assert all(node.id.startswith('main') for node in selected.nodes)
+    assert component_sizes(selected) == [min(41, max_nodes or 41)]
+    assert selected.truncated
+
+
+def test_equal_size_components_have_a_stable_choice_after_database_row_reordering():
+    graph = graph_for([(f"a{i}", f"a{i+1}") for i in range(19)]
+                      + list(combinations([f"b{i}" for i in range(20)], 2)))
+    selected = connected_display_graph(graph, max_nodes=None, max_edges=None)
+    graph.nodes.reverse()
+    graph.edges.reverse()
+    assert connected_display_graph(graph, max_nodes=None, max_edges=None) == selected
+    assert all(node.id.startswith('a') for node in selected.nodes)
 
 
 def test_neo4j_selection_considers_candidates_before_applying_display_caps():
@@ -146,7 +168,7 @@ def test_neo4j_selection_considers_candidates_before_applying_display_caps():
                                "entity_type": node.entity_type}} for node in graph.nodes]
             assert "RETURN r,s,o" in cypher
             assert params["assertion"] == "uncertain"
-            assert params["kind"] == "technology"
+            assert "kind" not in params  # Type selects roots, not their neighbors.
             entities = {node.id: {"id": node.id, "canonical_name": node.label,
                                   "entity_type": node.entity_type} for node in graph.nodes}
             return [{"r": {"id": edge.id, "predicate": edge.predicate},

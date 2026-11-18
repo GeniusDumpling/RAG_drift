@@ -30,26 +30,24 @@ def references(count):
     return [{"url": f"https://source.test/{i}", "title": str(i)} for i in range(count)]
 
 
-@pytest.mark.parametrize("provider", ["auto", "brave"])
+@pytest.mark.parametrize("provider", ["auto", "exa"])
 @pytest.mark.parametrize("baidu_status", [200, 402])
-def test_brave_402_falls_back_and_baidu_402_is_terminal(monkeypatch, provider, baidu_status):
+def test_exa_402_falls_back_and_baidu_402_is_terminal(monkeypatch, provider, baidu_status):
     supplier_config.configure("parrot")
-    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "test-brave-key")
+    monkeypatch.setenv("EXA_API_KEY", "test-exa-key")
     monkeypatch.setattr(baidu_search, "get_api_key", lambda: "test-baidu-key")
     calls = []
 
-    def get(url, **kwargs):
-        calls.append("brave")
-        assert kwargs["params"]["count"] == 20
-        return response(402, {}, url)
-
     def post(url, **kwargs):
+        if "api.exa.ai" in url:
+            calls.append("exa")
+            assert kwargs["json"]["numResults"] == 20
+            return response(402, {}, url)
         calls.append("baidu")
         payload = json.loads(kwargs["data"])
         assert {"type": "web", "top_k": 50} in payload["resource_type_filter"]
         return response(baidu_status, {"references": references(50)}, url)
 
-    monkeypatch.setattr(baidu_search.requests, "get", get)
     monkeypatch.setattr(baidu_search.requests, "post", post)
     conf = {**supplier_config.load_config()["search"], "provider": provider}
     if baidu_status == 402:
@@ -59,7 +57,7 @@ def test_brave_402_falls_back_and_baidu_402_is_terminal(monkeypatch, provider, b
         result = baidu_search.search("Parrot suppliers", conf)
         assert len(result["references"]) == 50
         assert all(ref["source"] == "baidu" for ref in result["references"])
-    assert calls == ["brave", "baidu"]
+    assert calls == ["exa", "baidu"]
 
 
 def test_double_402_stops_collection_before_later_queries_or_analysis(tmp_path, monkeypatch):
@@ -68,7 +66,7 @@ def test_double_402_stops_collection_before_later_queries_or_analysis(tmp_path, 
     monkeypatch.setattr(pipeline, "base_dir", lambda: str(tmp_path))
     monkeypatch.setattr(pipeline, "setup_logging", lambda _: "test.log")
     (tmp_path / "logs").mkdir()
-    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "test-key")
+    monkeypatch.setenv("EXA_API_KEY", "test-key")
     monkeypatch.setattr(baidu_search, "get_api_key", lambda: "test-key")
     calls = []
 
@@ -79,21 +77,20 @@ def test_double_402_stops_collection_before_later_queries_or_analysis(tmp_path, 
     def unexpected(*args, **kwargs):
         pytest.fail("Analysis and URL completion must not run after search payment failure")
 
-    monkeypatch.setattr(baidu_search.requests, "get", blocked)
     monkeypatch.setattr(baidu_search.requests, "post", blocked)
     monkeypatch.setattr(pipeline, "llm_main", unexpected)
     monkeypatch.setattr(pipeline, "record_known_urls", unexpected)
     assert pipeline.main() == 1
-    assert len(calls) == 2  # One Brave request, one Baidu request, no remaining queries/retries.
+    assert len(calls) == 2  # One Exa request, one Baidu request, no remaining queries/retries.
     saved = json.loads(next((tmp_path / "logs").glob("*.json")).read_text())
     assert saved["status"] == "failed"
 
 
 @pytest.mark.parametrize("brand", ["dji", "parrot", "skydio"])
-@pytest.mark.parametrize("provider,count", [("brave", 20), ("baidu", 50)])
+@pytest.mark.parametrize("provider,count", [("exa", 20), ("baidu", 50)])
 def test_default_collection_keeps_all_query_results_and_seeds(monkeypatch, brand, provider, count):
     supplier_config.configure(brand)
-    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "test-key")
+    monkeypatch.setenv("EXA_API_KEY", "test-key")
     monkeypatch.setattr(baidu_search, "get_api_key", lambda: "test-key")
     calls = []
 
@@ -101,16 +98,14 @@ def test_default_collection_keeps_all_query_results_and_seeds(monkeypatch, brand
         calls.append(provider)
         return [{**ref, "url": ref["url"] + f"/{len(calls)}"} for ref in references(count)]
 
-    def get(url, **kwargs):
-        assert kwargs["params"]["count"] == 20
-        return response(200, {"web": {"results": returned_refs()}}, url)
-
     def post(url, **kwargs):
+        if "api.exa.ai" in url:
+            assert kwargs["json"]["numResults"] == 20
+            return response(200, {"results": returned_refs()}, url)
         payload = json.loads(kwargs["data"])
         assert {"type": "web", "top_k": 50} in payload["resource_type_filter"]
         return response(200, {"references": returned_refs()}, url)
 
-    monkeypatch.setattr(baidu_search.requests, "get", get)
     monkeypatch.setattr(baidu_search.requests, "post", post)
     conf = {**supplier_config.load_config()["search"], "provider": provider}
     result = baidu_search.collect_references(conf)
@@ -166,7 +161,7 @@ def test_verification_402_saves_partial_results_and_stops_remaining_suppliers(
         "load_supplier_relations_for_verification",
         lambda *a, **kw: [{"supplier": str(i)} for i in range(5)],
     )
-    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "test-key")
+    monkeypatch.setenv("EXA_API_KEY", "test-key")
     monkeypatch.setattr(baidu_search, "get_api_key", lambda: "test-key")
     monkeypatch.setattr(supplier_verify, "fetch_fulltext", lambda *a, **kw: "Source text")
     monkeypatch.setattr(supplier_verify.time, "sleep", lambda _: None)
@@ -177,15 +172,13 @@ def test_verification_402_saves_partial_results_and_stops_remaining_suppliers(
     )
     calls, saved = [], []
 
-    def get(url, **kwargs):
-        calls.append("brave")
-        return response(200 if len(calls) == 1 else 402, {"web": {"results": references(20)}}, url)
-
     def post(url, **kwargs):
+        if "api.exa.ai" in url:
+            calls.append("exa")
+            return response(200 if len(calls) == 1 else 402, {"results": references(20)}, url)
         calls.append("baidu")
         return response(402, {}, url)
 
-    monkeypatch.setattr(baidu_search.requests, "get", get)
     monkeypatch.setattr(baidu_search.requests, "post", post)
     monkeypatch.setattr(supplier_verify.db_ingest, "ingest_supplier_verifications", saved.extend)
     monkeypatch.setattr(
@@ -193,7 +186,7 @@ def test_verification_402_saves_partial_results_and_stops_remaining_suppliers(
     )
     with pytest.raises(baidu_search.SearchPaymentRequired):
         supplier_verify.main(str(path))
-    assert calls == ["brave", "brave", "baidu"]
+    assert calls == ["exa", "exa", "baidu"]
     assert [r["supplier"] for r in saved] == ["0", "1"]
     assert saved[0]["verdict"] == "待确认"
     assert "Baidu search HTTP 402" in saved[1]["verdict"]

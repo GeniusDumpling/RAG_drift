@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Graph, GraphData, LayoutOptions, NodeData, EdgeData, IElementEvent } from '@antv/g6';
 import type { VideoGraphData, VideoGraphEdge, VideoGraphNode } from '../../api/types';
-import { DARK_ENTITY_COLORS, DEFAULT_GRAPH_APPEARANCE, ENTITY_LABELS, PREDICATE_LABELS, relationNodeSize } from './presentation';
+import { classifyEdgeSemantics, DARK_ENTITY_COLORS, DEFAULT_GRAPH_APPEARANCE, ENTITY_LABELS, PREDICATE_LABELS, relationNodeSize } from './presentation';
 import type { GraphAppearance } from './presentation';
 import { nodeRelationCounts, parallelEdgeStyles } from './data';
 import { atMinimumZoom, fitDefaultViewport, INITIAL_ZOOM_RANGE } from './viewport';
@@ -19,6 +19,8 @@ export type GraphCanvasProps = {
   dimension?: GraphDimension;
   onUnavailable?: (message: string) => void;
   expandedIds?: string[];
+  onGlobal?: () => void;
+  highlightedPath?: { nodeIds: Set<string>; edgeIds: Set<string> } | null;
 };
 function forceLayoutOptions(appearance = DEFAULT_GRAPH_APPEARANCE, is3D = false): LayoutOptions {
   if (is3D) return { type: 'd3-force-3d', preLayout: true, iterations: 180, numDimensions: 3,
@@ -157,10 +159,19 @@ function G6GraphCanvas(props: GraphCanvasProps) {
             type: is3D ? 'graph-line-3d' : 'quadratic',
             style: (edge: EdgeData) => {
               const config = latest.current.appearance ?? DEFAULT_GRAPH_APPEARANCE;
-              return { stroke: is3D ? '#89808e' : '#383842', strokeOpacity: is3D ? 0.55 : 0.75, opacity: 1, zIndex: 0,
+              const semantics = classifyEdgeSemantics({
+                kind: (edge.data?.kind as 'relation' | 'mention') ?? 'relation',
+                assertions: (edge.data?.assertions as Record<string, number>) ?? {},
+                qualifiers: (edge.data?.qualifiers as Record<string, string>) ?? {},
+              });
+              const dash = semantics.strokeDasharray ? semantics.strokeDasharray.split(' ').map(Number) : undefined;
+              const stroke = is3D
+                ? (semantics.status === 'asserted' ? '#89808e' : semantics.strokeColor)
+                : (semantics.status === 'asserted' ? '#383842' : semantics.strokeColor);
+              return { stroke, strokeOpacity: is3D ? 0.55 : 0.75, opacity: 1, zIndex: 0,
                 lineWidth: (0.65 + Math.min(0.8, Math.log2(1 + Number(edge.data?.evidence_count ?? 0)) * 0.24)) * config.linkScale,
                 endArrow: config.showArrows, endArrowSize: 4, cursor: 'pointer',
-                lineDash: edge.data?.kind === 'mention' ? [4, 4] : undefined,
+                lineDash: dash,
                 labelText: is3D ? '' : PREDICATE_LABELS[String(edge.data?.predicate)] ?? String(edge.data?.predicate ?? ''),
                 labelFontSize: 10, labelFill: '#72578b', labelOpacity: 0,
                 labelBackground: true, labelBackgroundFill: '#ffffff', labelPadding: [3, 5] };
@@ -189,9 +200,17 @@ function G6GraphCanvas(props: GraphCanvasProps) {
               const title = document.createElement('strong');
               title.textContent = String(item?.data?.label ?? PREDICATE_LABELS[String(item?.data?.predicate)] ?? '关系');
               const description = document.createElement('p');
-              description.textContent = item?.data?.kind === 'entity'
-                ? `${ENTITY_LABELS[String(item.data.entity_type)] ?? '实体'} · 双击展开邻居`
-                : `${item?.data?.evidence_count ?? 0} 条证据 · 点击查看原文`;
+              if (item?.data?.kind === 'entity') {
+                description.textContent = `${ENTITY_LABELS[String(item.data.entity_type)] ?? '实体'} · 双击展开邻居`;
+              } else {
+                const semantics = classifyEdgeSemantics({
+                  kind: (item?.data?.kind as 'relation' | 'mention') ?? 'relation',
+                  assertions: (item?.data?.assertions as Record<string, number>) ?? {},
+                  qualifiers: (item?.data?.qualifiers as Record<string, string>) ?? {},
+                });
+                const extras = [semantics.statusLabel, semantics.qualifierCount ? `含 ${semantics.qualifierCount} 项条件` : ''].filter(Boolean).join(' · ');
+                description.textContent = `${item?.data?.evidence_count ?? 0} 条证据 · ${extras} · 点击查看原文`;
+              }
               box.append(title, description); return box;
             } }],
         });

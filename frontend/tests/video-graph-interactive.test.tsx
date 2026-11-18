@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { VideoGraphData, VideoGraphNode } from '../src/api/types';
-import { mergeGraphData, parallelEdgeStyles } from '../src/components/video-graph/data';
+import { largestGraphComponent, mergeGraphData, parallelEdgeStyles } from '../src/components/video-graph/data';
 import { graphLimitsForWidth } from '../src/components/video-graph/limits';
 import { VideoGraphPage } from '../src/pages/VideoGraphPage';
 
@@ -47,7 +47,8 @@ describe('interactive graph exploration', () => {
       .filter((url) => url.pathname.endsWith('/graph'));
     expect(graphRequests.length).toBeGreaterThanOrEqual(2);
     expect(graphRequests.every((url) => !url.searchParams.has('full'))).toBe(true);
-    expect(graphRequests.every((url) => url.searchParams.get('min_component_size') === '5')).toBe(true);
+    expect(graphRequests[0].searchParams.get('min_component_size')).toBe('5');
+    expect(graphRequests[1].searchParams.get('min_component_size')).toBe('0');
     expect(graphRequests[0].searchParams.get('max_nodes')).toBe('300');
     expect(graphRequests[0].searchParams.get('max_edges')).toBe('500');
     expect(graphRequests[1].searchParams.get('max_nodes')).toBe('500');
@@ -67,6 +68,36 @@ describe('interactive graph exploration', () => {
     await screen.findByText('PX4,GPS');
     resolve(response(next));
     await waitFor(() => expect(screen.queryByText('PX4,GPS,RTK')).not.toBeInTheDocument());
+  });
+
+  it('retains all category seeds and cross-type neighbors when expanding and collapsing beyond the global budget', async () => {
+    const products = Array.from({ length: 605 }, (_, i) => ({ ...node(`p${i}`), entity_type: 'product' }));
+    const category: VideoGraphData = { nodes: [...products, node('RTK')],
+      edges: [...products.slice(1).map((n, i) => edge(`p${i}`, products[i].id, n.id)), edge('root', 'p0', 'RTK')], truncated: false };
+    const expanded: VideoGraphData = { nodes: [products[0], node('GPS')], edges: [edge('added', 'p0', 'GPS')], truncated: false };
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://localhost');
+      return Promise.resolve(response(url.pathname.endsWith('/overview') ? { builds: {} }
+        : url.searchParams.has('entity_id') ? expanded : url.searchParams.has('entity_type') ? category : base));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<VideoGraphPage onOpenContent={vi.fn()} />);
+    await screen.findByRole('button', { name: '展开测试实体' });
+    fireEvent.change(screen.getByLabelText('实体类型'), { target: { value: 'product' } });
+    const actual = () => JSON.parse(screen.getByTestId('graph-data').textContent ?? '{}') as VideoGraphData;
+    await waitFor(() => expect(actual().nodes).toHaveLength(606));
+    fireEvent.click(screen.getByRole('button', { name: '展开测试实体' }));
+    await waitFor(() => expect(actual().nodes).toHaveLength(607));
+    expect(actual().nodes.filter(n => n.entity_type === 'product')).toHaveLength(605);
+    expect(actual().truncated).toBe(false);
+    const last = new URL(String(fetchMock.mock.calls.at(-1)?.[0]), 'http://localhost');
+    expect(last.searchParams.get('full')).toBe('true');
+    expect(last.searchParams.get('hops')).toBe('1');
+    expect(last.searchParams.has('entity_type')).toBe(false);
+    expect(last.searchParams.has('assertion')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '展开测试实体' }));
+    await waitFor(() => expect(actual().nodes).toHaveLength(606));
+    expect(actual().nodes.filter(n => n.entity_type === 'product')).toHaveLength(605);
   });
 
   it('collapses a neighborhood back to the base graph without requesting data again', async () => {
@@ -105,6 +136,50 @@ describe('interactive graph exploration', () => {
     expect(merged.nodes.map((n) => n.id)).toEqual(['PX4', 'GPS', 'RTK']);
     expect(merged.edges.map((e) => e.id)).toEqual(['r1', 'r2']);
     expect(merged.truncated).toBe(true);
+  });
+
+  it('hides detached twenty-node branches after collapse and restores them when reconnected', async () => {
+    const mainNodes = ['PX4', 'GPS', ...Array.from({ length: 28 }, (_, i) => `main${i}`)].map(node);
+    const main: VideoGraphData = { nodes: mainNodes,
+      edges: mainNodes.slice(1).map((n, i) => edge(`main${i}`, mainNodes[i].id, n.id)), truncated: false };
+    const branchNodes = ['RTK', ...Array.from({ length: 19 }, (_, i) => `branch${i}`)].map(node);
+    const branch: VideoGraphData = { nodes: branchNodes,
+      edges: branchNodes.slice(1).map((n, i) => edge(`branch${i}`, 'RTK', n.id)), truncated: false };
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://localhost');
+      return Promise.resolve(response(url.pathname.endsWith('/overview') ? { builds: {} }
+        : url.searchParams.get('entity_id') === 'RTK' ? branch : url.searchParams.has('entity_id') ? next : main));
+    }));
+    render(<VideoGraphPage onOpenContent={vi.fn()} />);
+    const actual = () => JSON.parse(screen.getByTestId('graph-data').textContent ?? '{}') as VideoGraphData;
+    fireEvent.click(await screen.findByRole('button', { name: '展开测试实体' }));
+    fireEvent.click(await screen.findByRole('button', { name: '展开 RTK 分支' }));
+    await waitFor(() => expect(actual().nodes).toHaveLength(50));
+    fireEvent.click(screen.getByRole('button', { name: '展开测试实体' }));
+    await waitFor(() => expect(actual().nodes).toHaveLength(30));
+    expect(actual().nodes.some(n => n.id === 'RTK')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '展开测试实体' }));
+    await waitFor(() => expect(actual().nodes).toHaveLength(50));
+  });
+
+  it('retains the largest component by nodes and resolves ties independently of array order', () => {
+    const chain = (prefix: string, count: number): VideoGraphData => {
+      const nodes = Array.from({ length: count }, (_, i) => node(`${prefix}${i}`));
+      return { nodes, edges: nodes.slice(1).map((n, i) => edge(`${prefix}e${i}`, nodes[i].id, n.id)), truncated: false };
+    };
+    const main = chain('main', 40), twenty = chain('small', 20), fifteen = chain('other', 15);
+    const mixed = { nodes: [...fifteen.nodes, ...twenty.nodes, ...main.nodes],
+      edges: [...fifteen.edges, ...twenty.edges, ...main.edges], truncated: false };
+    const original = JSON.stringify(mixed);
+    expect(largestGraphComponent(mixed).nodes).toEqual(main.nodes);
+    expect(largestGraphComponent(mixed).edges).toEqual(main.edges);
+    expect(JSON.stringify(mixed)).toBe(original);
+    const a = chain('a', 20), b = chain('b', 20);
+    const tied = { nodes: [...b.nodes, ...a.nodes], edges: [...b.edges, ...a.edges], truncated: false };
+    expect(largestGraphComponent(tied).nodes).toEqual(a.nodes);
+    tied.nodes.reverse(); tied.edges.reverse();
+    expect(new Set(largestGraphComponent(tied).nodes.map(n => n.id))).toEqual(new Set(a.nodes.map(n => n.id)));
+    expect(largestGraphComponent({ nodes: [], edges: [], truncated: false }).nodes).toEqual([]);
   });
 
   it('retains expanded results within the desktop budget', () => {

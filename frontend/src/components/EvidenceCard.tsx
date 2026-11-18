@@ -3,6 +3,29 @@ import { itemTypeLabel, safeExternalHref } from '../utils/links';
 import { EvidenceImages } from './EvidenceImages';
 
 const MAX_SNIPPET_LENGTH = 300;
+const FORUM_CONDITION_LABELS = new Map([
+  ['firmware', '固件'], ['firmware_version', '固件'],
+  ['software', '软件'], ['software_version', '软件'],
+  ['autopilot', '飞控'], ['hardware', '硬件'],
+  ['vehicle', '载体'], ['vehicle_type', '载体'], ['mission_context', '任务场景'],
+]);
+const FORUM_ACT_LABELS = new Map([
+  ['observation', '问题现象'], ['recommendation', '操作建议'],
+  ['test_report', '尝试与反馈'], ['technical_statement', '技术陈述'],
+  ['correction', '纠正'], ['question', '提问'], ['hypothesis', '推测'],
+]);
+
+function forumConditions(qualifiers: Record<string, unknown>): Array<[string, string]> {
+  const values = new Map<string, [string, string]>();
+  for (const [rawKey, rawValue] of Object.entries(qualifiers)) {
+    if (rawKey === 'case_id' || rawKey === 'modality') continue;
+    const key = rawKey.replace(/^context:/, '');
+    const label = FORUM_CONDITION_LABELS.get(key) || key;
+    const value = typeof rawValue === 'string' ? rawValue : JSON.stringify(rawValue);
+    values.set(`${label}:${value}`, [label, value]);
+  }
+  return [...values.values()];
+}
 
 function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) {
@@ -59,7 +82,7 @@ export function EvidenceCard({ evidence, onOpenContent }: EvidenceCardProps) {
             {evidence.source_site_name} · {itemTypeLabel(evidence.item_type)}
           </p>
         </div>
-        <span className="badge">{evidence.graph_evidence?.length ? '图谱关联' : evidence.matched_by}</span>
+        <span className="badge">{evidence.graph_evidence?.length || evidence.forum_graph_evidence?.length ? '图谱关联' : evidence.matched_by}</span>
       </div>
 
       <div className="evidence-snippet">
@@ -89,6 +112,27 @@ export function EvidenceCard({ evidence, onOpenContent }: EvidenceCardProps) {
               <p>{entry.quote}</p>
             </div>
           ))}
+        </details>
+      ) : null}
+      {evidence.forum_graph_evidence?.length ? (
+        <details>
+          <summary>查看论坛案例与验证反馈</summary>
+          {evidence.forum_graph_evidence.map((entry) => {
+            const href = safeExternalHref(entry.post_url);
+            const outcome = ({ reported_success: '作者报告成功（仅该案例）', reported_failure: '作者报告无效', mixed: '结果不一致', unknown: '结果未知' } as Record<string, string>)[entry.outcome || ''] || '尚无明确验证反馈';
+            return (
+              <div key={entry.id}>
+                {entry.role === 'context' ? <p>案例背景（操作建议另见对应楼层）</p> : <p>{entry.subject} · {entry.predicate} · {entry.object || entry.value}</p>}
+                <p>{entry.role === 'feedback' ? '验证反馈' : entry.role === 'context' ? '问题与上下文' : FORUM_ACT_LABELS.get(entry.act) || '技术陈述'} · {entry.author} · 第 {entry.post_number} 楼</p>
+                <p>{outcome}；原文陈述不等于通用事实验证。</p>
+                {entry.accepted_answer ? <p>社区已采纳；有效范围仍以具体条件和反馈为准。</p> : null}
+                {entry.combined_operations ? <p>多项操作的联合结果，不能分别认定每项都有效。</p> : null}
+                {forumConditions(entry.qualifiers).map(([label, value]) => <p key={`${label}:${value}`}>{label}：{value}</p>)}
+                <blockquote>{entry.quote}</blockquote>
+                {href ? <a href={href} target="_blank" rel="noreferrer">查看该楼层原文</a> : null}
+              </div>
+            );
+          })}
         </details>
       ) : null}
 

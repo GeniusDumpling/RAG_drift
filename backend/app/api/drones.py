@@ -11,8 +11,22 @@ router = APIRouter(prefix="/drones", tags=["drones"])
 
 def get_drone_catalog(
     settings: Annotated[Settings, Depends(get_settings)],
-    brand: Annotated[Literal["dji", "parrot"], Query(description="无人机品牌")] = "dji",
+    brand: Annotated[
+        Literal["dji", "parrot", "autel", "hubsan", "skydio"], Query(description="无人机品牌")
+    ] = "dji",
 ) -> DroneCatalogService:
+    if brand == "hubsan":
+        return DroneCatalogService(
+            settings.hubsan_documents_dir / "机型参数目录", manufacturer="Hubsan"
+        )
+    if brand == "skydio":
+        return DroneCatalogService(
+            settings.skydio_documents_dir / "机型参数目录", manufacturer="Skydio"
+        )
+    if brand == "autel":
+        return DroneCatalogService(
+            settings.autel_documents_dir / "机型参数目录", manufacturer="Autel"
+        )
     if brand == "parrot":
         return DroneCatalogService(settings.parrot_documents_dir, manufacturer="Parrot")
     return DroneCatalogService(settings.drone_documents_dir)

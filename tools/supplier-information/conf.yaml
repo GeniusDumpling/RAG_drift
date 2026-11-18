@@ -15,7 +15,7 @@ brands:
       fetch_retries: 2
       queries:
         - {q: 'Parrot ANAFI official white paper components suppliers', language: en}
-        - {q: 'Parrot supplier', language: en}
+        - {q: 'Parrot component suppliers', language: en}
         - {q: 'Parrot 派诺特 无人机 供应商 芯片', language: zh-hans}
       seed_urls:
         - https://www.parrot.com/assets/s3fs-public/2023-02/ANAFI-USA-white-paper-en.pdf
@@ -31,13 +31,69 @@ brands:
       queries:
         - {q: 'Skydio suppliers', language: en}
         - {q: 'Skydio X10 official specifications supplier GNSS', language: en}
-        - {q: 'Skydio 无人机 电机 热成像 供应商', language: zh-hans}
+        - {q: 'Skydio 无人机 供应商', language: zh-hans}
       seed_urls:
         - https://www.nidec.com/en/product/news/2024/news0722-01/
         - https://oem.flir.com/about/news/innovating-the-most-sensitive-uncooled-thermal-camera-drone-payload-with-skydio/
         - https://www.skydio.com/x10
+  autel:
+    name: 道通
+    aliases:
+      - 道通
+      - 道通智能
+      - 道通无人机
+      - Autel
+      - Autel Robotics
+      - 深圳市道通智能航空技术股份有限公司
+    language: zh
+    search:
+      provider: auto
+      keyword: 道通智能 无人机 供应商
+      fetch_retries: 2
+      instruction: 聚焦"道通智能/Autel无人机拆解、核心芯片/传感器/云服务与上游供应商"这一主题，优先返回官方白皮书、硬件拆解、供应链分析及供应商公告等来源，过滤道通科技汽车诊断业务、官网使用条款、招聘、电商及泛行业新闻。
+      queries:
+        - {q: '道通智能 无人机 拆解 芯片 传感器 处理器 供应商', language: zh-hans}
+        - {q: '道通 龙鱼 EVO 相机 图像传感器 电池 飞控 供应商', language: zh-hans}
+        - {q: 'Autel Robotics EVO teardown processor sensor supplier', language: en}
+        - {q: 'Autel Robotics white paper data security processor cloud supplier', language: en}
+      seed_urls:
+        - https://www.autelrobotics.com/news/white-paper/
+      exclude_domains:
+        - mp.weixin.qq.com
+        - douyin.com
+        - weibo.com
+        - xiaohongshu.com
+        - bilibili.com
+        - tieba.baidu.com
+        - zhipin.com
+        - 51job.com
+        - liepin.com
+        - 1688.com
+        - tousu.sina.cn
+        - cninfo.com.cn
+        - dfcfw.com
+        - auteltech.cn
+        - auteltech.com
+  hubsan:
+    name: 哈博森
+    aliases:
+      - 哈博森
+      - 哈博森科技
+      - Hubsan
+      - 深圳市哈博森科技有限公司
+    language: zh
+    search:
+      provider: auto
+      keyword: 哈博森 无人机 供应商
+      fetch_retries: 2
+      instruction: 聚焦"哈博森/Hubsan无人机拆解、核心芯片/传感器/图传模块与上游供应商"这一主题，优先返回硬件拆解、技术评测、FCC拆机报告、供应商公告等来源，过滤官网售后政策、招聘、电商批发及投诉页面。
+      queries:
+        - {q: '哈博森 无人机 拆解 芯片 传感器 飞控 图传 供应商', language: zh-hans}
+        - {q: '哈博森 ZINO ACE 黑鹰 芯片 图像传感器 供应商', language: zh-hans}
+        - {q: 'Hubsan drone teardown FCC internal photos chip sensor', language: en}
+        - {q: 'Hubsan Zino Ace processor sensor Ambarella Sony supplier', language: en}
 
-# 百度/Brave 搜索；英文品牌默认优先使用 Brave。
+# 百度/Exa 搜索；非大疆品牌默认优先使用 Exa。
 search:
   keyword: 大疆供应商
   use_baidu: true              # 是否启用百度千帆 AI 搜索
@@ -45,7 +101,7 @@ search:
   edition: standard
   search_source: baidu_search_v2
   recency_filter: none           # 网页日期，none(不限) | week(7天) | month(30天) | semiyear(180天) | year(365天)
-  top_k: 50                     # 百度网页上限 50；Brave 请求自动封顶为 20
+  top_k: 50                     # 百度网页上限 50；Exa 默认请求 20（可通过 exa_num_results 调整，上限 100）
   max_results: 0                # 不截断：采集全部查询结果与起始来源，按 URL 去重
   safe_search: false 
 
@@ -62,6 +118,20 @@ search:
 
   # 域名过滤（留空列表表示不限）
   domain_filter: []
+
+  # 排除噪声域名（传给 Exa excludeDomains，并在百度/Exa 结果返回后过滤）
+  exclude_domains:
+    - mp.weixin.qq.com
+    - douyin.com
+    - weibo.com
+    - xiaohongshu.com
+    - bilibili.com
+    - tieba.baidu.com
+    - zhipin.com
+    - 51job.com
+    - liepin.com
+    - 1688.com
+    - tousu.sina.cn
 
   # 请求超时（秒）
   timeout: 30

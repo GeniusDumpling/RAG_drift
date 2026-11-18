@@ -9,6 +9,34 @@ from app.core.llm_config import LLMSettings
 
 
 class Settings(LLMSettings):
+    forum_graph_enabled: bool = Field(default=False, alias="FORUM_GRAPH_ENABLED")
+    forum_graph_neo4j_uri: str | None = Field(default=None, alias="FORUM_GRAPH_NEO4J_URI")
+    forum_graph_neo4j_user: str = Field(default="neo4j", alias="FORUM_GRAPH_NEO4J_USER")
+    forum_graph_neo4j_password: str | None = Field(
+        default=None, alias="FORUM_GRAPH_NEO4J_PASSWORD", repr=False
+    )
+    forum_graph_neo4j_database: str = Field(default="neo4j", alias="FORUM_GRAPH_NEO4J_DATABASE")
+    forum_graph_assessment_model: str | None = Field(
+        default=None, alias="FORUM_GRAPH_ASSESSMENT_MODEL"
+    )
+    forum_graph_window_chars: int = Field(
+        default=4000, ge=100, le=16000, alias="FORUM_GRAPH_WINDOW_CHARS"
+    )
+    forum_graph_context_chars: int = Field(
+        default=12000, ge=100, le=24000, alias="FORUM_GRAPH_CONTEXT_CHARS"
+    )
+    forum_graph_timeout_seconds: int = Field(
+        default=120, ge=1, le=180, alias="FORUM_GRAPH_TIMEOUT_SECONDS"
+    )
+    forum_graph_debounce_seconds: int = Field(
+        default=60, ge=0, le=3600, alias="FORUM_GRAPH_DEBOUNCE_SECONDS"
+    )
+    forum_graph_max_wait_seconds: int = Field(
+        default=1800, ge=1, le=86400, alias="FORUM_GRAPH_MAX_WAIT_SECONDS"
+    )
+    forum_graph_artifacts_dir: Path = Field(
+        default=Path("data/forum_graph_runs"), alias="FORUM_GRAPH_ARTIFACTS_DIR"
+    )
     app_env: str = Field(default="dev", alias="APP_ENV")
     database_browser_enabled: bool = Field(default=False, alias="DATABASE_BROWSER_ENABLED")
     document_database_url: str | None = Field(default=None, alias="DOCUMENT_DATABASE_URL")
@@ -43,6 +71,15 @@ class Settings(LLMSettings):
     )
     parrot_documents_dir: Path = Field(
         default=Path("data/Parrot无人机文档"), alias="PARROT_DOCUMENTS_DIR"
+    )
+    autel_documents_dir: Path = Field(
+        default=Path("data/Autel无人机文档"), alias="AUTEL_DOCUMENTS_DIR"
+    )
+    hubsan_documents_dir: Path = Field(
+        default=Path("data/Hubsan无人机文档"), alias="HUBSAN_DOCUMENTS_DIR"
+    )
+    skydio_documents_dir: Path = Field(
+        default=Path("data/Skydio无人机文档"), alias="SKYDIO_DOCUMENTS_DIR"
     )
     database_url: str = Field(
         default="postgresql+psycopg://intelligence:intelligence@localhost:54329/intelligence_rag",

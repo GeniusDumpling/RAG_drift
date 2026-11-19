@@ -12,11 +12,11 @@ import {
   ENTITY_COLORS,
   ENTITY_LABELS,
   KNOWLEDGE_LENSES,
-  ONTOLOGY_LAYERS,
+  lensSchemaFor,
   PREDICATE_LABELS,
 } from './presentation';
 import type { GraphAppearance, GraphLayoutMode, KnowledgeLensId } from './presentation';
-import { filterGraphByLens, findShortestKnowledgePath } from './data';
+import { filterGraphByLens, findShortestKnowledgePath, lensMatchSets } from './data';
 import { MIN_GRAPH_COMPONENT_SIZE } from './limits';
 import { searchVideoGraphEntities } from '../../api/client';
 
@@ -30,6 +30,8 @@ type Props = {
   expandingId: string; loading: boolean; error: string; expansionError: string; expansionNotice?: string;
   onRefresh: () => void; evidencePanel: ReactNode;
   expandedIds?: string[]; onCollapse?: (node: VideoGraphNode) => void;
+  source?: 'video' | 'forum';
+  entitySearch?: typeof searchVideoGraphEntities;
 };
 
 const format = (value: number | undefined) => value === undefined ? '—' : value.toLocaleString('zh-CN');
@@ -70,12 +72,12 @@ export function GraphWorkbench(props: Props) {
     setSearchResults([]); setSearchError('');
     if (!submittedSearch) { setSearchLoading(false); return; }
     setSearchLoading(true);
-    searchVideoGraphEntities(submittedSearch, props.entityType || undefined)
+    (props.entitySearch ?? searchVideoGraphEntities)(submittedSearch, props.entityType || undefined)
       .then(value => { if (!ignore) setSearchResults(value.items.map(item => ({ id: item.id, label: item.name, entity_type: item.entity_type, kind: 'entity', content_item_id: null }))); })
       .catch(() => { if (!ignore) setSearchError('无法搜索实体，请重试。'); })
       .finally(() => { if (!ignore) setSearchLoading(false); });
     return () => { ignore = true; };
-  }, [submittedSearch, searchVersion, props.entityType]);
+  }, [submittedSearch, searchVersion, props.entityType, props.entitySearch]);
   function openSearch() {
     focusSearch.current = true; setPanelOpen(true); setPanelTab('links');
     search.current?.focus();
@@ -89,22 +91,30 @@ export function GraphWorkbench(props: Props) {
   }
   function resetGlobal() {
     setActiveLens('all'); setSelectedId(''); setPathTargetId(''); setSearchSelection(null); setSubmittedSearch(''); setSearchResults([]); setSearchError('');
+    setAppearance((previous) => ({ ...previous, layoutMode: 'force' }));
     props.onQuery(''); props.onClearEdge(); props.onEntityType(''); props.onHops(1);
     setCanvasEpoch(value => value + 1); props.onClearFocus();
   }
   function changeEntityType(value: string) {
     setActiveLens('all'); setSelectedId(''); setPathTargetId(''); setSearchSelection(null); setSubmittedSearch(''); setSearchResults([]); setSearchError('');
+    setAppearance((previous) => ({ ...previous, layoutMode: 'force' }));
     props.onClearEdge(); setCanvasEpoch(value => value + 1); props.onEntityType(value);
   }
   function changeLens(lensId: KnowledgeLensId) {
     setActiveLens(lensId); setPathTargetId('');
+    setAppearance((previous) => ({ ...previous, layoutMode: lensId === 'all' ? 'force' : 'layered' }));
     props.onClearEdge();
   }
 
-  const displayedGraph = useMemo(
+  const filteredGraph = useMemo(
     () => (props.graph ? filterGraphByLens(props.graph, activeLens) : null),
     [props.graph, activeLens],
   );
+  const lensMatch = useMemo(
+    () => (props.graph && activeLens !== 'all' ? lensMatchSets(props.graph, activeLens) : null),
+    [props.graph, activeLens],
+  );
+  const displayedGraph = props.graph;
   const lensCounts = useMemo(() => {
     const map = new Map<KnowledgeLensId, number>();
     for (const lens of KNOWLEDGE_LENSES) {
@@ -144,12 +154,12 @@ export function GraphWorkbench(props: Props) {
   );
   const typeCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const node of nodes) {
+    for (const node of filteredGraph?.nodes ?? []) {
       const key = node.entity_type ?? node.kind;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
     return counts;
-  }, [nodes]);
+  }, [filteredGraph]);
   const hasNonAssertedOrQualifiedEdges = useMemo(
     () => edges.some((edge) => {
       const s = classifyEdgeSemantics(edge);
@@ -201,7 +211,10 @@ export function GraphWorkbench(props: Props) {
   }, []);
 
   const activeLensMeta = KNOWLEDGE_LENSES.find((item) => item.id === activeLens) ?? KNOWLEDGE_LENSES[0];
+  const activeSchema = lensSchemaFor(activeLens);
   const selectedEdgeSemantics = props.selectedEdge ? classifyEdgeSemantics(props.selectedEdge) : null;
+  const filteredNodesCount = filteredGraph?.nodes.length ?? 0;
+  const filteredEdgesCount = filteredGraph?.edges.length ?? 0;
 
   return <section className="obsidian-workbench" aria-label="知识图谱工作台">
     <div className="ow-toolbar">
@@ -210,8 +223,8 @@ export function GraphWorkbench(props: Props) {
       </div>
       <div className="ow-toolbar-switches">
         {dimension === '2d' ? <div className="ow-dimension-switch ow-layout-switch" role="group" aria-label="知识组织布局">
-          <button type="button" aria-pressed={layoutMode === 'force'} onClick={() => configure('layoutMode', 'force')} title="自由聚簇网络">力导向</button>
-          <button type="button" aria-pressed={layoutMode === 'layered'} onClick={() => configure('layoutMode', 'layered')} title="按来源/品牌 → 产品 → 部件技术 → 故障对策分层排布">层级流</button>
+          <button type="button" aria-pressed={layoutMode === 'force'} onClick={() => configure('layoutMode', 'force')} title="自然力导向网络（带视角特征引力）">自然力导向</button>
+          <button type="button" aria-pressed={layoutMode === 'layered'} onClick={() => configure('layoutMode', 'layered')} title={activeSchema.rulerHint}>视角结构</button>
         </div> : null}
         <div className="ow-dimension-switch" role="group" aria-label="图谱维度">
           <button type="button" aria-pressed={dimension === '2d'} onClick={() => changeDimension('2d')} title="平面图谱">2D</button>
@@ -247,18 +260,19 @@ export function GraphWorkbench(props: Props) {
     <div className={`ow-body${panelOpen ? '' : ' panel-collapsed'}`}>
       <section className="ow-graph-stage" aria-label="图谱画布区域">
         <div className="ow-canvas-caption"><span className="ow-caption-icon"><GraphIcon name="link" size={13} /></span>
-          {props.focusId ? '实体邻域' : activeLensMeta.label}<span className="ow-caption-dot">·</span><span>{format(nodes.length)} 个实体节点</span><span className="ow-caption-dot">·</span><span>{format(edges.length)} 条关系</span></div>
+          {props.focusId ? '实体邻域' : activeLensMeta.label}<span className="ow-caption-dot">·</span><span>{format(filteredNodesCount)} 个{props.source === 'forum' ? '知识' : '实体'}节点</span><span className="ow-caption-dot">·</span><span>{format(filteredEdgesCount)} 条关系</span>{activeLens !== 'all' ? <span className="ow-caption-bg-tag">（含全景背景）</span> : null}</div>
         {props.loading ? <div className="ow-loading" role="status"><div className="ow-loading-orbit" /><span>正在连接知识网络…</span></div> : null}
         {props.error ? <div className="ow-stage-message" role="alert"><GraphIcon name="info" size={24} /><p>{props.error}</p><button onClick={props.onRefresh}>重新加载</button></div> : null}
-        {props.graph && props.graph.nodes.length === 0 ? <div className="ow-stage-message"><GraphIcon name="search" size={28} /><h2>没有符合展示条件的图谱</h2><p>当前范围内未找到至少 {MIN_GRAPH_COMPONENT_SIZE} 个节点的连通子图，请尝试其他关键词或调整筛选条件。</p></div> : null}
-        {props.graph && props.graph.nodes.length > 0 && displayedGraph && nodes.length === 0 ? <div className="ow-stage-message"><GraphIcon name="layers" size={28} /><h2>当前子图暂无“{activeLensMeta.label}”关系</h2><p>{activeLensMeta.description}。可切换回全景网络，或搜索并展开相关实体。</p><button type="button" onClick={() => changeLens('all')}>切换回全景网络</button></div> : null}
+        {props.graph && props.graph.nodes.length === 0 ? <div className="ow-stage-message"><GraphIcon name="search" size={28} /><h2>没有符合展示条件的图谱</h2><p>{props.source === 'forum' ? '当前范围内没有可展示的论坛知识，请调整筛选条件或等待主题构图完成。' : <>当前范围内未找到至少 {MIN_GRAPH_COMPONENT_SIZE} 个节点的连通子图，请尝试其他关键词或调整筛选条件。</>}</p></div> : null}
+        {props.graph && props.graph.nodes.length > 0 && filteredGraph && filteredGraph.nodes.length === 0 ? <div className="ow-canvas-notice" role="status"><GraphIcon name="layers" size={28} /><h2>当前子图暂无“{activeLensMeta.label}”关系</h2><p>{activeLensMeta.description}。可切换回全景网络，或搜索并展开相关实体。</p><button type="button" onClick={() => changeLens('all')}>切换回全景网络</button></div> : null}
         {displayedGraph && nodes.length > 0 ? <InteractiveGraphCanvas
           key={dimension === '3d' ? `${dimension}:${sceneKey}` : `${dimension}:${canvasEpoch}`} dimension={dimension}
           onUnavailable={(message) => changeDimension('2d', message)} graph={displayedGraph} focusId={props.focusId}
           selectedEdge={props.selectedEdge?.id ?? ''} expandingId={props.expandingId}
           activeNodeId={selectedId} appearance={{ ...appearance, ...appliedForces, showLabels }} onSelect={selectNode}
           onFocus={props.onFocus} onExpand={exploreNode} expandedIds={props.expandedIds} onEdge={selectEdge} onGlobal={resetGlobal}
-          highlightedPath={highlightedPath} /> : null}
+          highlightedPath={highlightedPath} activeLens={activeLens} lensContextMode="dim-context"
+          lensMatch={lensMatch} /> : null}
         {props.expansionError ? <div className="ow-canvas-notice" role="alert">{props.expansionError}</div> : null}
         {props.expansionNotice ? <div className="ow-canvas-notice" role="status">{props.expansionNotice}</div> : null}
         {props.expandingId ? <div className="ow-canvas-notice" role="status">正在展开邻居，保留已有节点…</div> : null}
@@ -282,20 +296,22 @@ export function GraphWorkbench(props: Props) {
         <div className="ow-panel-scroll">
           {panelTab === 'overview' ? <>
             <div className="ow-metrics" aria-label="全局有效图谱统计">
-              {[['实体', props.overview?.entities], ['关系', props.overview?.relations], ['已构图视频', props.overview?.active_videos], ['字幕证据', props.overview?.evidence]].map(([label, value]) => <div key={label}><small>{label}</small><strong>{format(value as number | undefined)}</strong></div>)}
+              {[['实体', props.overview?.entities], [props.source === 'forum' ? '技术事实' : '关系', props.overview?.relations], [props.source === 'forum' ? '已构图主题' : '已构图视频', props.overview?.active_videos], [props.source === 'forum' ? '帖子证据' : '字幕证据', props.overview?.evidence]].map(([label, value]) => <div key={label}><small>{label}</small><strong>{format(value as number | undefined)}</strong></div>)}
             </div>
-            <div className="ow-processing-status"><span><i />{format(props.overview?.builds.pending ?? 0)} 待处理</span><span>{format(props.overview?.partial_videos ?? 0)} 部分完成</span></div>
+            <div className="ow-processing-status"><span><i />{format(props.overview?.builds.pending ?? 0)} 待处理</span><span>{format(props.overview?.partial_videos ?? 0)} {props.source === 'forum' ? '待更新主题' : '部分完成'}</span></div>
             <section className="ow-panel-section"><h2><GraphIcon name="search" size={14} />筛选</h2>
-              <label>实体类型<select value={props.entityType} onChange={(event) => changeEntityType(event.target.value)}><option value="">全部类型</option>{Object.entries(ENTITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+              <label>实体类型<select value={props.entityType} onChange={(event) => changeEntityType(event.target.value)}><option value="">全部类型</option>{Object.entries(ENTITY_LABELS).filter(([value]) => props.source === 'forum' || !['state', 'instruction', 'attribute', 'fact'].includes(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
               <label>展开层数<select value={props.hops} onChange={(event) => props.onHops(Number(event.target.value))}><option value={1}>1 跳邻居</option><option value={2}>2 跳邻居</option></select></label>
               {props.focusId ? <button type="button" className="ow-subtle-button" onClick={props.onClearFocus}>取消实体聚焦</button> : null}
             </section>
             <section className="ow-panel-section ow-schema-section" aria-label="知识组织结构">
-              <h2><GraphIcon name="layers" size={14} />知识组织结构<span>本体分层</span></h2>
+              <h2><GraphIcon name="layers" size={14} />知识组织结构<span>{activeSchema.subtitle}</span></h2>
               <div className="ow-schema-layers">
-                {ONTOLOGY_LAYERS.map((layer) => {
+                {activeSchema.layers.map((layer) => {
+                  const forumOnly = new Set(['state', 'instruction', 'attribute', 'fact']);
                   const presentTypes = layer.types.filter((type) => (typeCounts.get(type) ?? 0) > 0);
-                  const visibleTypes = presentTypes.length ? presentTypes : layer.types.filter((type) => ENTITY_LABELS[type]);
+                  const fallbackTypes = layer.types.filter((type) => ENTITY_LABELS[type] && (props.source === 'forum' || !forumOnly.has(type)));
+                  const visibleTypes = presentTypes.length ? presentTypes : fallbackTypes;
                   return (
                     <div key={layer.id} className="ow-schema-layer">
                       <div className="ow-schema-layer-head">
@@ -327,6 +343,9 @@ export function GraphWorkbench(props: Props) {
                 })}
               </div>
               <div className="ow-schema-legend" aria-label="关系语义图例">
+                {activeSchema.edgeLegend?.map((item) => (
+                  <span key={item.label} className="ow-schema-edge-item"><i style={{ borderTopColor: item.color }} />{item.label}</span>
+                ))}
                 <span><i className="is-solid" />陈述</span>
                 <span><i className="is-dashed" />推测</span>
                 <span><i className="is-negated" />否定</span>
@@ -334,12 +353,12 @@ export function GraphWorkbench(props: Props) {
                 <span>[条件×N] 适用条件</span>
               </div>
             </section>
-            <section className="ow-panel-section"><h2><GraphIcon name="settings" size={14} />显示</h2>
+            <details className="ow-panel-section ow-display-settings"><summary><GraphIcon name="settings" size={14} />显示</summary>
               <label className="ow-toggle">常显实体名称<input type="checkbox" checked={showLabels} onChange={(event) => configure('showLabels', event.target.checked)} /><span /></label>
               <label className="ow-toggle">显示关系方向<input type="checkbox" checked={appearance.showArrows} onChange={(event) => configure('showArrows', event.target.checked)} /><span /></label>
               <label className="ow-slider" htmlFor="graph-node-scale">节点大小<output>{Math.round(appearance.nodeScale * 100)}%</output><input id="graph-node-scale" type="range" min="0.6" max="2" step="0.1" value={appearance.nodeScale} onChange={(event) => configure('nodeScale', Number(event.target.value))} /></label>
               <label className="ow-slider" htmlFor="graph-link-scale">连线粗细<output>{Math.round(appearance.linkScale * 100)}%</output><input id="graph-link-scale" type="range" min="0.5" max="2" step="0.1" value={appearance.linkScale} onChange={(event) => configure('linkScale', Number(event.target.value))} /></label>
-            </section>
+            </details>
             <details className="ow-panel-section ow-force-settings"><summary><GraphIcon name="settings" size={14} />布局引力</summary>
               <label className="ow-slider" htmlFor="graph-repulsion">节点斥力<output>{appearance.repulsion}</output><input id="graph-repulsion" type="range" min="80" max="420" step="10" value={appearance.repulsion} onChange={(event) => configure('repulsion', Number(event.target.value))} /></label>
               <button className="ow-subtle-button" type="button" onClick={() => setAppearance({ ...DEFAULT_GRAPH_APPEARANCE })}>恢复默认显示</button>

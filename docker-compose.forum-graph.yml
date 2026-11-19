@@ -1,0 +1,29 @@
+name: rag-forum-graph
+
+services:
+  neo4j-forum:
+    image: neo4j:5.26-community
+    container_name: intelligence-rag-neo4j-forum
+    environment:
+      NEO4J_AUTH: neo4j/${FORUM_GRAPH_NEO4J_PASSWORD:?Set FORUM_GRAPH_NEO4J_PASSWORD in .env.forum-graph}
+      NEO4J_server_memory_heap_initial__size: 128m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    ports:
+      - "127.0.0.1:7478:7474"
+      - "127.0.0.1:7691:7687"
+    volumes:
+      - forum-graph-data:/data
+      - forum-graph-logs:/logs
+    mem_limit: 1536m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  forum-graph-data:
+  forum-graph-logs:

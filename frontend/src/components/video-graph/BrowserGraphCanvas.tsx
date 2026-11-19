@@ -1,18 +1,22 @@
 import { useEffect, useLayoutEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY } from 'd3-force';
+import { forceCenter, forceCollide, forceLink, forceManyBody, forceRadial, forceSimulation, forceX, forceY } from 'd3-force';
 import type { Simulation, SimulationNodeDatum, SimulationLinkDatum } from 'd3-force';
 import type { VideoGraphNode } from '../../api/types';
 import type { GraphCanvasProps } from './InteractiveGraphCanvas';
 import { nodeRelationCounts, parallelEdgeStyles } from './data';
+import { containLayerNode, containRadialNode, fitLayoutToPanorama, planKnowledgeLayout } from './knowledge-layout';
+import type { ColumnBand, LayerBounds, RadialGuide } from './knowledge-layout';
 import {
   classifyEdgeSemantics,
   DEFAULT_GRAPH_APPEARANCE,
   ENTITY_COLORS,
   ENTITY_LABELS,
-  entityLayerIndex,
   formatEdgeCaption,
-  ONTOLOGY_LAYERS,
+  isLensFocalNode,
+  lensEdgeColor,
+  lensSchemaFor,
+  nodeLensLayerIndex,
   PREDICATE_LABELS,
 } from './presentation';
 import { browserNodeRadius } from './browser-geometry';
@@ -23,22 +27,36 @@ type Node = SimulationNodeDatum & { id: string; x: number; y: number; radius: nu
 type View = { x: number; y: number; k: number };
 type Style = { color?: string; scale?: number; caption?: 'name' | 'type' | 'id' | 'none' };
 type Hidden = { nodes: Set<string>; edges: Set<string> };
-type LaneGuide = { index: number; label: string; summary: string; x: number; width: number; top: number; bottom: number; labelScale: number };
 
 export function BrowserGraphCanvas(props: GraphCanvasProps) {
   const appearance = props.appearance ?? DEFAULT_GRAPH_APPEARANCE;
   const layoutMode = appearance.layoutMode ?? 'force';
+  const activeLens = props.activeLens ?? 'all';
+  const lensContextMode = props.lensContextMode ?? 'dim-context';
+  const lensMatch = props.lensMatch ?? null;
+  const isContextDimmed = Boolean(lensMatch && lensContextMode === 'dim-context');
+  const schema = lensSchemaFor(activeLens);
+
   const uid = useId().replace(/:/g, '');
   const svg = useRef<SVGSVGElement>(null);
   const nodesRef = useRef<Node[]>([]);
   const nodeCache = useRef(new Map<string, Node>());
+  const panorama = useRef(new Map<string, { x: number; y: number }>());
+  const layoutFrame = useRef<LayerBounds>();
   const simulation = useRef<Simulation<Node, undefined>>();
   const previousLayoutMode = useRef(layoutMode);
+  const previousLens = useRef(activeLens);
+  const previousContextMode = useRef(lensContextMode);
   const frame = useRef(0);
+  const transitionFrame = useRef(0);
+  const layerBoundsRef = useRef(new Map<string, LayerBounds>());
+  const ringBoundsRef = useRef(new Map<string, number>());
   const [sceneNodes, setSceneNodes] = useState<Node[]>([]);
-  const [lanes, setLanes] = useState<LaneGuide[]>([]);
+  const [bands, setBands] = useState<ColumnBand[]>([]);
+  const [radialGuide, setRadialGuide] = useState<RadialGuide | null>(null);
   const [, updateControls] = useState(0);
   const world = useRef<SVGGElement>(null);
+  const rulerRef = useRef<HTMLDivElement>(null);
   const motion = useRef<BrowserMotion>();
   const toolbar = useRef<HTMLDivElement>(null);
   const paintRef = useRef<(geometry: boolean) => void>(() => {});
@@ -70,6 +88,10 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
   const pathFocus = props.highlightedPath && props.highlightedPath.nodeIds.size > 0 ? props.highlightedPath : null;
   const neighbors = new Set([active, ...edges.filter(e => e.source === active || e.target === active).flatMap(e => [e.source, e.target])]);
 
+  function cancelTransition() {
+    if (transitionFrame.current) cancelAnimationFrame(transitionFrame.current);
+    transitionFrame.current = 0;
+  }
   function scheduleDraw(geometry = true) {
     geometryDirty.current ||= geometry;
     if (!frame.current) frame.current = requestAnimationFrame(() => {
@@ -82,16 +104,20 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
     viewRef.current = typeof next === 'function' ? next(viewRef.current) : next;
     scheduleDraw(false);
   }
-  function fit() {
-    const nodes = nodesRef.current;
-    if (!nodes.length) return;
+  function computeFitView(points?: Array<{ x: number; y: number; radius: number }>): View {
+    const source = points && points.length ? points : nodesRef.current;
+    if (!source.length) return viewRef.current;
     const lanePadX = layoutMode === 'layered' ? 90 : 0;
-    const left = Math.min(...nodes.map(n => n.x - n.radius)) - lanePadX;
-    const right = Math.max(...nodes.map(n => n.x + n.radius)) + lanePadX;
-    const top = Math.min(...nodes.map(n => n.y - n.radius - (layoutMode === 'layered' ? 120 : 60)));
-    const bottom = Math.max(...nodes.map(n => n.y + n.radius)) + (layoutMode === 'layered' ? 40 : 0);
+    const left = Math.min(...source.map(n => n.x - n.radius)) - lanePadX;
+    const right = Math.max(...source.map(n => n.x + n.radius)) + lanePadX;
+    const top = Math.min(...source.map(n => n.y - n.radius - (layoutMode === 'layered' ? 128 : 60)));
+    const bottom = Math.max(...source.map(n => n.y + n.radius)) + (layoutMode === 'layered' ? 40 : 0);
     const k = Math.min(1.5, (size.width - 110) / Math.max(1, right - left), (size.height - 150) / Math.max(1, bottom - top));
-    setView({ k: Math.max(0.05, k), x: size.width / 2 - (left + right) / 2 * k, y: size.height / 2 - (top + bottom) / 2 * k });
+    const safeK = Math.max(0.05, k);
+    return { k: safeK, x: size.width / 2 - (left + right) / 2 * safeK, y: size.height / 2 - (top + bottom) / 2 * safeK };
+  }
+  function fit() {
+    setView(computeFitView());
   }
   function zoom(factor: number, x = size.width / 2, y = size.height / 2) {
     setView(v => {
@@ -111,13 +137,21 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
       zoom(Math.exp(-event.deltaY * 0.0015), event.clientX - box.left, event.clientY - box.top);
     };
     element.addEventListener('wheel', wheel, { passive: false });
-    return () => { observer.disconnect(); element.removeEventListener('wheel', wheel); };
+    return () => { observer.disconnect(); element.removeEventListener('wheel', wheel); cancelTransition(); };
   }, []);
 
   useEffect(() => {
     const previous = nodeCache.current;
+    const firstLayout = !simulation.current;
     const modeChanged = previousLayoutMode.current !== layoutMode;
+    const lensChanged = previousLens.current !== activeLens;
+    const contextChanged = previousContextMode.current !== lensContextMode;
     previousLayoutMode.current = layoutMode;
+    previousLens.current = activeLens;
+    previousContextMode.current = lensContextMode;
+    if (modeChanged || lensChanged || contextChanged) for (const node of previous.values()) {
+      node.fx = null; node.fy = null; node.vx = 0; node.vy = 0;
+    }
 
     const nodes = visibleNodes.map((item, i): Node => {
       const old = previous.get(item.id);
@@ -133,78 +167,32 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
       };
     });
 
-    const layerTargets = new Map<string, { x: number; y: number }>();
-    const layerBounds = new Map<string, { left: number; right: number; top: number; bottom: number }>();
-    const nextLanes: LaneGuide[] = [];
-    if (layoutMode === 'layered' && nodes.length) {
-      const buckets = new Map<number, Node[]>();
-      for (const node of nodes) {
-        const layerIdx = entityLayerIndex(node.item.entity_type, node.item.kind);
-        const list = buckets.get(layerIdx) ?? [];
-        list.push(node);
-        buckets.set(layerIdx, list);
+    const plan = planKnowledgeLayout(nodes, edges, counts, activeLens, isContextDimmed ? lensMatch!.nodeIds : null);
+    // Added nodes acquire panorama anchors without moving existing background nodes.
+    if (!firstLayout) for (const node of nodes) if (!panorama.current.has(node.id)) {
+      panorama.current.set(node.id, { x: node.x, y: node.y });
+    }
+    if (layoutFrame.current) fitLayoutToPanorama(plan, layoutFrame.current, panorama.current);
+    if (activeLens === 'all' && layoutMode === 'force' && !firstLayout) for (const node of nodes) {
+      const anchor = panorama.current.get(node.id);
+      if (anchor) plan.targets.set(node.id, { ...anchor });
+    }
+    const { targets: layerTargets, bounds: layerBounds, ringBounds, bands: nextBands, radial: nextRadial,
+      contextSet } = plan;
+    layerBoundsRef.current = layoutMode === 'layered' ? layerBounds : new Map();
+    ringBoundsRef.current = layoutMode === 'layered' ? ringBounds : new Map();
+    for (const node of nodes) {
+      if (modeChanged || lensChanged || contextChanged) {
+        node.fx = null; node.fy = null; node.vx = 0; node.vy = 0;
       }
-      const activeLayerIndices = [...buckets.keys()].sort((a, b) => a - b);
-      const layerPlans = activeLayerIndices.map((layerIdx) => {
-        const colNodes = buckets.get(layerIdx)!;
-        colNodes.sort((a, b) => (counts.get(b.id) ?? 0) - (counts.get(a.id) ?? 0) || a.id.localeCompare(b.id));
-        const count = colNodes.length;
-        const maxRadius = Math.max(22, ...colNodes.map(n => n.radius));
-        const subCols = count <= 6 ? 1 : count <= 16 ? 2 : count <= 36 ? 3 : count <= 64 ? 4 : Math.min(6, Math.ceil(Math.sqrt(count / 3)));
-        const rows = Math.ceil(count / subCols);
-        const subColGap = Math.max(140, maxRadius * 2 + 52);
-        const stepY = Math.max(116, maxRadius * 2 + 48);
-        const padX = maxRadius + 46;
-        const padY = maxRadius + 46;
-        const bandWidth = Math.max(220, (subCols - 1) * subColGap + padX * 2);
-        const staggerY = subCols > 1 ? stepY * 0.24 : 0;
-        const height = Math.max(220, (rows - 1) * stepY + staggerY + padY * 2);
-        return { layerIdx, colNodes, subCols, rows, subColGap, stepY, padX, padY, staggerY, bandWidth, height };
-      });
-      const maxHeight = Math.max(...layerPlans.map(p => p.height));
-      const interLayerGap = Math.max(420, Math.round(maxHeight * 0.30));
-      const totalWidth = layerPlans.reduce((sum, p) => sum + p.bandWidth, 0) + Math.max(0, layerPlans.length - 1) * interLayerGap;
-      const labelScale = Math.max(1, Math.min(2.6, Math.max(totalWidth / 1400, maxHeight / 780)));
-
-      let cursorX = -totalWidth / 2;
-      for (const plan of layerPlans) {
-        const centerX = cursorX + plan.bandWidth / 2;
-        cursorX += plan.bandWidth + interLayerGap;
-        const contentSpanY = (plan.rows - 1) * plan.stepY + plan.staggerY;
-        const startY = -contentSpanY / 2;
-        const boxLeft = centerX - plan.bandWidth / 2;
-        const boxRight = centerX + plan.bandWidth / 2;
-        const boxTop = startY - plan.padY;
-        const boxBottom = startY + contentSpanY + plan.padY;
-
-        plan.colNodes.forEach((node, idx) => {
-          const row = Math.floor(idx / plan.subCols);
-          const colInRow = idx % plan.subCols;
-          const itemsInRow = row === plan.rows - 1 ? plan.colNodes.length - row * plan.subCols : plan.subCols;
-          const xOffset = (colInRow - (itemsInRow - 1) / 2) * plan.subColGap;
-          const yStagger = (colInRow % 2 === 1 && itemsInRow > 1 ? plan.staggerY : 0);
-          const x = centerX + xOffset;
-          const y = startY + row * plan.stepY + yStagger;
-          layerTargets.set(node.id, { x, y });
-          layerBounds.set(node.id, { left: boxLeft, right: boxRight, top: boxTop, bottom: boxBottom });
-          if (modeChanged || !previous.has(node.id)) {
-            if (node.fx == null) { node.x = x; node.y = y; }
-          }
-        });
-        const meta = ONTOLOGY_LAYERS.find(layer => layer.index === plan.layerIdx) ?? ONTOLOGY_LAYERS[1];
-        nextLanes.push({
-          index: plan.layerIdx,
-          label: meta.label,
-          summary: meta.summary,
-          x: centerX,
-          width: plan.bandWidth,
-          top: boxTop,
-          bottom: boxBottom,
-          labelScale,
-        });
+      const target = layerTargets.get(node.id);
+      if (layoutMode === 'layered' && target && (firstLayout || !previous.has(node.id))) {
+        node.x = target.x; node.y = target.y;
       }
     }
-    setLanes(nextLanes);
+
+    setBands(nextBands);
+    setRadialGuide(nextRadial);
     nodesRef.current = nodes;
     setSceneNodes(nodes);
     for (const node of nodes) nodeCache.current.set(node.id, node);
@@ -222,27 +210,11 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
         }).strength(0.02))
         .force('charge', forceManyBody<Node>().strength(-appearance.repulsion * 0.25))
         .force('layerX', forceX<Node>(n => layerTargets.get(n.id)?.x ?? 0).strength(0.15))
-        .force('layerY', forceY<Node>(n => layerTargets.get(n.id)?.y ?? 0).strength(0.12))
-        .force('contain', (alpha: number) => {
-          const pull = Math.min(0.35, alpha * 0.45);
-          for (const node of nodes) {
-            if (node.fx != null) continue;
-            const bounds = layerBounds.get(node.id);
-            const target = layerTargets.get(node.id);
-            if (!bounds || !target) continue;
-            // Only apply box containment once a node has arrived near its layer;
-            // during cross-layer lens transitions let forceX/forceY glide it smoothly.
-            if (Math.abs(node.x - target.x) > (bounds.right - bounds.left) * 0.65) continue;
-            const margin = node.radius + 10;
-            const minX = bounds.left + margin, maxX = bounds.right - margin;
-            const minY = bounds.top + margin, maxY = bounds.bottom - margin;
-            if (node.x < minX) { node.x += (minX - node.x) * pull; node.vx = Math.max(0, node.vx ?? 0); }
-            else if (node.x > maxX) { node.x -= (node.x - maxX) * pull; node.vx = Math.min(0, node.vx ?? 0); }
-            if (node.y < minY) { node.y += (minY - node.y) * pull; node.vy = Math.max(0, node.vy ?? 0); }
-            else if (node.y > maxY) { node.y -= (node.y - maxY) * pull; node.vy = Math.min(0, node.vy ?? 0); }
-          }
-        });
+        .force('layerY', forceY<Node>(n => layerTargets.get(n.id)?.y ?? 0).strength(0.12));
+
+
     } else {
+      // Natural force-directed mode with subtle lens-specific directional/radial forces
       sim
         .force('link', forceLink<Node, SimulationLinkDatum<Node>>(links).id(n => n.id).distance(link => {
           const a = link.source as Node, b = link.target as Node;
@@ -250,28 +222,78 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
         }).strength(0.15))
         .force('charge', forceManyBody<Node>().strength(-appearance.repulsion * 3))
         .force('center', forceCenter(0, 0).strength(0.03));
+
+      if (activeLens === 'lineage') {
+        sim.force('lensX', forceX<Node>((n) => {
+          if (contextSet.has(n.id)) return 0;
+          const idx = nodeLensLayerIndex(n.item, 'lineage');
+          return (idx - 1.5) * 260;
+        }).strength(n => contextSet.has(n.id) ? 0 : 0.06));
+      } else if (activeLens === 'diagnosis') {
+        sim.force('lensX', forceX<Node>((n) => {
+          if (contextSet.has(n.id)) return 0;
+          const idx = nodeLensLayerIndex(n.item, 'diagnosis');
+          return idx === 0 ? -280 : idx === 1 ? 0 : 280;
+        }).strength(n => contextSet.has(n.id) ? 0 : (nodeLensLayerIndex(n.item, 'diagnosis') === 1 ? 0.08 : 0.045)));
+      } else if (activeLens === 'ecosystem') {
+        sim.force('lensRadial', forceRadial<Node>((n) => {
+          if (contextSet.has(n.id)) return 0;
+          return nodeLensLayerIndex(n.item, 'ecosystem') === 0 ? 70 : 320;
+        }, 0, 0).strength(n => contextSet.has(n.id) ? 0 : (nodeLensLayerIndex(n.item, 'ecosystem') === 0 ? 0.08 : 0.05)));
+      }
+      if (contextSet.size) {
+        sim.force('contextX', forceX<Node>(n => panorama.current.get(n.id)?.x ?? n.x).strength(n => contextSet.has(n.id) ? 0.15 : 0));
+        sim.force('contextY', forceY<Node>(n => panorama.current.get(n.id)?.y ?? n.y).strength(n => contextSet.has(n.id) ? 0.15 : 0));
+      }
     }
 
-    const firstLayout = !simulation.current;
     simulation.current = sim;
-    if (firstLayout || modeChanged) {
-      sim.tick(160);
-      if (layoutMode === 'layered') {
-        for (const node of nodes) {
-          if (node.fx != null) continue;
-          const bounds = layerBounds.get(node.id);
-          if (!bounds) continue;
-          const margin = node.radius + 10;
-          node.x = Math.max(bounds.left + margin, Math.min(bounds.right - margin, node.x));
-          node.y = Math.max(bounds.top + margin, Math.min(bounds.bottom - margin, node.y));
-        }
+    const constrain = () => {
+      if (layoutMode === 'layered') for (const node of nodes) {
+        const bounds = layerBounds.get(node.id);
+        if (bounds) containLayerNode(node, bounds);
+        const ring = ringBounds.get(node.id);
+        if (ring !== undefined) containRadialNode(node, ring);
       }
-      fit();
+    };
+    const tick = () => { constrain(); scheduleDraw(); };
+    sim.on('tick', tick).on('end', tick);
+    if (firstLayout) {
+      sim.tick(160);
+      constrain();
+      // The original panorama defines one frame for every semantic layout.
+      // Lens changes preserve this camera, including any subsequent user zoom/pan.
+      for (const node of nodes) panorama.current.set(node.id, { x: node.x, y: node.y });
+      const halfWidth = Math.max(700, ...nodes.map(n => Math.abs(n.x) + n.radius + 80));
+      const halfHeight = Math.max(350, ...nodes.map(n => Math.abs(n.y) + n.radius + 80));
+      layoutFrame.current = { left: -halfWidth, right: halfWidth, top: -halfHeight, bottom: halfHeight };
+      setView(computeFitView([{ x: -halfWidth, y: -halfHeight, radius: 0 }, { x: halfWidth, y: halfHeight, radius: 0 }]));
+      sim.alpha(0.08).restart();
+    } else if (modeChanged || lensChanged || contextChanged) {
+      cancelTransition();
+      const starts = new Map(nodes.map(n => [n.id, { x: n.x, y: n.y }]));
+      let started: number | undefined;
+      const migrate = (now: number) => {
+        started ??= now;
+        const progress = Math.min(1, (now - started) / 650);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        for (const node of nodes) {
+          const target = layerTargets.get(node.id), start = starts.get(node.id);
+          if (!target || !start || node.fx != null) continue;
+          node.x = start.x + (target.x - start.x) * eased;
+          node.y = start.y + (target.y - start.y) * eased;
+        }
+        scheduleDraw();
+        if (progress < 1) transitionFrame.current = requestAnimationFrame(migrate);
+        else { transitionFrame.current = 0; constrain(); sim.alpha(0.12).restart(); }
+      };
+      transitionFrame.current = requestAnimationFrame(migrate);
+    } else {
+      constrain(); sim.alpha(0.22).restart();
     }
-    sim.on('tick', scheduleDraw).alpha(firstLayout ? 0.08 : modeChanged ? 0.14 : 0.25).restart();
     scheduleDraw();
-    return () => { sim.stop(); cancelAnimationFrame(frame.current); frame.current = 0; };
-  }, [props.graph, hidden, appearance.nodeScale, appearance.repulsion, appearance.linkDistance, layoutMode, nodeScales]);
+    return () => { sim.stop(); cancelTransition(); cancelAnimationFrame(frame.current); frame.current = 0; };
+  }, [props.graph, hidden, appearance.nodeScale, appearance.repulsion, appearance.linkDistance, layoutMode, activeLens, lensContextMode, nodeScales]);
 
   // Resizing the data panel preserves the observed graph center and scale.
   const previousSize = useRef(size);
@@ -311,10 +333,15 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
     if (Math.hypot(dx, dy) < 3 && !state.moved) return;
     state.moved = true; moved.current = true;
     if (state.id) {
+      cancelTransition();
       const node = byId.get(state.id);
       if (!node) return;
       node.x = node.fx = state.nodeX! + dx / state.view.k;
       node.y = node.fy = state.nodeY! + dy / state.view.k;
+      const bounds = layerBoundsRef.current.get(node.id);
+      if (bounds) containLayerNode(node, bounds);
+      const ring = ringBoundsRef.current.get(node.id);
+      if (ring !== undefined) containRadialNode(node, ring);
       simulation.current?.alpha(0.12).restart(); scheduleDraw();
     } else setView({ ...state.view, x: state.view.x + dx, y: state.view.y + dy });
   }
@@ -325,15 +352,34 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
       y: Math.min(size.height - 230, Math.max(65, event.clientY - box.top)), node, edge });
   }
   function style(key: string, patch: Style) { setStyles(s => ({ ...s, [key]: { ...s[key], ...patch } })); }
+
   paintRef.current = (geometry) => {
-    motion.current?.paint(viewRef.current, geometry);
+    const v = viewRef.current;
+    motion.current?.paint(v, geometry);
     const selected = byId.get(selectedId);
     if (selected && toolbar.current) {
-      const v = viewRef.current;
       toolbar.current.style.left = `${Math.max(8, Math.min(size.width - 285, selected.x * v.k + v.x - 130))}px`;
       toolbar.current.style.top = `${Math.max(78, Math.min(size.height - 70, (selected.y - selected.radius) * v.k + v.y - 42))}px`;
     }
+    if (rulerRef.current && bands.length > 0) {
+      const items = Array.from(rulerRef.current.querySelectorAll<HTMLElement>('.browser-ruler-item'));
+      const screenXs = bands.map(band => band.x * v.k + v.x);
+      let minGap = Number.POSITIVE_INFINITY;
+      for (let i = 1; i < screenXs.length; i++) minGap = Math.min(minGap, screenXs[i] - screenXs[i - 1]);
+      const inRange = screenXs.filter(x => x >= 60 && x <= size.width - 60).length >= Math.min(2, screenXs.length);
+      if (bands.length > 1 && minGap >= 150 && inRange) {
+        rulerRef.current.dataset.mode = 'tracked';
+        items.forEach((item, idx) => {
+          const sx = screenXs[idx];
+          if (sx !== undefined) item.style.left = `${Math.max(65, Math.min(size.width - 105, sx))}px`;
+        });
+      } else {
+        rulerRef.current.dataset.mode = 'compact';
+        items.forEach((item) => { item.style.left = ''; });
+      }
+    }
   };
+
   useLayoutEffect(() => {
     if (!world.current) return;
     motion.current ??= new BrowserMotion(world.current);
@@ -343,7 +389,14 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
       const element = nodeElements.get(node.id); if (!element) return [];
       const config = styles['node:' + node.item.entity_type] ?? {};
       const label = config.caption === 'none' ? '' : config.caption === 'type' ? ENTITY_LABELS[node.item.entity_type ?? ''] ?? '实体' : config.caption === 'id' ? node.id : node.item.label;
-      return [{ node, element, label, enabled: appearance.showLabels, emphasized: node.id === selectedId || node.id === hovered || Boolean(pathFocus?.nodeIds.has(node.id)) }];
+      const isMatchedNode = !lensMatch || lensMatch.nodeIds.has(node.id);
+      return [{
+        node,
+        element,
+        label,
+        enabled: appearance.showLabels && (!isContextDimmed || isMatchedNode),
+        emphasized: node.id === selectedId || node.id === hovered || Boolean(pathFocus?.nodeIds.has(node.id)),
+      }];
     });
     motion.current.edges = edges.flatMap(edge => {
       const element = edgeElements.get(edge.id), source = byId.get(edge.source), target = byId.get(edge.target);
@@ -361,7 +414,7 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
         loop: ((curve?.loopDist ?? 35) - 35) / 24,
         emphasized: edge.id === hoveredEdge || edge.id === props.selectedEdge || Boolean(pathFocus?.edgeIds.has(edge.id)),
         showLabel: Boolean(appearance.showRelationLabels),
-        defaultColor: semantics.status === 'asserted' ? '#5c6470' : semantics.strokeColor,
+        defaultColor: semantics.status === 'asserted' ? lensEdgeColor(edge, activeLens) : semantics.strokeColor,
       }];
     });
     paintRef.current(true);
@@ -377,10 +430,35 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
       <button type="button" onClick={() => dismiss(node.id)}>隐藏节点</button></>;
   }
   return <div className="browser-graph interactive-graph-shell" aria-label="Neo4j 风格二维图谱">
-    <div className="browser-overview" aria-label="图谱类型与样式">
-      <span className="browser-overview-heading">节点 <b>{nodes.length}</b></span>
-      {types.map(type => <button type="button" key={type} aria-label={`设置${ENTITY_LABELS[type] ?? type}节点样式`} onClick={() => setStyleKey(styleKey === 'node:' + type ? '' : 'node:' + type)} style={{ borderColor: styles['node:' + type]?.color ?? ENTITY_COLORS[type] ?? '#a5abb6' }}>
-        <i style={{ background: styles['node:' + type]?.color ?? ENTITY_COLORS[type] ?? '#a5abb6' }} />{ENTITY_LABELS[type] ?? type} <small>{visibleNodes.filter(n => (n.entity_type ?? 'video') === type).length}</small></button>)}
+    <div className="browser-top-hud">
+      <div className="browser-overview" aria-label="图谱类型与样式">
+        <span className="browser-overview-heading">节点 <b>{nodes.length}</b></span>
+        {types.map(type => <button type="button" key={type} aria-label={`设置${ENTITY_LABELS[type] ?? type}节点样式`} onClick={() => setStyleKey(styleKey === 'node:' + type ? '' : 'node:' + type)} style={{ borderColor: styles['node:' + type]?.color ?? ENTITY_COLORS[type] ?? '#a5abb6' }}>
+          <i style={{ background: styles['node:' + type]?.color ?? ENTITY_COLORS[type] ?? '#a5abb6' }} />{ENTITY_LABELS[type] ?? type} <small>{visibleNodes.filter(n => (n.entity_type ?? 'video') === type).length}</small></button>)}
+      </div>
+      {layoutMode === 'layered' && (bands.length > 0 || radialGuide) ? (
+        <div ref={rulerRef} className="browser-stage-ruler" data-mode="compact" aria-label="视角结构标尺">
+          {bands.length > 0 ? (
+            <div className="browser-ruler-items">
+              {bands.map((band, idx) => (
+                <span key={band.index} className="browser-ruler-item" data-layer-index={band.index}>
+                  <span className="browser-ruler-pill">
+                    <strong>{band.label}</strong>
+                    <small>{band.count}</small>
+                  </span>
+                  {idx < bands.length - 1 ? <em className="browser-ruler-arrow" aria-hidden="true">{band.arrowAfter ?? '→'}</em> : null}
+                </span>
+              ))}
+            </div>
+          ) : radialGuide ? (
+            <div className="browser-ruler-items">
+              <span className="browser-ruler-pill"><strong>内圈：{radialGuide.innerLabel}</strong><small>{radialGuide.innerCount}</small></span>
+              <em className="browser-ruler-arrow" aria-hidden="true">·</em>
+              <span className="browser-ruler-pill"><strong>外圈：{radialGuide.outerLabel}</strong><small>{radialGuide.outerCount}</small></span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
     {styleKey ? <div className="browser-style-panel" aria-label="类型样式设置"><strong>{styleKey.startsWith('node:') ? '节点样式' : '关系样式'}</strong>
       <label>颜色<input type="color" value={styleValue.color ?? (styleKey.startsWith('node:') ? ENTITY_COLORS[styleKey.slice(5)] ?? '#a5abb6' : '#8b929b')} onChange={e => style(styleKey, { color: e.target.value })} /></label>
@@ -388,22 +466,32 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
       <label>显示文字<select value={styleValue.caption ?? 'name'} onChange={e => style(styleKey, { caption: e.target.value as Style['caption'] })}>
         <option value="name">名称</option><option value="type">类型</option><option value="id">ID</option><option value="none">不显示</option></select></label>
       <button type="button" onClick={() => setStyleKey('')}>关闭样式设置</button></div> : null}
-    <svg ref={svg} className="browser-graph-svg" data-ready="true" data-dimension="2d" data-layout={layoutMode} aria-label="可拖拽的二维知识图谱" role="group"
+    <svg ref={svg} className="browser-graph-svg" data-ready="true" data-dimension="2d" data-layout={layoutMode} data-lens={activeLens} data-lens-geometry={schema.geometry} data-context-mode={lensContextMode} aria-label="可拖拽的二维知识图谱" role="group"
       onPointerDown={e => begin(e)} onPointerMove={move} onPointerUp={e => { if (drag.current?.id && drag.current.moved) updateControls(value => value + 1); drag.current?.capture.releasePointerCapture(e.pointerId); drag.current = undefined; }}
       onPointerCancel={() => { drag.current = undefined; }} onClick={() => { if (!moved.current) select(null); }} onContextMenu={e => context(e)}>
       <rect width="100%" height="100%" fill="#ffffff" />
-      <defs><marker id={`${uid}-arrow`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="context-stroke" /></marker></defs>
+      <defs>
+        <marker id={`${uid}-arrow`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="context-stroke" /></marker>
+        <linearGradient id={`${uid}-band-fade`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopOpacity="0" stopColor="#ffffff" />
+          <stop offset="12%" stopOpacity="1" stopColor="#ffffff" />
+          <stop offset="88%" stopOpacity="1" stopColor="#ffffff" />
+          <stop offset="100%" stopOpacity="0" stopColor="#ffffff" />
+        </linearGradient>
+      </defs>
       <g ref={world}>
-        {layoutMode === 'layered' ? lanes.map(lane => {
-          const pillW = 136 * lane.labelScale;
-          const pillH = 30 * lane.labelScale;
-          const pillY = lane.top - pillH - 12 * lane.labelScale;
-          return <g key={lane.index} className="browser-layer-lane" data-layer-index={lane.index} pointerEvents="none">
-            <rect x={lane.x - lane.width / 2} y={lane.top} width={lane.width} height={lane.bottom - lane.top} rx={20} fill="#faf8fc" fillOpacity="0.65" stroke="#e4dced" strokeDasharray="6 6" strokeWidth={1.5 * lane.labelScale} />
-            <rect x={lane.x - pillW / 2} y={pillY} width={pillW} height={pillH} rx={pillH / 2} fill="#f4eff9" stroke="#d5c6e4" strokeWidth={lane.labelScale} />
-            <text x={lane.x} y={pillY + pillH * 0.64} textAnchor="middle" fill="#684e80" fontSize={12 * lane.labelScale} fontWeight="600">{lane.label}</text>
-          </g>;
-        }) : null}
+        {layoutMode === 'layered' && bands.length > 0 ? bands.map(band => (
+          <g key={band.index} className="browser-layer-band" data-layer-index={band.index} pointerEvents="none">
+            <rect x={band.x - band.width / 2} y={band.top} width={band.width} height={band.bottom - band.top} rx={32} fill={band.tint} />
+            <line x1={band.x} y1={band.top + 16} x2={band.x} y2={band.bottom - 16} stroke="#e6e0ef" strokeOpacity="0.5" strokeWidth="1" />
+          </g>
+        )) : null}
+        {layoutMode === 'layered' && radialGuide ? (
+          <g className="browser-radial-guide" pointerEvents="none">
+            <circle cx={0} cy={0} r={radialGuide.outerRadius} fill={radialGuide.outerTint} stroke="#e4deec" strokeOpacity="0.6" strokeDasharray="3 6" strokeWidth="1.2" />
+            <circle cx={0} cy={0} r={radialGuide.innerRadius} fill={radialGuide.innerTint} stroke="#cfdce8" strokeOpacity="0.75" strokeDasharray="3 6" strokeWidth="1.2" />
+          </g>
+        ) : null}
         {edges.map(edge => {
           const a = byId.get(edge.source), b = byId.get(edge.target); if (!a || !b) return null;
           const config = styles['edge:' + edge.predicate] ?? {};
@@ -412,13 +500,15 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
           const label = config.caption === 'none' ? '' : config.caption === 'id' ? edge.id : config.caption === 'type' ? edge.predicate : formatEdgeCaption(baseLabel, semantics);
           const chosen = props.selectedEdge === edge.id;
           const inPath = Boolean(pathFocus?.edgeIds.has(edge.id));
-          const color = chosen ? '#2879bd' : inPath ? '#7b529d' : config.color ?? semantics.strokeColor;
+          const isMatchedEdge = !lensMatch || lensMatch.edgeIds.has(edge.id);
+          const color = chosen ? '#2879bd' : inPath ? '#7b529d' : config.color ?? lensEdgeColor(edge, activeLens);
           const dimForPath = pathFocus && !inPath && !chosen;
+          const dimForContext = isContextDimmed && !isMatchedEdge && !chosen && !inPath;
           const dimForHover = active && !neighbors.has(edge.source) && !neighbors.has(edge.target);
           const evidenceBoost = 1.4 + Math.min(1.2, Math.log2(1 + Math.max(0, edge.evidence_count)) * 0.35);
           return <g key={edge.id} data-edge-id={edge.id} data-assertion-status={semantics.status} data-qualifier-count={semantics.qualifierCount}
             role="button" tabIndex={0} aria-label={`${a.item.label} ${label} ${b.item.label}`}
-            opacity={dimForPath ? 0.14 : dimForHover ? 0.2 : 1}
+            opacity={dimForPath ? 0.14 : dimForContext ? 0.07 : dimForHover ? 0.2 : 1}
             onClick={e => { e.stopPropagation(); if (!moved.current) props.onEdge(edge); }} onContextMenu={e => context(e, undefined, edge.id)}
             onPointerEnter={() => { if (!drag.current) setHoveredEdge(edge.id); }} onPointerLeave={() => setHoveredEdge('')}
             onKeyDown={e => { if (e.key === 'Enter') props.onEdge(edge); }} style={{ cursor: 'pointer' }}>
@@ -434,15 +524,20 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
           const color = config.color ?? ENTITY_COLORS[node.item.entity_type ?? 'video'] ?? '#8795aa';
           const chosen = node.id === selectedId;
           const inPath = Boolean(pathFocus?.nodeIds.has(node.id));
+          const isMatchedNode = !lensMatch || lensMatch.nodeIds.has(node.id);
+          const focal = isMatchedNode ? isLensFocalNode(node.item, activeLens) : { focal: false, ringColor: '' };
           const dimForPath = pathFocus && !inPath && !chosen && node.id !== hovered;
+          const dimForContext = isContextDimmed && !isMatchedNode && !chosen && !inPath && node.id !== hovered;
           const dimForHover = active && !neighbors.has(node.id);
           return <g key={node.id} data-node-id={node.id} data-relation-count={counts.get(node.id) ?? 0}
+            data-layer-index={layoutMode === 'layered' && layerBoundsRef.current.has(node.id) ? nodeLensLayerIndex(node.item, activeLens) : undefined}
             role="button" tabIndex={0} aria-label={`实体 ${node.item.label}`} style={{ cursor: 'grab' }}
-            opacity={dimForPath ? 0.16 : dimForHover ? 0.22 : 1}
+            opacity={dimForPath ? 0.16 : dimForContext ? 0.14 : dimForHover ? 0.22 : 1}
             onPointerDown={e => begin(e, node)} onClick={e => { e.stopPropagation(); if (!moved.current) select(node); }} onDoubleClick={e => { e.stopPropagation(); void props.onExpand(node.item); }}
             onContextMenu={e => context(e, node.id)} onPointerEnter={() => { if (!drag.current) { setHovered(node.id); props.onHover?.(node.item); } }}
             onPointerLeave={() => { setHovered(''); props.onHover?.(null); }} onKeyDown={e => { if (e.key === 'Enter') select(node); }}>
             <title>{node.item.label} · {counts.get(node.id) ?? 0} 条关系{node.fx != null ? ' · 已固定' : ''}</title>
+            {focal.focal ? <circle className="browser-focal-ring" r={node.radius + 5} fill="none" stroke={focal.ringColor} strokeOpacity="0.28" strokeWidth="4" /> : null}
             {(chosen || node.id === hovered || inPath) ? <circle r={node.radius + 6} fill="none" stroke={inPath && !chosen ? '#b99ae3' : '#a8c8e4'} strokeWidth={chosen ? 6 : 3} /> : null}
             <circle r={node.radius} fill={color} stroke="#ffffff" strokeWidth="2" />
             <circle data-pin="true" cx={node.radius * 0.7} cy={-node.radius * 0.7} r="4" fill="#253b50" stroke="#fff" strokeWidth="1.5" />
@@ -450,7 +545,7 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
         })}
       </g>
     </svg>
-    {selected && !menu ? <div ref={toolbar} className="browser-node-actions" aria-label={`${selected.item.label}节点操作`} style={{ left: Math.max(8, Math.min(size.width - 285, selected.x * view.k + view.x - 130)), top: Math.max(78, Math.min(size.height - 70, (selected.y - selected.radius) * view.k + view.y - 42)) }}>{actions(selected)}</div> : null}
+    {selected && !menu ? <div ref={toolbar} className="browser-node-actions" aria-label={`${selected.item.label}节点操作`} style={{ left: Math.max(8, Math.min(size.width - 285, selected.x * view.k + vOr0(view.x) - 130)), top: Math.max(78, Math.min(size.height - 70, (selected.y - selected.radius) * view.k + view.y - 42)) }}>{actions(selected)}</div> : null}
     {menu ? <div className="browser-context-menu" role="menu" style={{ left: menu.x, top: menu.y }}>
       {menuNode ? actions(menuNode) : menu.edge ? <button type="button" onClick={() => dismiss(undefined, menu.edge)}>隐藏关系</button> : null}
       <button type="button" disabled={!history.current.length} onClick={undo}>撤销隐藏</button>
@@ -467,3 +562,5 @@ export function BrowserGraphCanvas(props: GraphCanvasProps) {
     <span className="sr-only">{expanded ? '选中节点已展开' : ''}</span>
   </div>;
 }
+
+function vOr0(value: number) { return Number.isFinite(value) ? value : 0; }

@@ -25,6 +25,8 @@ describe('Browser 2D exploration', () => {
     expect(screen.queryByRole('button', { name: '导出 SVG' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '导出 PNG' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('在当前画布查找')).not.toBeInTheDocument();
+    // The shared lens envelope can initially hide small captions; hover restores them.
+    fireEvent.pointerEnter(screen.getByRole('button', { name: '实体 Alpha' }));
     expect(within(screen.getByRole('button', { name: '实体 Alpha' })).getByText('Alpha')).toBeInTheDocument();
     const sizes = [...container.querySelectorAll('[data-node-id]')].map(n => Number(n.querySelector('circle')?.getAttribute('r')));
     expect(sizes[0]).toBeGreaterThan(sizes[2]);

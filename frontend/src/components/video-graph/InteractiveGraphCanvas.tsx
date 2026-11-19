@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Graph, GraphData, LayoutOptions, NodeData, EdgeData, IElementEvent } from '@antv/g6';
 import type { VideoGraphData, VideoGraphEdge, VideoGraphNode } from '../../api/types';
 import { classifyEdgeSemantics, DARK_ENTITY_COLORS, DEFAULT_GRAPH_APPEARANCE, ENTITY_LABELS, PREDICATE_LABELS, relationNodeSize } from './presentation';
-import type { GraphAppearance } from './presentation';
+import type { GraphAppearance, KnowledgeLensId, LensContextMode } from './presentation';
 import { nodeRelationCounts, parallelEdgeStyles } from './data';
 import { atMinimumZoom, fitDefaultViewport, INITIAL_ZOOM_RANGE } from './viewport';
 import { BrowserGraphCanvas } from './BrowserGraphCanvas';
@@ -21,6 +21,9 @@ export type GraphCanvasProps = {
   expandedIds?: string[];
   onGlobal?: () => void;
   highlightedPath?: { nodeIds: Set<string>; edgeIds: Set<string> } | null;
+  activeLens?: KnowledgeLensId;
+  lensContextMode?: LensContextMode;
+  lensMatch?: { nodeIds: Set<string>; edgeIds: Set<string> } | null;
 };
 function forceLayoutOptions(appearance = DEFAULT_GRAPH_APPEARANCE, is3D = false): LayoutOptions {
   if (is3D) return { type: 'd3-force-3d', preLayout: true, iterations: 180, numDimensions: 3,
@@ -150,9 +153,10 @@ function G6GraphCanvas(props: GraphCanvasProps) {
               };
             },
             state: {
-              selected: { fill: '#c6a8ed', stroke: '#d6bbf7', lineWidth: 1.5, halo: !is3D, haloStroke: '#a78bd5', haloLineWidth: 12, haloStrokeOpacity: 0.15, labelFill: '#695080', labelOpacity: 1 },
-              active: { fill: '#c4a4ee', halo: !is3D, haloStroke: '#b99ae3', haloLineWidth: 6, haloStrokeOpacity: 0.12, labelFill: '#72578b', labelOpacity: 1 },
+              selected: { opacity: 1, fill: '#c6a8ed', stroke: '#d6bbf7', lineWidth: 1.5, halo: !is3D, haloStroke: '#a78bd5', haloLineWidth: 12, haloStrokeOpacity: 0.15, labelFill: '#695080', labelOpacity: 1 },
+              active: { opacity: 1, fill: '#c4a4ee', halo: !is3D, haloStroke: '#b99ae3', haloLineWidth: 6, haloStrokeOpacity: 0.12, labelFill: '#72578b', labelOpacity: 1 },
               inactive: { opacity: 0.55 },
+              context: { opacity: 0.14 },
             },
           },
           edge: {
@@ -179,6 +183,7 @@ function G6GraphCanvas(props: GraphCanvasProps) {
             state: {
               selected: { stroke: '#bd9be8', strokeOpacity: 1, lineWidth: 1.7, labelOpacity: 1, zIndex: 3 },
               active: { stroke: '#a58acb', strokeOpacity: 0.95, lineWidth: 1.2, labelOpacity: 1, zIndex: 2 },
+              context: { opacity: 0.07 },
               hovered: { stroke: '#cfadf7', strokeOpacity: 1, opacity: 1, lineWidth: 2.2, labelOpacity: 1, zIndex: 4 },
               inactive: { opacity: 0.35 },
             },
@@ -346,12 +351,16 @@ function G6GraphCanvas(props: GraphCanvasProps) {
         const selected = element.kind === 'relation' || element.kind === 'mention'
           ? element.id === props.selectedEdge : element.id === selectedId || element.id === props.focusId;
         const current = graph.getElementState(element.id);
-        if (current.includes('selected') !== selected)
-          states[element.id] = selected ? [...current, 'selected'] : current.filter((state) => state !== 'selected');
+        const isEdge = element.kind === 'relation' || element.kind === 'mention';
+        const context = props.lensMatch && !(isEdge ? props.lensMatch.edgeIds : props.lensMatch.nodeIds).has(element.id);
+        const next = current.filter(state => state !== 'selected' && state !== 'context');
+        if (context) next.unshift('context');
+        if (selected) next.push('selected');
+        if (next.join(':') !== current.join(':')) states[element.id] = next;
       }
       if (Object.keys(states).length) await graph.setElementState(states, false);
     });
-  }, [ready, props.graph, props.selectedEdge, props.focusId, selectedId, busy]);
+  }, [ready, props.graph, props.selectedEdge, props.focusId, selectedId, busy, props.lensMatch]);
 
   useEffect(() => {
     if (ready && drawnAppearance.current !== styleKey(appearance)) perform(async (graph) => {

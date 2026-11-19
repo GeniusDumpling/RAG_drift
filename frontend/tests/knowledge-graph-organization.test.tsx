@@ -1,12 +1,20 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VideoGraphData, VideoGraphEdge, VideoGraphNode } from '../src/api/types';
 import { BrowserGraphCanvas } from '../src/components/video-graph/BrowserGraphCanvas';
 import { BrowserMotion, readableEdgeLabel } from '../src/components/video-graph/browser-motion';
-import { filterGraphByLens, findShortestKnowledgePath } from '../src/components/video-graph/data';
+import { filterGraphByLens, findShortestKnowledgePath, lensMatchSets } from '../src/components/video-graph/data';
 import { GraphWorkbench } from '../src/components/video-graph/GraphWorkbench';
-import { classifyEdgeSemantics, DEFAULT_GRAPH_APPEARANCE, formatEdgeCaption } from '../src/components/video-graph/presentation';
+import {
+  classifyEdgeSemantics,
+  DEFAULT_GRAPH_APPEARANCE,
+  formatEdgeCaption,
+  isLensFocalNode,
+  lensEdgeColor,
+  lensSchemaFor,
+  nodeLensLayerIndex,
+} from '../src/components/video-graph/presentation';
 
 vi.mock('../src/api/client', () => ({
   searchVideoGraphEntities: vi.fn(async () => ({ items: [], total: 0, limit: 50, offset: 0 })),
@@ -93,10 +101,44 @@ describe('knowledge graph semantic organization helpers', () => {
     expect(formatEdgeCaption('使用', negated)).toBe('使用 [否定]');
   });
 
-  it('filters graphs by knowledge lens and finds multi-hop bridge paths', () => {
+  it('provides lens-specific schemas, layer mappings, focal roles and edge colors including forum types', () => {
+    expect(lensSchemaFor('lineage').geometry).toBe('columns');
+    expect(lensSchemaFor('diagnosis').geometry).toBe('converge');
+    expect(lensSchemaFor('ecosystem').geometry).toBe('radial');
+    expect(lensSchemaFor('all').geometry).toBe('force-radial');
+
+    // Diagnosis converges product/component -> fault/state <- method/instruction
+    expect(nodeLensLayerIndex({ entity_type: 'product', kind: 'entity' }, 'diagnosis')).toBe(0);
+    expect(nodeLensLayerIndex({ entity_type: 'state', kind: 'entity' }, 'diagnosis')).toBe(1);
+    expect(nodeLensLayerIndex({ entity_type: 'instruction', kind: 'entity' }, 'diagnosis')).toBe(2);
+
+    // Lineage orders brand -> family -> product -> component
+    expect(nodeLensLayerIndex({ entity_type: 'organization', kind: 'entity' }, 'lineage')).toBe(0);
+    expect(nodeLensLayerIndex({ entity_type: 'product_family', kind: 'entity' }, 'lineage')).toBe(1);
+    expect(nodeLensLayerIndex({ entity_type: 'product', kind: 'entity' }, 'lineage')).toBe(2);
+    expect(nodeLensLayerIndex({ entity_type: 'component', kind: 'entity' }, 'lineage')).toBe(3);
+
+    // Lens edge colors highlight diagnosis fault vs remedy while preserving disputed/negated semantics
+    expect(lensEdgeColor(makeEdge('f', 'a', 'b', 'indicates'), 'diagnosis')).toBe('#d46a6a');
+    expect(lensEdgeColor(makeEdge('r', 'a', 'b', 'instruction'), 'diagnosis')).toBe('#3d9b84');
+    expect(lensEdgeColor(makeEdge('d', 'a', 'b', 'reports_fault', { assertions: { asserted: 1, negated: 1 } }), 'diagnosis')).toBe('#c97a2b');
+    expect(lensEdgeColor(makeEdge('c', 'a', 'b', 'compatible_with'), 'ecosystem')).toBe('#3f9b86');
+
+    expect(isLensFocalNode({ entity_type: 'fault', kind: 'entity' }, 'diagnosis').focal).toBe(true);
+    expect(isLensFocalNode({ entity_type: 'protocol', kind: 'entity' }, 'ecosystem').focal).toBe(true);
+    expect(isLensFocalNode({ entity_type: 'product', kind: 'entity' }, 'diagnosis').focal).toBe(false);
+  });
+
+  it('filters graphs by knowledge lens, computes context match sets and finds multi-hop bridge paths', () => {
     const diagnosis = filterGraphByLens(richGraph, 'diagnosis');
     expect(diagnosis.edges.map((e) => e.id)).toEqual(['e-fault', 'e-mitigate']);
     expect(diagnosis.nodes.map((n) => n.id)).toEqual(['gimbal', 'drift', 'calib']);
+
+    const match = lensMatchSets(richGraph, 'diagnosis');
+    expect(match).not.toBeNull();
+    expect([...match!.nodeIds]).toEqual(['gimbal', 'drift', 'calib']);
+    expect([...match!.edgeIds]).toEqual(['e-fault', 'e-mitigate']);
+    expect(lensMatchSets(richGraph, 'all')).toBeNull();
 
     const lineage = filterGraphByLens(richGraph, 'lineage');
     expect(lineage.edges.map((e) => e.id)).toEqual(['e-brand', 'e-comp']);
@@ -128,8 +170,8 @@ describe('knowledge graph semantic organization helpers', () => {
   });
 });
 
-describe('2D canvas semantic encoding and layered organization', () => {
-  it('renders assertion status styles, layered ontology lanes and path highlighting', async () => {
+describe('2D canvas borderless lens guides, radial rings and context dimming', () => {
+  it('renders borderless column bands with top stage ruler instead of dashed boxes', async () => {
     const { container, rerender } = render(
       <BrowserGraphCanvas
         graph={richGraph}
@@ -140,14 +182,27 @@ describe('2D canvas semantic encoding and layered organization', () => {
         onExpand={vi.fn(async () => {})}
         onEdge={vi.fn()}
         onGlobal={vi.fn()}
+        activeLens="diagnosis"
         appearance={{ ...DEFAULT_GRAPH_APPEARANCE, layoutMode: 'layered' }}
         highlightedPath={{ nodeIds: new Set(['mavic', 'gimbal', 'drift']), edgeIds: new Set(['e-comp', 'e-fault']) }}
       />,
     );
 
     await screen.findByRole('button', { name: '实体 大疆' });
-    const lanes = [...container.querySelectorAll('.browser-layer-lane')].map((el) => el.textContent);
-    expect(lanes).toEqual(['来源与品牌', '产品主体', '部件与技术', '故障与对策']);
+    // No old dashed lane boxes
+    expect(container.querySelectorAll('.browser-layer-lane')).toHaveLength(0);
+    expect(container.querySelectorAll('.browser-layer-band rect[stroke-dasharray]')).toHaveLength(0);
+    expect(container.querySelectorAll('.browser-layer-band')).toHaveLength(3);
+
+    // Top ruler shows diagnosis converge direction
+    const ruler = screen.getByLabelText('视角结构标尺');
+    expect(ruler).toHaveTextContent('产品与部件');
+    expect(ruler).toHaveTextContent('故障与状态现象');
+    expect(ruler).toHaveTextContent('缓解与操作建议');
+
+    // Focal ring on fault node
+    const driftNode = container.querySelector('[data-node-id="drift"]')!;
+    expect(driftNode.querySelector('.browser-focal-ring')).not.toBeNull();
 
     const faultEdge = container.querySelector('[data-edge-id="e-fault"]')!;
     expect(faultEdge).toHaveAttribute('data-assertion-status', 'disputed');
@@ -170,14 +225,35 @@ describe('2D canvas semantic encoding and layered organization', () => {
         onExpand={vi.fn(async () => {})}
         onEdge={vi.fn()}
         onGlobal={vi.fn()}
+        activeLens="ecosystem"
+        appearance={{ ...DEFAULT_GRAPH_APPEARANCE, layoutMode: 'layered' }}
+      />,
+    );
+    expect(container.querySelectorAll('.browser-layer-band')).toHaveLength(0);
+    expect(container.querySelector('.browser-radial-guide')).not.toBeNull();
+    expect(screen.getByLabelText('视角结构标尺')).toHaveTextContent('内圈：技术／协议／软件');
+
+    rerender(
+      <BrowserGraphCanvas
+        graph={richGraph}
+        focusId=""
+        selectedEdge=""
+        expandingId=""
+        onFocus={vi.fn()}
+        onExpand={vi.fn(async () => {})}
+        onEdge={vi.fn()}
+        onGlobal={vi.fn()}
+        activeLens="all"
         appearance={{ ...DEFAULT_GRAPH_APPEARANCE, layoutMode: 'force' }}
       />,
     );
-    expect(container.querySelectorAll('.browser-layer-lane')).toHaveLength(0);
+    expect(container.querySelectorAll('.browser-layer-band')).toHaveLength(0);
+    expect(container.querySelector('.browser-radial-guide')).toBeNull();
+    expect(screen.queryByLabelText('视角结构标尺')).not.toBeInTheDocument();
   });
 
-  it('spreads dense layered graphs into wide multi-column bands with generous inter-layer spacing', async () => {
-    const types = ['organization', 'product', 'component', 'fault'];
+  it('spreads dense lineage layered graphs into wide multi-column bands with every node strictly inside', async () => {
+    const types = ['organization', 'product_family', 'product', 'component'];
     const denseNodes = Array.from({ length: 120 }, (_, i) => makeNode(`n${i}`, `节点 ${i}`, types[i % 4]));
     const denseEdges = denseNodes.slice(1).map((n, i) => makeEdge(`e${i}`, denseNodes[i].id, n.id, 'contains'));
     const { container } = render(
@@ -190,26 +266,26 @@ describe('2D canvas semantic encoding and layered organization', () => {
         onExpand={vi.fn(async () => {})}
         onEdge={vi.fn()}
         onGlobal={vi.fn()}
+        activeLens="lineage"
         appearance={{ ...DEFAULT_GRAPH_APPEARANCE, layoutMode: 'layered' }}
       />,
     );
 
     await screen.findByRole('button', { name: '实体 节点 0' });
-    const laneRects = [...container.querySelectorAll('.browser-layer-lane rect:first-child')].map((el) => ({
+    const bandRects = [...container.querySelectorAll('.browser-layer-band rect:first-child')].map((el) => ({
       x: Number(el.getAttribute('x')),
       y: Number(el.getAttribute('y')),
       width: Number(el.getAttribute('width')),
       height: Number(el.getAttribute('height')),
     }));
-    expect(laneRects).toHaveLength(4);
-    for (let i = 1; i < laneRects.length; i++) {
-      const gap = laneRects[i].x - (laneRects[i - 1].x + laneRects[i - 1].width);
+    expect(bandRects).toHaveLength(4);
+    for (let i = 1; i < bandRects.length; i++) {
+      const gap = bandRects[i].x - (bandRects[i - 1].x + bandRects[i - 1].width);
       expect(gap).toBeGreaterThanOrEqual(350);
     }
-    const totalWidth = laneRects[3].x + laneRects[3].width - laneRects[0].x;
-    expect(totalWidth).toBeGreaterThan(laneRects[0].height);
+    const totalWidth = bandRects[3].x + bandRects[3].width - bandRects[0].x;
+    expect(totalWidth).toBeGreaterThan(bandRects[0].height);
 
-    // Every node circle must remain completely inside its corresponding ontology layer box.
     for (let i = 0; i < denseNodes.length; i++) {
       const nodeEl = container.querySelector(`[data-node-id="n${i}"]`)!;
       const match = /translate\(([-\d.]+),([-\d.]+)\)/.exec(nodeEl.getAttribute('transform') ?? '');
@@ -217,7 +293,7 @@ describe('2D canvas semantic encoding and layered organization', () => {
       const cx = Number(match![1]);
       const cy = Number(match![2]);
       const r = Number(nodeEl.querySelector('circle:not([data-pin])')?.getAttribute('r'));
-      const box = laneRects[i % 4];
+      const box = bandRects[i % 4];
       expect(cx - r).toBeGreaterThanOrEqual(box.x);
       expect(cx + r).toBeLessThanOrEqual(box.x + box.width);
       expect(cy - r).toBeGreaterThanOrEqual(box.y);
@@ -225,7 +301,38 @@ describe('2D canvas semantic encoding and layered organization', () => {
     }
   });
 
-  it('preserves surviving node positions when switching knowledge lenses in layered mode so nodes migrate smoothly', async () => {
+  it('preserves the camera, releases pins and keeps nodes in their new layers after lens migration', async () => {
+    const handlers = { graph: richGraph, focusId: '', selectedEdge: '', expandingId: '',
+      onFocus: vi.fn(), onExpand: vi.fn(async () => {}), onEdge: vi.fn() };
+    const { container, rerender } = render(<BrowserGraphCanvas {...handlers} activeLens="all" />);
+    const node = await screen.findByRole('button', { name: '实体 三轴云台' });
+    fireEvent.click(node);
+    fireEvent.click(screen.getByRole('button', { name: '固定位置' }));
+    await waitFor(() => expect(node).toHaveAttribute('data-pinned', 'true'));
+    const world = container.querySelector('.browser-graph-svg > g')!;
+    const camera = world.getAttribute('transform');
+    const before = node.getAttribute('transform');
+    rerender(<BrowserGraphCanvas {...handlers} activeLens="lineage" lensMatch={lensMatchSets(richGraph, 'lineage')}
+      appearance={{ ...DEFAULT_GRAPH_APPEARANCE, layoutMode: 'layered' }} />);
+    expect(node.getAttribute('transform')).toBe(before);
+    await waitFor(() => expect(node).toHaveAttribute('data-pinned', 'false'));
+    await new Promise(resolve => setTimeout(resolve, 1150));
+    expect(world.getAttribute('transform')).toBe(camera);
+    expect(node.getAttribute('transform')).not.toBe(before);
+    for (const el of container.querySelectorAll('[data-node-id]')) {
+      const item = richGraph.nodes.find(n => n.id === el.getAttribute('data-node-id'))!;
+      if (!lensMatchSets(richGraph, 'lineage')!.nodeIds.has(item.id)) continue;
+      const band = container.querySelector(`.browser-layer-band[data-layer-index="${nodeLensLayerIndex(item, 'lineage')}"] rect`)!;
+      const [x, y] = el.getAttribute('transform')!.match(/[-\d.]+/g)!.map(Number);
+      const radius = Number(el.querySelector('circle:not(.browser-focal-ring)')!.getAttribute('r'));
+      expect(x - radius).toBeGreaterThanOrEqual(Number(band.getAttribute('x')));
+      expect(x + radius).toBeLessThanOrEqual(Number(band.getAttribute('x')) + Number(band.getAttribute('width')));
+      expect(y - radius).toBeGreaterThanOrEqual(Number(band.getAttribute('y')));
+      expect(y + radius).toBeLessThanOrEqual(Number(band.getAttribute('y')) + Number(band.getAttribute('height')));
+    }
+  });
+
+  it('preserves surviving node positions when switching knowledge lenses so nodes migrate smoothly', async () => {
     const { rerender } = render(
       <BrowserGraphCanvas
         graph={richGraph}
@@ -236,12 +343,13 @@ describe('2D canvas semantic encoding and layered organization', () => {
         onExpand={vi.fn(async () => {})}
         onEdge={vi.fn()}
         onGlobal={vi.fn()}
+        activeLens="lineage"
         appearance={{ ...DEFAULT_GRAPH_APPEARANCE, layoutMode: 'layered' }}
       />,
     );
 
-    const driftNode = await screen.findByRole('button', { name: '实体 云台漂移' });
-    const beforeTransform = driftNode.getAttribute('transform');
+    const gimbalNode = await screen.findByRole('button', { name: '实体 三轴云台' });
+    const beforeTransform = gimbalNode.getAttribute('transform');
     expect(beforeTransform).toBeTruthy();
 
     rerender(
@@ -254,17 +362,18 @@ describe('2D canvas semantic encoding and layered organization', () => {
         onExpand={vi.fn(async () => {})}
         onEdge={vi.fn()}
         onGlobal={vi.fn()}
+        activeLens="diagnosis"
         appearance={{ ...DEFAULT_GRAPH_APPEARANCE, layoutMode: 'layered' }}
       />,
     );
 
-    const afterDriftNode = screen.getByRole('button', { name: '实体 云台漂移' });
-    expect(afterDriftNode.getAttribute('transform')).toBe(beforeTransform);
+    const afterGimbalNode = screen.getByRole('button', { name: '实体 三轴云台' });
+    expect(afterGimbalNode.getAttribute('transform')).toBe(beforeTransform);
   });
 });
 
-describe('GraphWorkbench knowledge lens, schema map and path exploration', () => {
-  it('switches knowledge lenses, layout mode, schema filters and explores cross-entity paths', async () => {
+describe('GraphWorkbench lens-driven organization, context toggle, schema sync and path exploration', () => {
+  it('keeps the panorama in every lens, syncs schema and explores paths', async () => {
     const onEntityType = vi.fn();
     const onEdge = vi.fn();
     const { container, rerender } = render(
@@ -296,21 +405,52 @@ describe('GraphWorkbench knowledge lens, schema map and path exploration', () =>
 
     expect(DEFAULT_GRAPH_APPEARANCE.showRelationLabels).toBe(false);
     expect(screen.queryByLabelText('显示关系谓词')).not.toBeInTheDocument();
+    const displayDetails = container.querySelector('.ow-display-settings') as HTMLDetailsElement;
+    const forceDetails = container.querySelector('.ow-force-settings') as HTMLDetailsElement;
+    expect(displayDetails).not.toHaveAttribute('open');
+    expect(forceDetails).not.toHaveAttribute('open');
+    fireEvent.click(screen.getByText('显示'));
+    expect(displayDetails).toHaveAttribute('open');
     expect(screen.getByLabelText('知识组织结构')).toBeInTheDocument();
     expect(screen.getByLabelText('关系语义图例')).toBeInTheDocument();
     expect(screen.getByLabelText('画布关系语义说明')).toBeInTheDocument();
 
-    // Switch layout mode to layered
-    fireEvent.click(screen.getByRole('button', { name: '层级流' }));
-    expect(container.querySelector('.browser-graph-svg')).toHaveAttribute('data-layout', 'layered');
-    expect(container.querySelectorAll('.browser-layer-lane')).toHaveLength(4);
+    // Initially 'all' lens uses 自然力导向
+    expect(container.querySelector('.browser-graph-svg')).toHaveAttribute('data-layout', 'force');
+    expect(screen.queryByRole('group', { name: '视角范围模式' })).not.toBeInTheDocument();
 
-    // Switch to diagnosis lens
+    // Switching to 故障排查 automatically switches to 视角结构 (converge) and updates Schema
     fireEvent.click(screen.getByRole('button', { name: /故障排查/ }));
     expect(container.querySelector('.ow-canvas-caption')).toHaveTextContent('故障排查·3 个实体节点·2 条关系');
+    expect(container.querySelector('.browser-graph-svg')).toHaveAttribute('data-layout', 'layered');
+    expect(container.querySelector('.browser-graph-svg')).toHaveAttribute('data-lens-geometry', 'converge');
+    expect(container.querySelectorAll('.browser-layer-band')).toHaveLength(3);
+    expect(screen.getByLabelText('知识组织结构')).toHaveTextContent('因果收敛流');
+    expect(screen.getByLabelText('关系语义图例')).toHaveTextContent('触发故障／状态');
 
-    // Switch to all lens and click a schema chip to filter by entity type
+    // Panorama is always present; the old focus/context controls are removed.
+    expect(screen.queryByRole('button', { name: '精简聚焦' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: '视角范围模式' })).not.toBeInTheDocument();
+    expect(container.querySelector('.ow-canvas-caption')).toHaveTextContent('（含全景背景）');
+    expect(container.querySelectorAll('[data-node-id]')).toHaveLength(richGraph.nodes.length);
+    expect(container.querySelectorAll('[data-edge-id]')).toHaveLength(richGraph.edges.length);
+    expect(container.querySelector('[data-node-id="dji"]')).toHaveAttribute('opacity', '0.14');
+    expect(container.querySelector('[data-node-id="drift"]')).toHaveAttribute('opacity', '1');
+
+    // Manual override back to 自然力导向
+    fireEvent.click(screen.getByRole('button', { name: '自然力导向' }));
+    expect(container.querySelector('.browser-graph-svg')).toHaveAttribute('data-layout', 'force');
+
+    // Switch to 技术生态 -> auto switches to 视角结构 radial dual-ring
+    fireEvent.click(screen.getByRole('button', { name: /技术生态/ }));
+    expect(container.querySelector('.browser-graph-svg')).toHaveAttribute('data-layout', 'layered');
+    expect(container.querySelector('.browser-graph-svg')).toHaveAttribute('data-lens-geometry', 'radial');
+    expect(container.querySelector('.browser-radial-guide')).not.toBeNull();
+    expect(screen.getByLabelText('知识组织结构')).toHaveTextContent('双圈辐射生态');
+
+    // Switch back to 全景网络 -> auto restores 自然力导向
     fireEvent.click(screen.getByRole('button', { name: /全景网络/ }));
+    expect(container.querySelector('.browser-graph-svg')).toHaveAttribute('data-layout', 'force');
     const schema = screen.getByLabelText('知识组织结构');
     fireEvent.click(within(schema).getByRole('button', { name: /零部件/ }));
     expect(onEntityType).toHaveBeenCalledWith('component');

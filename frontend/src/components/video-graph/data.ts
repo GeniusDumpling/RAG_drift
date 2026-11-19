@@ -105,6 +105,22 @@ export function filterGraphByLens(graph: VideoGraphData, lensId: KnowledgeLensId
   };
 }
 
+/** Return matched node and edge IDs for a lens so context-dimming can keep the full graph visible. */
+export function lensMatchSets(
+  graph: VideoGraphData,
+  lensId: KnowledgeLensId,
+): { nodeIds: Set<string>; edgeIds: Set<string> } | null {
+  if (lensId === 'all') return null;
+  const lens = KNOWLEDGE_LENSES.find((item) => item.id === lensId);
+  if (!lens?.predicates) return null;
+  const allowed = new Set(lens.predicates);
+  const matchedEdges = graph.edges.filter((edge) => allowed.has(edge.predicate));
+  return {
+    nodeIds: new Set(matchedEdges.flatMap((edge) => [edge.source, edge.target])),
+    edgeIds: new Set(matchedEdges.map((edge) => edge.id)),
+  };
+}
+
 export type KnowledgePathStep = {
   edge: VideoGraphEdge;
   fromId: string;

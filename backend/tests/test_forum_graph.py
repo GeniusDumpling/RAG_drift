@@ -1492,3 +1492,462 @@ async def test_real_async_chat_preserves_forum_context_and_saved_history(
             } == {"context", "claim", "feedback"}
     finally:
         await async_engine.dispose()
+
+
+def test_numeric_grounding_ignores_identifier_digits_and_checks_hex_and_versions():
+    from app.services.forum_graph.extraction import numeric_support
+
+    evidence = [
+        Span(
+            post_id=1,
+            quote=(
+                "Firmware v1.14.0 on 4.5.7 outputs 0x68, up to 800mW, "
+                "SERIAL1_OPTIONS=68, value -1."
+            ),
+        )
+    ]
+    numeric_support(
+        {
+            "id_text": "MPU9250 link1 SERIAL1_OPTIONS px4_fmu-v2 px4-1",
+            "ver1": "v1.14.0",
+            "ver2": "4.5.7",
+            "hex": "0x68",
+            "power": "800mW",
+            "param": "SERIAL1_OPTIONS=68",
+            "val": "-1",
+        },
+        evidence,
+    )
+    for wrong in ["0x69", "v1.14", "69", "+1", "600mW"]:
+        with pytest.raises(ValueError):
+            numeric_support({"value": wrong}, evidence)
+
+
+def test_entity_identity_aliases_compact_and_title_grounding():
+    import uuid
+
+    from app.services.forum_graph.schema import EntityCandidate
+    from app.services.forum_graph.source import Material, Post
+    from app.services.video_graph.identity import ENTITY_NAMESPACE
+
+    material = Material(
+        content_item_id="x",
+        source_site_id="s",
+        forum="px4",
+        base_url="https://discuss.px4.io",
+        topic_id=9,
+        title="External Mpu9250 not recognized on Pixhawk 4",
+        url="x",
+        posts=[
+            Post(
+                id=1,
+                number=1,
+                author="u1",
+                author_id="u1",
+                text="My 9250 failed in nsh via Virtual box.",
+                raw_page_id="x",
+                url="x",
+            ),
+            Post(
+                id=2,
+                number=2,
+                author="u2",
+                author_id="u2",
+                text="Check sensor wiring on Pixhawk.",
+                raw_page_id="x",
+                url="x",
+            ),
+        ],
+    )
+    nsh = EntityCandidate(
+        key="nsh",
+        surface_text="nsh",
+        canonical_name="NuttShell",
+        entity_type="software",
+        scope="global",
+        evidence=[Span(post_id=1, quote="nsh")],
+        identity_evidence=[Span(post_id=1, quote="nsh")],
+    )
+    assert extraction.entity_identity(material, nsh)["id"] == str(
+        uuid.uuid5(ENTITY_NAMESPACE, "v2:global:software:nuttshell")
+    )
+    vbox = EntityCandidate(
+        key="vbox",
+        surface_text="Virtual box",
+        canonical_name="VirtualBox",
+        entity_type="software",
+        scope="global",
+        evidence=[Span(post_id=1, quote="Virtual box")],
+        identity_evidence=[Span(post_id=1, quote="Virtual box")],
+    )
+    assert extraction.entity_identity(material, vbox)["name"] == "VirtualBox"
+    mpu = EntityCandidate(
+        key="mpu",
+        surface_text="9250",
+        canonical_name="MPU9250",
+        entity_type="component",
+        scope="case",
+        case_anchor_post_id=1,
+        evidence=[Span(post_id=1, quote="My 9250 failed")],
+        identity_evidence=[Span(post_id=1, quote="My 9250 failed")],
+    )
+    assert extraction.entity_identity(material, mpu)["name"] == "MPU9250"
+    generic = EntityCandidate(
+        key="gen",
+        surface_text="sensor",
+        canonical_name="MPU9250",
+        entity_type="component",
+        scope="case",
+        case_anchor_post_id=1,
+        evidence=[Span(post_id=2, quote="Check sensor wiring")],
+        identity_evidence=[Span(post_id=2, quote="Check sensor wiring")],
+    )
+    with pytest.raises(ValueError, match="规范身份"):
+        extraction.entity_identity(material, generic)
+    non_root = EntityCandidate(
+        key="px",
+        surface_text="Pixhawk",
+        canonical_name="Pixhawk 4",
+        entity_type="product",
+        scope="case",
+        case_anchor_post_id=2,
+        evidence=[Span(post_id=2, quote="on Pixhawk.")],
+        identity_evidence=[Span(post_id=2, quote="on Pixhawk.")],
+    )
+    with pytest.raises(ValueError, match="规范身份"):
+        extraction.entity_identity(material, non_root)
+
+
+def test_screen_entities_downgrades_ungrounded_canonical_name_idempotently():
+    from app.services.forum_graph.schema import Case, Entities, EntityCandidate
+    from app.services.forum_graph.source import Material, Post
+
+    material = Material(
+        content_item_id="x",
+        source_site_id="s",
+        forum="ardupilot",
+        base_url="https://discuss.ardupilot.org",
+        topic_id=10,
+        title="VTX setup",
+        url="x",
+        posts=[
+            Post(
+                id=1,
+                number=1,
+                author="u1",
+                author_id="u1",
+                text="I have a SpeedBeeF4V4 fc flight controller running 4.5.7.",
+                raw_page_id="x",
+                url="x",
+            )
+        ],
+    )
+    window = make_windows(material)[0]
+    proposal = Entities(
+        cases=[
+            Case(
+                anchor_post_id=1,
+                description="VTX setup issue",
+                evidence=[Span(post_id=1, quote="SpeedBeeF4V4 fc")],
+            )
+        ],
+        entities=[
+            EntityCandidate(
+                key="fc",
+                surface_text="SpeedBeeF4V4 fc",
+                canonical_name="SpeedyBee F4V4",
+                entity_type="product",
+                scope="case",
+                case_anchor_post_id=1,
+                evidence=[Span(post_id=1, quote="SpeedBeeF4V4 fc")],
+                identity_evidence=[Span(post_id=1, quote="SpeedBeeF4V4 fc")],
+            ),
+            EntityCandidate(
+                key="sw",
+                surface_text="ArduCopter",
+                canonical_name="ArduCopter",
+                entity_type="software",
+                scope="global",
+                evidence=[Span(post_id=1, quote="running 4.5.7")],
+                identity_evidence=[Span(post_id=1, quote="running 4.5.7")],
+            ),
+            EntityCandidate(
+                key="gen",
+                surface_text="flight controller",
+                canonical_name="flight controller",
+                entity_type="product",
+                scope="global",
+                evidence=[Span(post_id=1, quote="flight controller")],
+                identity_evidence=[Span(post_id=1, quote="flight controller")],
+            ),
+        ],
+    )
+    full, valid, rejected = extraction.screen_entities(material, window, proposal, {})
+    assert [e.key for e in valid.entities] == ["fc"]
+    assert valid.entities[0].canonical_name == "SpeedBeeF4V4 fc"
+    assert set(rejected) == {"entity:sw", "entity:gen"}
+    full_again, valid_again, rejected_again = extraction.screen_entities(material, window, full, {})
+    assert full_again.model_dump() == full.model_dump()
+    assert valid_again.model_dump() == valid.model_dump()
+    assert rejected_again == rejected
+
+
+async def test_schema_coercion_span_sanitization_and_salvage():
+    from app.services.forum_graph.schema import Case, Claim, Claims
+    from pydantic import ValidationError
+
+    case = Case(
+        anchor_post_id=1,
+        description="Test case",
+        conditions={"has_baro": True, "rc_option": 94, "fw": 4.5},
+        evidence=[Span(post_id=1, quote="baro")],
+    )
+    assert case.conditions == {"has_baro": "true", "rc_option": "94", "fw": "4.5"}
+    claim = Claim(
+        key="c1",
+        subject="board",
+        predicate="indicates",
+        kind="state",
+        value="baro ok",
+        assertion="asserted",
+        act="observation",
+        case_anchor_post_id=1,
+        qualifiers={"has_baro": False, "option": 94},
+        evidence=[Span(post_id=1, quote="baro ok")],
+    )
+    assert claim.qualifiers == {"has_baro": "false", "option": "94"}
+    with pytest.raises(ValidationError):
+        Claim(
+            key="c_bad_map",
+            subject="board",
+            predicate="indicates",
+            kind="state",
+            value="baro ok",
+            assertion="asserted",
+            act="observation",
+            case_anchor_post_id=1,
+            qualifiers={"nested": {"a": 1}},
+            evidence=[Span(post_id=1, quote="baro ok")],
+        )
+
+    valid_claim = dict(
+        key="c1",
+        subject="board",
+        predicate="indicates",
+        kind="state",
+        value="baro ok",
+        assertion="asserted",
+        act="observation",
+        case_anchor_post_id=1,
+        evidence=[dict(post_id=1, start=10, end=5, quote="baro ok")],
+    )
+    bad_claim = dict(
+        key="c2",
+        subject="board",
+        predicate="connected_to",
+        kind="relation",
+        object=None,
+        value=None,
+        assertion="asserted",
+        act="observation",
+        case_anchor_post_id=1,
+        evidence=[dict(post_id=1, start=0, end=0, quote="connected")],
+    )
+
+    class OffsetClient:
+        async def request(self, stage, system, payload):
+            return {"claims": [valid_claim]}
+
+    sanitized = await extraction.structured(OffsetClient(), "claims", "prompt", {}, Claims)
+    assert sanitized.claims[0].evidence[0].start == 0
+    assert sanitized.claims[0].evidence[0].end is None
+
+    class UnfixedClaimClient:
+        def __init__(self):
+            self.calls = 0
+
+        async def request(self, stage, system, payload):
+            self.calls += 1
+            return {"claims": [valid_claim, bad_claim]}
+
+    with pytest.raises(ValidationError):
+        await extraction.structured(UnfixedClaimClient(), "claims", "prompt", {}, Claims)
+
+    salvage_client = UnfixedClaimClient()
+    salvaged = await extraction.structured(
+        salvage_client, "claims", "prompt", {}, Claims, salvage=True
+    )
+    assert salvage_client.calls == 2
+    assert [c.key for c in salvaged.claims] == ["c1"]
+
+    class WrapperClient:
+        def __init__(self, payload):
+            self.payload = payload
+            self.calls = 0
+
+        async def request(self, stage, system, payload):
+            self.calls += 1
+            return self.payload
+
+    wrapped = WrapperClient({"type": "json_object", "claims": [valid_claim]})
+    stripped = await extraction.structured(wrapped, "claims", "prompt", {}, Claims)
+    assert wrapped.calls == 1
+    assert [c.key for c in stripped.claims] == ["c1"]
+
+    for bad_top in ({"type": "json_object"}, {"unexpected": 1, "claims": [valid_claim]}):
+        with pytest.raises(ValidationError):
+            await extraction.structured(
+                WrapperClient(bad_top), "claims", "prompt", {}, Claims, salvage=True
+            )
+
+
+def test_entity_identity_rejects_pure_versions_and_short_global_abbreviations():
+    from app.services.forum_graph.schema import Entities, EntityCandidate
+    from app.services.forum_graph.source import Material, Post
+
+    material = Material(
+        content_item_id="x",
+        source_site_id="s",
+        forum="px4",
+        base_url="https://discuss.px4.io",
+        topic_id=11,
+        title="SPI driver test",
+        url="x",
+        posts=[
+            Post(
+                id=1,
+                number=1,
+                author="u1",
+                author_id="u1",
+                text="Running 4.5.7 on PX4 via SPI with PX and SpeedBeeF4V4 fc and 极飞.",
+                raw_page_id="x",
+                url="x",
+            )
+        ],
+    )
+    for ver in ("4.5.7", "v1.14.0"):
+        cand = EntityCandidate(
+            key="ver",
+            surface_text="4.5.7",
+            canonical_name=ver,
+            entity_type="software",
+            scope="global",
+            evidence=[Span(post_id=1, quote="Running 4.5.7")],
+            identity_evidence=[Span(post_id=1, quote="Running 4.5.7")],
+        )
+        with pytest.raises(ValueError, match="参数/属性值不能作为实体"):
+            extraction.entity_identity(material, cand)
+
+    for short, quote in (("PX", "with PX"), ("FC", "fc")):
+        cand = EntityCandidate(
+            key="short",
+            surface_text=short.lower() if short == "FC" else short,
+            canonical_name=short,
+            entity_type="software",
+            scope="global",
+            evidence=[Span(post_id=1, quote=quote)],
+            identity_evidence=[Span(post_id=1, quote=quote)],
+        )
+        with pytest.raises(ValueError, match="短缩写缺少明确指代"):
+            extraction.entity_identity(material, cand)
+
+    for ok, kind, quote in (
+        ("PX4", "software", "on PX4"),
+        ("SPI", "protocol", "via SPI"),
+        ("极飞", "organization", "and 极飞."),
+    ):
+        cand = EntityCandidate(
+            key="ok_" + ok,
+            surface_text=ok,
+            canonical_name=ok,
+            entity_type=kind,
+            scope="global",
+            evidence=[Span(post_id=1, quote=quote)],
+            identity_evidence=[Span(post_id=1, quote=quote)],
+        )
+        assert extraction.entity_identity(material, cand)["name"] == ok
+
+    window = make_windows(material)[0]
+    proposal = Entities(
+        cases=[],
+        entities=[
+            EntityCandidate(
+                key="px",
+                surface_text="PX",
+                canonical_name="PX4",
+                entity_type="software",
+                scope="global",
+                evidence=[Span(post_id=1, quote="with PX")],
+                identity_evidence=[Span(post_id=1, quote="with PX")],
+            ),
+            EntityCandidate(
+                key="fc",
+                surface_text="SpeedBeeF4V4 fc",
+                canonical_name="SpeedyBee F4V4",
+                entity_type="product",
+                scope="global",
+                evidence=[Span(post_id=1, quote="SpeedBeeF4V4 fc")],
+                identity_evidence=[Span(post_id=1, quote="SpeedBeeF4V4 fc")],
+            ),
+        ],
+    )
+    full, valid, rejected = extraction.screen_entities(material, window, proposal, {})
+    assert "entity:px" in rejected
+    assert [e.key for e in valid.entities] == ["fc"]
+    assert valid.entities[0].canonical_name == "SpeedBeeF4V4 fc"
+    assert valid.entities[0].scope == "topic"
+    full_again, valid_again, rejected_again = extraction.screen_entities(material, window, full, {})
+    assert full_again.model_dump() == full.model_dump()
+    assert valid_again.model_dump() == valid.model_dump()
+    assert rejected_again == rejected
+
+
+async def test_review_candidates_normalizes_unambiguous_bare_keys():
+    class BareKeyClient:
+        def __init__(self):
+            self.calls = []
+
+        async def request(self, stage, system, payload):
+            self.calls.append((stage, payload))
+            return {
+                "decisions": [
+                    {"key": "claim:c8", "accept": True, "reason": "ok"},
+                    {"key": "e1", "accept": True, "reason": "bare eval key"},
+                ]
+            }
+
+    client = BareKeyClient()
+    review = await extraction.review_candidates(
+        client, "claim_review", {}, {}, ["claim:c8", "evaluation:e1"], {}
+    )
+    assert len(client.calls) == 1
+    assert {d["key"] for d in review["decisions"]} == {"claim:c8", "evaluation:e1"}
+
+    class AmbiguousClient:
+        def __init__(self):
+            self.calls = []
+
+        async def request(self, stage, system, payload):
+            self.calls.append((stage, payload))
+            if stage == "claim_review":
+                return {
+                    "decisions": [
+                        {"key": "claim:e1", "accept": True, "reason": "ok"},
+                        {"key": "e1", "accept": True, "reason": "ambiguous bare"},
+                    ]
+                }
+            return {
+                "decisions": [
+                    {"key": "claim:e1", "accept": True, "reason": "ok"},
+                    {"key": "evaluation:e1", "accept": True, "reason": "fixed"},
+                ]
+            }
+
+    ambig = AmbiguousClient()
+    fixed = await extraction.review_candidates(
+        ambig, "claim_review", {}, {}, ["claim:e1", "evaluation:e1"], {}
+    )
+    assert [c[0] for c in ambig.calls] == ["claim_review", "claim_review_coverage_repair"]
+    assert ambig.calls[1][1]["missing_keys"] == ["evaluation:e1"]
+    assert ambig.calls[1][1]["unexpected_keys"] == ["e1"]
+    assert {d["key"] for d in fixed["decisions"]} == {"claim:e1", "evaluation:e1"}

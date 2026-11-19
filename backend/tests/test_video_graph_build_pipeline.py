@@ -453,11 +453,11 @@ def cached_http_server():
 
     @contextmanager
     def serve():
-        prediction = ROOT / "data/video_graph_runs/token-baseline-20261106.json"
+        prediction = ROOT / "data/video_graph_runs/entity-gold-candidate-scope-20261119.json"
         if not prediction.exists():
             pytest.skip("Reviewed exact model-response fixture is unavailable")
         result = json.loads(prediction.read_text())["results"]["EG003"]
-        cache = ROOT / "data/video_graph_runs/token-baseline-responses-20261106"
+        cache = ROOT / "data/video_graph_runs/entity-gold-candidate-scope-responses-20261119"
         responses = {}
         for item in result["cache_trace"]:
             path = cache / (item["request_hash"] + ".json")
@@ -590,22 +590,23 @@ def test_real_cli_http_extraction_publication_and_query(sources, backend_store, 
 
 def test_failed_stage_resumes_durable_requests_with_new_worker(sources, backend_store, tmp_path):
     """Replay real baseline bodies, fail final review, and resume using production checkpoints."""
-    from json import dumps, loads
+    from json import dumps
 
     import httpx
     from app.services.video_graph.identity import stable_hash
 
+    prediction = ROOT / "data/video_graph_runs/entity-gold-candidate-scope-20261119.json"
+    cache = ROOT / "data/video_graph_runs/entity-gold-candidate-scope-responses-20261119"
+    if not prediction.exists():
+        pytest.skip("Reviewed exact model-response fixture is unavailable")
     cid = seed_cached_case(sources)
-    baseline = json.loads((ROOT / "data/video_graph_runs/token-baseline-20261106.json").read_text())
+    baseline = json.loads(prediction.read_text())
     responses = {}
     for trace in baseline["results"]["EG003"]["cache_trace"]:
-        envelope = json.loads(
-            (
-                ROOT
-                / "data/video_graph_runs/token-baseline-responses-20261106"
-                / (trace["request_hash"] + ".json")
-            ).read_text()
-        )
+        path = cache / (trace["request_hash"] + ".json")
+        if not path.exists():
+            pytest.skip("Recorded response cache is unavailable")
+        envelope = json.loads(path.read_text())
         responses[stable_hash(envelope["request"])] = envelope["response"]
     observed, failed, mismatches = [], [], []
 
@@ -613,12 +614,7 @@ def test_failed_stage_resumes_durable_requests_with_new_worker(sources, backend_
         body = json
         system = body["messages"][0]["content"]
         request = httpx.Request("POST", "https://test.invalid")
-        payload = loads(body["messages"][1]["content"])
-        if (
-            system.lstrip().startswith("独立对照完整current_chunk")
-            and payload.get("format_correction")
-            and len(failed) < 2
-        ):
+        if system.lstrip().startswith("独立对照完整current_chunk") and len(failed) < 2:
             failed.append(True)
             return httpx.Response(500, request=request)
         if system.startswith("判断材料是否与无人机"):
@@ -644,17 +640,17 @@ def test_failed_stage_resumes_durable_requests_with_new_worker(sources, backend_
     ):
         events = run(sources, first, tmp_path, backend_store, content_ids=[cid])
         assert events[-1]["status"] == "incomplete"
-        assert len(observed) == 5 and len(failed) == 2  # topic + four successful chunk requests
+        assert len(observed) == 4 and len(failed) == 2  # topic + three successful chunk requests
         resumed = LLMVideoExtractor(Settings())  # No process-local cache survives.
         events = run(sources, resumed, tmp_path, backend_store, retry_failed=True)
     assert events[-1]["status"] == "success", (events, mismatches)
-    assert len(observed) == 6  # Retry calls only the last review's evidence-format repair.
+    assert len(observed) == 5  # Retry calls only the final relation review.
     report = json.loads((tmp_path / "report.json").read_text())
     usage = report["token_usage"]
-    assert sum(row.get("checkpoint_replays", 0) for row in usage.values()) == 4
+    assert sum(row.get("checkpoint_replays", 0) for row in usage.values()) == 3
     assert sum(row.get("http_attempts", 0) for row in usage.values()) == 1
     assert (
-        sum(row.get("http_attempts", 0) for row in report["cumulative_token_usage"].values()) == 8
+        sum(row.get("http_attempts", 0) for row in report["cumulative_token_usage"].values()) == 7
     )
     assert report["usage_history_complete"]
     assert first.request_checkpoint is None and resumed.request_checkpoint is None

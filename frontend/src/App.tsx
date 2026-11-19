@@ -31,6 +31,7 @@ import { VideoGraphPage } from './pages/VideoGraphPage';
 type View = 'Dashboard' | 'Sources' | 'Runs' | 'Search' | 'Answer' | 'Content' | 'Database' | 'Literature' | 'Supplier' | 'VideoGraph' | 'Drones';
 
 const USER_NAV_ITEMS: View[] = ['Dashboard', 'Search', 'Answer', 'Drones', 'Supplier', 'Literature', 'VideoGraph'];
+const GRAPH_SOURCE = import.meta.env.VITE_GRAPH_SOURCE === 'forum' ? 'forum' : 'video';
 const ADMIN_NAV_ITEMS: View[] = ['Sources', 'Runs', 'Content', 'Database'];
 
 const NAV_ICONS: Record<View, LucideIcon> = {
@@ -54,7 +55,7 @@ const NAV_LABELS: Record<View, string> = {
   Drones: '无人机信息',
   Supplier: '供应链',
   Literature: '文献研究',
-  VideoGraph: '视频知识图谱',
+  VideoGraph: GRAPH_SOURCE === 'forum' ? '论坛知识图谱' : '视频知识图谱',
   Sources: '数据源',
   Runs: '运行记录',
   Content: '内容详情',
@@ -170,7 +171,7 @@ export function App() {
           {activeView === 'Drones' ? <DronesPage /> : null}
           {activeView === 'Literature' ? <LiteratureResearchPanel /> : null}
           {activeView === 'Supplier' ? <SupplierPage /> : null}
-          {activeView === 'VideoGraph' ? <VideoGraphPage onOpenContent={openContent} /> : null}
+          {activeView === 'VideoGraph' ? <VideoGraphPage source={GRAPH_SOURCE} onOpenContent={openContent} /> : null}
         </main>
       </div>
     </div>

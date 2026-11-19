@@ -156,14 +156,12 @@ class LLMVideoExtractor:
         )
 
         rules = semantic_instructions(include_predicates=False)
-        payload = {
-            "title": material.title[:1000],
-            "summary_context": material.summary[:2000],
-            "neighbor_context": context,
+        base_payload = {
             "evidence_type": chunk.evidence_type,
             "current_chunk": chunk.text,
             "terminology": source_terms(chunk.text),
         }
+        payload = base_payload
         errors = []
         for attempt in range(2):
             raw = self._request(EXTRACTION_INSTRUCTIONS + ENTITY_SCOPE_RULES + rules, payload)
@@ -171,16 +169,22 @@ class LLMVideoExtractor:
                 candidate, errors = typed_graph({**raw, "relations": []}, chunk)
                 if not errors or attempt:
                     break
-                error = "只修复实体字段和原文提及；保留有效实体，不抽关系。"
+                error = (
+                    "只修复实体字段和原文提及；保留有效实体，"
+                    "删除或更正无法在current_chunk中逐字定位的项，不抽关系。"
+                )
             except ValueError as exc:
                 if attempt:
                     raise
                 error = str(exc)
+                errors = list(getattr(exc, "items", []))
+            previous = raw.get("entities")
             payload = {
-                **payload,
+                **base_payload,
                 "format_correction": {
                     "instruction": error,
                     "items": errors[:20],
+                    **({"previous_entities": previous[:60]} if isinstance(previous, list) else {}),
                 },
             }
         candidate = seed_fault_mentions(candidate, chunk)

@@ -652,11 +652,94 @@ def test_entity_review_cannot_publish_invented_mentions_even_if_model_accepts_th
     typed = candidates().model_dump()
     typed["entities"][0]["surface_text"] = "Invented drone"
     extractor = LLMVideoExtractor(Settings(_env_file=None, LLM_API_KEY="test"))
-    responses = [typed, typed, decision()]
+    only_gps = {"entities": [decision()["entities"][1]], "relations": []}
+    responses = [typed, typed, only_gps]
     with patch.object(extractor, "_request", side_effect=responses) as req:
         out = extractor.extract(m, m.chunks[0], "")
     assert len(out.entities) == 1 and out.entities[0].surface_text == "GPS"
     assert not out.relations and req.call_count == 3
+    # Ungrounded candidates are filtered before review and recorded as rejected.
+    review_entities = req.call_args_list[2].args[1]["entities"]
+    assert [e["key"] for e in review_entities] == ["o"]
+    assert any(
+        r["kind"] == "entity_format" and r["key"] == "s" and r["surface_text"] == "Invented drone"
+        for r in out.review.rejected
+    )
+    # Defense-in-depth: direct review_extraction still refuses invented mentions even if accepted.
+    draft = candidates()
+    draft.entities[0].surface_text = "Invented drone"
+    direct = review_extraction(lambda *_: decision(), m, m.chunks[0], "", draft, "")
+    assert len(direct.entities) == 1 and direct.entities[0].surface_text == "GPS"
+
+
+def test_candidate_extraction_scopes_input_to_current_chunk_while_review_keeps_context():
+    from app.services.video_graph.identity import neighbor_context
+
+    m = material(title="DJI Neo 2 First Use")
+    neighbor = VideoChunk(uuid.uuid4(), "Neighbor says DJI Neo 2", "transcript_segment", 10, 20)
+    m = replace(m, chunks=(m.chunks[0], neighbor))
+    context = neighbor_context(m, m.chunks[0])
+    extractor = LLMVideoExtractor(Settings(_env_file=None, LLM_API_KEY="test"))
+    with patch.object(extractor, "_request", side_effect=pipeline_responses()) as req:
+        out = extractor.extract(m, m.chunks[0], context)
+    assert len(out.relations) == 1 and req.call_count == 4
+    initial_payload = req.call_args_list[0].args[1]
+    assert set(initial_payload) == {"evidence_type", "current_chunk", "terminology"}
+    assert "title" not in initial_payload
+    assert "summary_context" not in initial_payload
+    assert "neighbor_context" not in initial_payload
+    review_payload = req.call_args_list[1].args[1]
+    assert review_payload["title"] == "DJI Neo 2 First Use"
+    assert review_payload["neighbor_context"] == "Neighbor says DJI Neo 2"
+
+
+def test_format_correction_passes_previous_entities_and_error_items():
+    m = material()
+    extractor = LLMVideoExtractor(Settings(_env_file=None, LLM_API_KEY="test"))
+    broken = candidates().model_dump()
+    broken["entities"][0]["surface_text"] = "DJI The Neo"
+    with patch.object(extractor, "_request", side_effect=[broken, *pipeline_responses()]) as req:
+        out = extractor.extract(m, m.chunks[0], "")
+    assert len(out.relations) == 1 and req.call_count == 5
+    correction = req.call_args_list[1].args[1]["format_correction"]
+    assert correction["previous_entities"] == broken["entities"]
+    assert correction["items"][0]["key"] == "s"
+    assert correction["items"][0]["surface_text"] == "DJI The Neo"
+
+    # Also preserve per-row items and previous_entities when all rows fail schema/key rules.
+    duplicate = candidates().model_dump()
+    duplicate["entities"][1]["key"] = "s"
+    with patch.object(extractor, "_request", side_effect=[duplicate, *pipeline_responses()]) as req:
+        out = extractor.extract(m, m.chunks[0], "")
+    assert len(out.relations) == 1 and req.call_count == 5
+    correction = req.call_args_list[1].args[1]["format_correction"]
+    assert correction["previous_entities"] == duplicate["entities"]
+    assert [item["key"] for item in correction["items"]] == ["s", "s"]
+
+
+def test_all_ungrounded_entities_after_repair_skip_empty_review_call():
+    m = material("Simple unrelated sentence without known terms.")
+    ungrounded = {
+        "entities": [
+            {
+                "key": "e1",
+                "surface_text": "DJI Neo 2",
+                "entity_type": "product",
+                "confidence": 0.9,
+            }
+        ],
+        "relations": [],
+    }
+    extractor = LLMVideoExtractor(Settings(_env_file=None, LLM_API_KEY="test"))
+    with patch.object(extractor, "_request", side_effect=[ungrounded, ungrounded]) as req:
+        out = extractor.extract(m, m.chunks[0], "")
+    assert req.call_count == 2
+    assert out.entities == [] and out.relations == []
+    assert any(
+        r["kind"] == "entity_format" and r["key"] == "e1" and r["surface_text"] == "DJI Neo 2"
+        for r in out.review.rejected
+    )
+    validate_extraction(m.chunks[0], out, material=m, require_review=True)
 
 
 def test_invalid_pair_answer_does_not_erase_valid_pair_answers_or_entities():

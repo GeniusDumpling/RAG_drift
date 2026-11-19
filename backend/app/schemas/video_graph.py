@@ -99,7 +99,7 @@ class VideoAssessment(BaseModel):
 class GraphNode(BaseModel):
     id: str
     label: str
-    kind: Literal["entity", "video"]
+    kind: Literal["entity", "video", "fact"]
     entity_type: str | None = None
     content_item_id: uuid.UUID | None = None
 

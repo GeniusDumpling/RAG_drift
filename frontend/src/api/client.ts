@@ -38,6 +38,7 @@ import type {
   VideoGraphEvidence,
   VideoGraphOverview,
   VideoGraphStatus,
+  ForumGraphEvidence,
 } from './types';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
@@ -55,6 +56,26 @@ export function getDrone(
 
 export function getVideoGraphOverview(): Promise<VideoGraphOverview> {
   return request('/video-graph/overview');
+}
+
+export async function getForumGraphOverview(): Promise<VideoGraphOverview> {
+  const value = await request<{ topics: number; active_topics: number; entities: number;
+    facts: number; evidence: number; builds: Record<string, number>; unavailable_topics: number }>('/forum-graph/overview');
+  return { videos: value.topics, active_videos: value.active_topics, entities: value.entities,
+    relations: value.facts, evidence: value.evidence, builds: value.builds,
+    partial_videos: value.unavailable_topics };
+}
+
+export function searchForumGraphEntities(q: string, entity_type?: string): Promise<Page<{ id: string; name: string; entity_type: string }>> {
+  return request(buildPath('/forum-graph/entities', { q, entity_type, limit: 50, offset: 0 }));
+}
+
+export function getForumGraph(params: VideoGraphParams = {}): Promise<VideoGraphData> {
+  return request(buildPath('/forum-graph/graph', params));
+}
+
+export function getForumGraphEvidence(factId: string, params: { limit?: number; offset?: number } = {}): Promise<Page<ForumGraphEvidence>> {
+  return request(buildPath(`/forum-graph/facts/${encodeURIComponent(factId)}/evidence`, params));
 }
 
 export function searchVideoGraphEntities(q: string, entity_type?: string): Promise<Page<{ id: string; name: string; entity_type: string }>> {

@@ -2,13 +2,28 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.video_graph import Assertion, EntityType
 
 
 class Record(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+def _coerce_string_map(value):
+    if not isinstance(value, dict):
+        return value
+    return {
+        k: (
+            ("true" if v else "false")
+            if isinstance(v, bool)
+            else str(v)
+            if isinstance(v, int | float)
+            else v
+        )
+        for k, v in value.items()
+    }
 
 
 class Span(Record):
@@ -73,6 +88,11 @@ class Case(Record):
     conditions: dict[str, str] = Field(default_factory=dict, max_length=12)
     evidence: list[Span] = Field(min_length=1, max_length=12)
     condition_rejections: dict[str, str] = Field(default_factory=dict, max_length=12)
+
+    @field_validator("conditions", mode="before")
+    @classmethod
+    def coerce_conditions(cls, value):
+        return _coerce_string_map(value)
 
 
 class EntityCandidate(Record):
@@ -158,6 +178,11 @@ class Claim(Record):
     qualifiers: dict[str, str] = Field(default_factory=dict, max_length=16)
     details: dict[str, str | list[str]] = Field(default_factory=dict, max_length=12)
     evidence: list[Span] = Field(min_length=1, max_length=12)
+
+    @field_validator("qualifiers", mode="before")
+    @classmethod
+    def coerce_qualifiers(cls, value):
+        return _coerce_string_map(value)
 
     @model_validator(mode="after")
     def shape(self):

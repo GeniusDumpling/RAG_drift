@@ -49,9 +49,9 @@ ENTITIES = (
     + """
 识别当前正文值得入图的实体和案例上下文。context只用于消歧和明确回指，不将引用者当原作者。
 cases以描述该具体设备/问题的原帖anchor_post_id标识；多人同帖不自动继承楼主的配置。
-known_cases可引用，不重复创建。实体类型优先product/component/software/protocol/technology/method/fault。
+known_cases可引用，不重复创建。若当前作者描述的是不同于known_cases的新设备或新问题，必须在cases中新建以当前post_id为anchor_post_id的案例。实体类型优先product/component/software/protocol/technology/method/fault。
 每个conditions字段必须另引包含该条件值的原文，不能只引用症状却遗漏软件/硬件/版本证据。
-surface_text保留原文；canonical_name必须有identity_evidence依据。明确具名对象可global，
+surface_text保留原文；canonical_name必须有identity_evidence或主题title字面依据；不得改写作者原文型号拼写（如原文写SpeedBeeF4V4则保留该拼写），也不得虚构surface_text未出现在引用evidence中的品牌或软件实体。明确具名对象可global，
 “我的飞控/这个GPS/它”等用case或topic作用域；部件的所有者需有证据。不能从同帖品牌共现补全型号。
 数字、单位、版本、参数名和参数值不是实体；它们留给后续属性/指令事实。不要把用户名默认建实体。
 软件实体用不带版本的规范名，具体版本放在案例条件中；命名必须有原文依据，不改写成新的型号。
@@ -64,10 +64,12 @@ CLAIMS = (
     + """
 只用已审核的entities及cases识别当前作者的技术主张和实际反馈。subject/object引用实体key。
 每条claim必须明确填写kind，禁止省略；必须遵守下列形态，不能同时填object和value：
-relation：object为已审核实体key，value=null，谓词与端点类型相符。
+relation：object为已审核实体key，value=null，谓词与端点类型相符。若关系目标不在已审核entities列表中，严禁输出kind=relation且object=null；应改用kind=state、predicate=indicates与value文本表述，或省略该条。
 state：object=null，value为观察到的状态/症状/解释文本，predicate=indicates。
 instruction：object=null，value为具体操作文本，predicate=instruction。
 attribute：object=null，value为参数值，predicate=has_parameter，attribute为原文中的参数名。
+禁止把reports_fault/uses/connected_to用于带value的state或attribute。
+qualifiers所有字段值必须为字符串，不要输出布尔值或数字。
 软件版本和硬件环境优先保留在案例conditions；不能将uses/installed_on当成带文本值的属性谓词。
 问题若需保留，可用state/indicates、act=question、assertion=uncertain，不把问题当成已发生事实。
 提问不是肯定事实；推测用hypothesis/uncertain；建议用recommendation及instruction而不是实际配置。
@@ -96,18 +98,28 @@ REVIEW = (
 案例归属、反馈所指建议、操作组合、反馈作者必须明确。数字、参数和值必须有原文支持。
 特别核对澄清问题时的should/希望/期望：用户在描述期望的功能不等于该软件实际上支持该功能，
 拒绝把这种需求审核成asserted technical_statement。建议仍是建议，不因承诺式措辞就变为成功。
-对expected_keys逐一返回key/accept/reason，不能遗漏、重复或添加。无需为了非空图谱接受候选。
+对expected_keys逐一返回key/accept/reason，key必须与expected_keys完全逐字一致（保留claim:/evaluation:/entity:/case:前缀），不能遗漏、重复或添加。无需为了非空图谱接受候选。
 """
 )
 
 SOFTWARE_ALIASES = {
     "qgc": "QGroundControl",
     "qgroundcontrol": "QGroundControl",
+    "qground control": "QGroundControl",
     "mission planner": "Mission Planner",
     "missionplanner": "Mission Planner",
     "arduplane": "ArduPlane",
     "arducopter": "ArduCopter",
     "ardurover": "ArduRover",
+    "ardusub": "ArduSub",
+    "mavproxy": "MAVProxy",
+    "virtual box": "VirtualBox",
+    "virtualbox": "VirtualBox",
+    "nsh": "NuttShell",
+    "nsh console": "NuttShell",
+    "nuttshell": "NuttShell",
+    "px4 autopilot": "PX4",
+    "px4-autopilot": "PX4",
 }
 
 
@@ -148,12 +160,80 @@ def policy_id(settings):
     )
 
 
-async def structured(client, stage, prompt, payload, schema):
+_SALVAGE_SCHEMAS = {
+    Entities: {"cases": Case, "entities": EntityCandidate},
+    Claims: {"claims": Claim, "evaluations": Evaluation},
+}
+
+
+def _sanitize_span_offsets(value):
+    if isinstance(value, list):
+        return [_sanitize_span_offsets(v) for v in value]
+    if not isinstance(value, dict):
+        return value
+    cleaned = {k: _sanitize_span_offsets(v) for k, v in value.items()}
+    if "post_id" in cleaned and isinstance(cleaned.get("quote"), str) and cleaned["quote"]:
+        start, end = cleaned.get("start"), cleaned.get("end")
+        bad_end = (
+            "end" in cleaned
+            and end is not None
+            and (
+                not isinstance(end, int)
+                or isinstance(end, bool)
+                or end <= 0
+                or (isinstance(start, int) and not isinstance(start, bool) and end <= start)
+            )
+        )
+        bad_start = (
+            "start" in cleaned
+            and start is not None
+            and (not isinstance(start, int) or isinstance(start, bool) or start < 0)
+        )
+        if bad_end or bad_start:
+            cleaned["start"] = 0
+            cleaned["end"] = None
+    return cleaned
+
+
+def _salvage_candidates(raw, schema):
+    field_schemas = _SALVAGE_SCHEMAS.get(schema)
+    if (
+        field_schemas is None
+        or not isinstance(raw, dict)
+        or not set(raw) <= set(field_schemas)
+        or not all(isinstance(v, list) for v in raw.values())
+    ):
+        return None
+    cleaned = {}
+    for field, items in raw.items():
+        item_model = field_schemas[field]
+        kept = []
+        for item in items:
+            try:
+                kept.append(item_model.model_validate(item).model_dump())
+            except ValidationError:
+                continue
+        cleaned[field] = kept
+    return schema.model_validate(cleaned)
+
+
+def _sanitize_raw_response(raw, schema):
+    if (
+        isinstance(raw, dict)
+        and raw.get("type") == "json_object"
+        and "type" not in schema.model_fields
+        and len(raw) > 1
+    ):
+        raw = {k: v for k, v in raw.items() if k != "type"}
+    return _sanitize_span_offsets(raw)
+
+
+async def structured(client, stage, prompt, payload, schema, *, salvage=False):
     raw = await client.request(
         stage, prompt, {**payload, "output_schema": schema.model_json_schema()}
     )
     try:
-        return schema.model_validate(raw)
+        return schema.model_validate(_sanitize_raw_response(raw, schema))
     except ValidationError as exc:
         # A single structural repair, never a retry to reverse a valid rejection.
         raw = await client.request(
@@ -165,6 +245,8 @@ async def structured(client, stage, prompt, payload, schema):
                 "previous": raw,
                 "repair_instruction": (
                     "按schema_errors修正previous，保留有原文支持的信息。"
+                    "若relation目标不在已审核entities中，改为kind=state/predicate=indicates"
+                    "并用value表述，或删除该条；qualifiers值须为字符串。"
                     "返回完整合法对象；不能原样重复错误结构。"
                 ),
                 "schema_errors": [
@@ -172,7 +254,15 @@ async def structured(client, stage, prompt, payload, schema):
                 ],
             },
         )
-        return schema.model_validate(raw)
+        sanitized = _sanitize_raw_response(raw, schema)
+        try:
+            return schema.model_validate(sanitized)
+        except ValidationError:
+            if salvage:
+                salvaged = _salvage_candidates(sanitized, schema)
+                if salvaged is not None:
+                    return salvaged
+            raise
 
 
 def canonical_spans(material, window, value):
@@ -238,25 +328,65 @@ def validate_assessment(material, window, policy, record):
     return value
 
 
+_PURE_VERSION = re.compile(
+    r"^[vV]?\d+(?:\.\d+)+(?:[-._]?(?:rc|beta|alpha|dev)\d*)?$", re.I
+)
+
+
+def _compact(value):
+    return re.sub(r"[\W_]+", "", normalized(value))
+
+
 def entity_identity(material, entity):
     name = canonical_name(entity.canonical_name, entity.entity_type)
-    if is_attribute_value(name) or ("_" in name and re.fullmatch(r"[A-Z][A-Z0-9_]+", name)):
+    if (
+        is_attribute_value(name)
+        or _PURE_VERSION.fullmatch(name.strip())
+        or ("_" in name and re.fullmatch(r"[A-Z][A-Z0-9_]+", name))
+    ):
         raise ValueError("参数/属性值不能作为实体")
     proof = "\n".join(s.quote for s in entity.identity_evidence)
-    if normalized(name) != normalized(canonical_name(entity.surface_text, entity.entity_type)):
+    if normalized(entity.surface_text) not in normalized(
+        "\n".join(s.quote for s in entity.evidence)
+    ):
+        raise ValueError("实体提及不在原文中")
+    surface_canonical = canonical_name(entity.surface_text, entity.entity_type)
+    if normalized(name) != normalized(surface_canonical):
+        name_compact = _compact(name)
+        surface_compact = _compact(entity.surface_text)
         tokens = re.findall(r"\w+", normalized(name))
         local_tokens_supported = (
             entity.scope != "global"
             and tokens
             and all(t in re.findall(r"\w+", normalized(proof)) for t in tokens)
         )
-        if normalized(name) not in normalized(proof) and not local_tokens_supported:
+        title_norm = normalized(material.title)
+        name_norm = normalized(name)
+        root_ids = {p.id for p in material.posts if p.number == 1}
+        from_root = any(s.post_id in root_ids for s in entity.identity_evidence)
+        title_has_name = bool(name_norm) and bool(
+            re.search(r"(?<![a-z0-9])" + re.escape(name_norm) + r"(?![a-z0-9])", title_norm)
+        )
+        title_grounded = (
+            title_has_name
+            and not is_generic(entity.surface_text)
+            and len(surface_compact) >= 3
+            and surface_compact in name_compact
+            and (from_root or bool(re.search(r"\d", entity.surface_text)))
+        )
+        compact_equal = bool(name_compact) and name_compact == _compact(surface_canonical)
+        if not (
+            compact_equal
+            or normalized(name) in normalized(proof)
+            or local_tokens_supported
+            or title_grounded
+        ):
             raise ValueError("规范身份缺少明确依据")
-    if entity.surface_text not in "\n".join(s.quote for s in entity.evidence):
-        raise ValueError("实体提及不在原文中")
     if entity.scope == "global":
         if is_generic(name) or is_generic(entity.surface_text):
             raise ValueError("泛称不能成为全局实体/别名")
+        if re.fullmatch(r"[A-Za-z0-9]{1,2}", _compact(name)):
+            raise ValueError("短缩写缺少明确指代，不能作为全局实体")
         if entity.entity_type == "component" and not re.search(r"\d", name):
             raise ValueError("无具名型号的部件须限定在案例/主题内")
         if entity.entity_type == "product" and re.fullmatch(r"[A-Z]{1,2}-?\d{1,3}", name):
@@ -306,10 +436,29 @@ def validate_entities(material, window, proposal, known_cases):
     return proposal
 
 
+_NUMERIC_TOKEN = re.compile(
+    r"(?<![A-Za-z0-9_.+-])(?:"
+    r"(?P<hex>0[xX][0-9a-fA-F]+)(?![A-Za-z0-9_])"
+    r"|[vV](?P<ver>\d+\.\d+(?:\.\d+)*)(?!\d|\.\d)"
+    r"|(?P<num>[+-]?\d+(?:\.\d+)*)(?!\d|\.\d)"
+    r")"
+)
+
+
 def numeric_support(values, evidence):
     text = "\n".join(s.quote for s in evidence)
     for value in values.values():
-        for number in re.findall(r"[+-]?\d+(?:\.\d+)*", str(value)):
+        for match in _NUMERIC_TOKEN.finditer(str(value)):
+            hex_token = match.group("hex")
+            if hex_token:
+                if not re.search(
+                    r"(?<![A-Za-z0-9_])" + re.escape(hex_token) + r"(?![A-Za-z0-9_])",
+                    text,
+                    re.I,
+                ):
+                    raise ValueError("数值/版本缺少引用原文支持")
+                continue
+            number = match.group("ver") or match.group("num")
             if not re.search(r"(?<![\d.+-])" + re.escape(number) + r"(?!\d|\.\d)", text):
                 raise ValueError("数值/版本缺少引用原文支持")
 
@@ -441,7 +590,22 @@ def screen_entities(material, window, proposal, known_cases):
             value = EntityCandidate.model_validate(
                 canonical_spans(material, window, candidate.model_dump())
             )
-            validate_entities(material, window, Entities(entities=[value]), case_map)
+            try:
+                validate_entities(material, window, Entities(entities=[value]), case_map)
+            except ValueError as exc:
+                if (
+                    str(exc) == "规范身份缺少明确依据"
+                    and value.canonical_name != value.surface_text
+                    and not re.fullmatch(r"[A-Za-z]{1,2}", _compact(value.surface_text))
+                ):
+                    updates = {"canonical_name": value.surface_text}
+                    if value.scope == "global":
+                        updates["scope"] = "topic"
+                    fallback = value.model_copy(update=updates)
+                    validate_entities(material, window, Entities(entities=[fallback]), case_map)
+                    value = fallback
+                else:
+                    raise
             entities.append(value)
             normalized_entities.append(value)
         except (ValueError, StopIteration):
@@ -537,6 +701,34 @@ def screen_claims(material, window, proposal, entities, cases, available):
     )
 
 
+def _normalize_review_keys(review, expected):
+    if not isinstance(review, dict) or not isinstance(review.get("decisions"), list):
+        return review
+    expected_set = set(expected)
+    by_bare = {}
+    for key in expected:
+        if ":" in key:
+            _, bare = key.split(":", 1)
+            by_bare.setdefault(bare, []).append(key)
+    unique_bare = {
+        bare: matches[0]
+        for bare, matches in by_bare.items()
+        if len(matches) == 1 and bare not in expected_set
+    }
+    existing = {d.get("key") for d in review["decisions"] if isinstance(d, dict)}
+    decisions = []
+    for item in review["decisions"]:
+        if isinstance(item, dict):
+            key = item.get("key")
+            if key not in expected_set and key in unique_bare:
+                target = unique_bare[key]
+                if target not in existing:
+                    existing.add(target)
+                    item = {**item, "key": target}
+        decisions.append(item)
+    return {**review, "decisions": decisions}
+
+
 async def review_candidates(client, stage, payload, candidates, expected, rejected):
     review = (
         (
@@ -555,9 +747,11 @@ async def review_candidates(client, stage, payload, candidates, expected, reject
         if expected
         else {"decisions": []}
     )
+    review = _normalize_review_keys(review, expected)
     try:
         reviewed_keys(review, expected)
     except ValueError:
+        got = {d.get("key") for d in review.get("decisions", []) if isinstance(d, dict)}
         review = (
             await structured(
                 client,
@@ -568,11 +762,14 @@ async def review_candidates(client, stage, payload, candidates, expected, reject
                     "candidates": candidates,
                     "expected_keys": expected,
                     "previous": review,
+                    "missing_keys": sorted(set(expected) - got),
+                    "unexpected_keys": sorted(got - set(expected)),
                     "coverage_error": "逐项覆盖，不能遗漏、重复或添加候选",
                 },
                 Review,
             )
         ).model_dump()
+        review = _normalize_review_keys(review, expected)
         reviewed_keys(review, expected)
     review["decisions"].extend(dict(key=k, accept=False, reason=v) for k, v in rejected.items())
     return review
@@ -590,7 +787,7 @@ async def extract_window(material, window, client, policy, results):
         "available_claims": list(available.values()),
     }
     input_hash = digest(payload)
-    raw = await structured(client, "entities", ENTITIES, payload, Entities)
+    raw = await structured(client, "entities", ENTITIES, payload, Entities, salvage=True)
     proposal_entities, valid_entities, entity_rejections = screen_entities(
         material, window, raw, known_cases
     )
@@ -630,6 +827,7 @@ async def extract_window(material, window, client, policy, results):
                     "entities": [e.model_dump() for e in entities.values()],
                 },
                 Claims,
+                salvage=True,
             )
         )
         if entities or available

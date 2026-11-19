@@ -649,7 +649,7 @@ export type SupplierBrand = {
   total_suppliers: number;
 };
 export type VideoGraphNode = {
-  id: string; label: string; kind: 'entity' | 'video';
+  id: string; label: string; kind: 'entity' | 'video' | 'fact';
   entity_type: string | null; content_item_id: UUID | null;
 };
 
@@ -671,6 +671,14 @@ export type VideoGraphOverview = {
     videos: number; total_chunks: number; passed_chunks: number;
     skipped_chunks: number; pending_chunks: number;
   };
+};
+
+export type ForumGraphEvidence = {
+  id: string; fact_id: string; content_item_id: UUID; title: string;
+  quote: string; post_url: string; post_id: number; post_number: number; author: string;
+  role: string; act: string; assertion: 'asserted' | 'uncertain' | 'negated';
+  qualifiers: Record<string, unknown>; accepted_answer: boolean;
+  evaluations: Array<{ outcome: string; case_anchor_post_id: number; post_id: number }>;
 };
 
 export type VideoGraphEvidence = {

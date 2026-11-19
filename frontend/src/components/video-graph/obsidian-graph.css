@@ -93,8 +93,8 @@
 .ow-processing-status span { display: flex; align-items: center; gap: 5px; }
 .ow-processing-status i { width: 4px; height: 4px; border-radius: 50%; background: #9c8c68; }
 .ow-panel-section { padding: 16px 18px; border-top: 1px solid #e7e1ec; }
-.ow-panel-section h2, .ow-force-settings summary { display: flex; align-items: center; gap: 8px; color: #7d6c8d; font-size: 11px; font-weight: 500; margin: 0 0 14px; }
-.ow-panel-section h2 svg, .ow-force-settings summary svg { color: #777080; }
+.ow-panel-section h2, .ow-force-settings summary, .ow-display-settings summary { display: flex; align-items: center; gap: 8px; color: #7d6c8d; font-size: 11px; font-weight: 500; margin: 0 0 14px; }
+.ow-panel-section h2 svg, .ow-force-settings summary svg, .ow-display-settings summary svg { color: #777080; }
 .ow-panel-section h2 > span { margin-left: auto; color: #63616f; font-size: 10px; font-weight: 400; }
 .ow-panel-section > label:not(.ow-slider):not(.ow-toggle) { display: flex; justify-content: space-between; align-items: center; gap: 10px; color: #7a6f89; font-size: 11px; margin: 0 0 11px; }
 .ow-panel-section select { width: 149px; max-width: 70%; min-width: 0; height: 29px; min-height: 29px; }
@@ -113,8 +113,8 @@
 .ow-slider { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 9px; color: #7c6e8b; font-size: 10px; margin: 18px 0 3px; }
 .ow-slider output { color: #9279aa; font-size: 10px; font-variant-numeric: tabular-nums; }
 .obsidian-workbench .ow-slider input { grid-column: 1 / -1; width: 100%; min-height: 12px; height: 12px; padding: 0; margin: 0; background: none; border: 0; accent-color: #a88bc8; box-shadow: none; cursor: pointer; }
-.ow-force-settings summary { cursor: pointer; margin-bottom: 0; list-style: none; }
-.ow-force-settings[open] summary { margin-bottom: 14px; }
+.ow-force-settings summary, .ow-display-settings summary { cursor: pointer; margin-bottom: 0; list-style: none; }
+.ow-force-settings[open] summary, .ow-display-settings[open] summary { margin-bottom: 14px; }
 .ow-force-settings .ow-subtle-button { margin-top: 15px; }
 .obsidian-workbench .ow-subtle-button { padding: 0; font-size: 10px; color: #a58cbe; min-height: 24px; }
 .ow-panel-bottom { border-top: 1px solid #e7e1ec; display: flex; align-items: center; gap: 6px; padding: 11px 17px; color: #656070; font-size: 9px; }
@@ -238,7 +238,9 @@
 .obsidian-workbench .ow-lens-pills button { min-height: 25px; padding: 0 10px; border: 1px solid #e2dce9; border-radius: 999px; background: #ffffff; color: #665b75; font-size: 11px; gap: 5px; }
 .obsidian-workbench .ow-lens-pills button small { font-size: 10px; color: #8c8299; font-variant-numeric: tabular-nums; }
 .obsidian-workbench .ow-lens-pills button[aria-pressed=true] { background: #f2ebf9; border-color: #c8b2df; color: #6d4793; font-weight: 500; }
-.obsidian-workbench .ow-lens-pills button[aria-pressed=true] small { color: #7b529d; }
+.ow-lens-pills button[aria-pressed=true] small, .obsidian-workbench .ow-lens-pills button[aria-pressed=true] small { color: #7b529d; }
+.ow-context-switch { margin-left: 4px; }
+.ow-caption-bg-tag { color: #8c7b9e; font-size: 10px; }
 .ow-lens-desc { margin-left: auto; color: #7e758c; font-size: 11px; }
 
 .ow-semantic-strip { position: absolute; left: 25px; bottom: 48px; z-index: 2; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 4px 10px; border: 1px solid #e6e0ed; border-radius: 999px; background: #ffffffeb; color: #675d75; font-size: 10px; pointer-events: none; }

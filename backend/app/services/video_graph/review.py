@@ -40,7 +40,7 @@ EXTRACTION_INSTRUCTIONS = """
 从当前材料提出实体和属性候选，暂不抽关系。只抽取有信息价值的实体，只是简单提及的实体不抽取。
 包含实质提到的型号、软件/固件、协议、关键部件、命名功能/模式/布局、故障及主体。
 长部件名内明确的协议/技术也可单列；数值/单位/IP放所属实体attributes，不把参数、普通动作和泛泛风险建实体。
-surface_text复制当前正文最短完整实体名，保留原语言和型号变体；标题/摘要/邻文只辅助消歧。
+surface_text必须逐字复制current_chunk中的最短完整实体名，保留原语言和型号变体，不补充正文未出现的品牌或型号。
 同一对象合并；不同设备同名部件分key，surface_text可相同。只输出JSON：
 {"entities":[{"key":"e1","surface_text":"原文名称","entity_type":"product","confidence":0.9,"attributes":{}}]}。
 confidence为0~1数字，attributes为字符串键值。没有结果用空数组。
@@ -119,6 +119,12 @@ assertion仅asserted/uncertain/negated；uncertain不是modality，后者只取�
 """
 
 
+class CandidateFormatError(ValueError):
+    def __init__(self, message: str, items: list[dict[str, str]] | None = None) -> None:
+        super().__init__(message)
+        self.items = items or []
+
+
 def typed_graph(raw, chunk):
     """Parse graph items independently; optional relation failures cannot erase entities."""
     entities, relations, errors = [], [], []
@@ -130,7 +136,7 @@ def typed_graph(raw, chunk):
         or not isinstance(edges, list)
         or len(edges) > 80
     ):
-        raise ValueError("entities/relations须为数组，分别最多60/80项")
+        raise CandidateFormatError("entities/relations须为数组，分别最多60/80项")
     parsed = []
     for index, row in enumerate(rows):
         try:
@@ -144,11 +150,12 @@ def typed_graph(raw, chunk):
                 }
             )
     counts = Counter(e.key for e in parsed)
+    unique_valid = 0
     for entity in parsed:
         if counts[entity.key] != 1:
             errors.append({"kind": "entity_format", "key": entity.key, "reason": "实体key重复"})
         else:
-            entities.append(entity)
+            unique_valid += 1
             if (
                 source_span(chunk.text, entity.surface_text) is None
                 and source_span(chunk.text, entity.surface_text, ignore_case=True) is None
@@ -157,11 +164,14 @@ def typed_graph(raw, chunk):
                     {
                         "kind": "entity_format",
                         "key": entity.key,
+                        "surface_text": entity.surface_text,
                         "reason": "实体提及须为当前原文，不翻译或改繁简体",
                     }
                 )
-    if rows and not entities:
-        raise ValueError("实体结构没有任何可用项")
+            else:
+                entities.append(entity)
+    if rows and not unique_valid:
+        raise CandidateFormatError("实体结构没有任何可用项", errors)
     keys = {e.key for e in entities}
     if chunk.evidence_type == "transcript_segment":
         for index, row in enumerate(edges):
@@ -603,6 +613,8 @@ def valid_pair_groups(raw, count):
 def request_verdicts(request, system, payload, entity_keys, relation_count, *, pairs=False):
     """Bounded structural repair; preserve already-valid decisions and isolate bad items."""
     expected = set(entity_keys)
+    if not expected and not relation_count:
+        return ReviewResponse(entities=[], relations=[]), []
     format_rejected = []
     frozen = {}
     for attempt in range(2):
